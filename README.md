@@ -4,6 +4,12 @@ This is an unofficial extension of SST to help you deploy Laravel applications w
 
 ### Installation instructions
 
+Pull in the package using npm:
+
+```bash
+npm install @kirschbaum/sst-laravel
+```
+
 ### HTTP
 
 ```js

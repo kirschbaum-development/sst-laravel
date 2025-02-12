@@ -1,0 +1,26 @@
+{
+  "name": "sst-laravel",
+  "version": "1.0.0",
+  "description": "An unofficial extension of SST to deploy Laravel applications.",
+  "main": "laravel-sst.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-repo/sst-laravel.git"
+  },
+  "keywords": [
+    "laravel",
+    "sst",
+    "aws",
+    "serverless"
+  ],
+  "author": {
+    "name": "Luis Dalmolin",
+    "email": "luis@kirschbaumdevelopment.com"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/your-repo/sst-laravel/issues"
+  },
+  "homepage": "https://github.com/your-repo/sst-laravel#readme",
+  "dependencies": {}
+}
