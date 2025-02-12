@@ -76,6 +76,7 @@ export interface LaravelArgs extends ClusterArgs {
    */
   config?: {
     php?: Input<Number>;
+    opcache?: Input<boolean>;
     environment?: FunctionArgs["environment"];
     deployment?: {
       migrate?: Input<boolean>;
@@ -208,6 +209,7 @@ export class Laravel extends Component {
         dockerfile: `./infra/laravel-sst/Dockerfile.${imageType}`,
         args: {
           'PHP_VERSION': getPhpVersion().toString(),
+          'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
           'AUTORUN_LARAVEL_MIGRATION': imageType === ImageType.Web ? 'true' : 'false',
           'CONTAINER_TYPE': imageType,
           stage: "deploy",
