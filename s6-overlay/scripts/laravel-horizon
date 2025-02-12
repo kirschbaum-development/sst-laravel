@@ -1,0 +1,19 @@
+#!/command/with-contenv bash
+
+# Exit on error
+set -e
+
+# Check to see if an Artisan file exists and assume it means Laravel is configured.
+if [ -f "$APP_BASE_DIR/artisan" ] && [ "${LARAVEL_HORIZON_ENABLED:="true"}" == "true" ]; then
+        echo "🚀 Starting Laravel Horizon..."
+
+        cd "$APP_BASE_DIR"
+
+        # USERNAME=$(id -nu "$PUID")
+
+        php "$APP_BASE_DIR/artisan" horizon
+else
+    echo "👉 Skipping Laravel Horizon because we could not detect a Laravel install or it was specifically disabled..."
+
+    tail -f /dev/null
+fi
