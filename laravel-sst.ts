@@ -53,15 +53,15 @@ export interface LaravelArgs extends ClusterArgs {
   /**
   * If enabled, Laravel Scheduler will run on an isolated container.
   */
-  scheduler?: {
+  scheduler?: boolean | {
     link?: ClusterServiceArgs["link"],
     scaling?: ClusterServiceArgs["scaling"],
-  };
+  },
 
   /**
   * Queue settings.
   */
-  queue?: {
+  queue?: boolean | {
     link?: ClusterServiceArgs["link"],
     scaling?: ClusterServiceArgs["scaling"],
 
@@ -96,8 +96,6 @@ export class Laravel extends Component {
     const parent = this;
     const sitePath = args.path ?? '.';
     args.config = args.config ?? {};
-    // const dev = normalizeDev();
-    // console.log('sitePath', sitePath);
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
@@ -162,7 +160,7 @@ export class Laravel extends Component {
         image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Cli),
 
         environment: getEnvironmentVariables(),
-        scaling: args.scheduler.scaling,
+        scaling: typeof args.scheduler === 'object' ? args.scheduler.scaling : undefined,
 
         dev: {
           command: `php ${sitePath}/artisan schedule:work`,
@@ -176,7 +174,7 @@ export class Laravel extends Component {
          * Image passed or use our default provided image.
          */
         image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker),
-        scaling: args.queue.scaling,
+        scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
 
         dev: {
           command: `php ${sitePath}/artisan horizon`,
