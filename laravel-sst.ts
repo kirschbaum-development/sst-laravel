@@ -5,7 +5,8 @@ import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js
 import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
 import { Input } from "../../.sst/platform/src/components/input.js";
 import { Link } from "../../.sst/platform/src/components/link.js";
-import { ClusterArgs, ClusterServiceArgs } from "../../.sst/platform/src/components/aws/cluster.js";
+import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
+import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
 import { Dns } from "../../.sst/platform/src/components/dns.js";
 import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
 import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
@@ -26,7 +27,7 @@ enum ImageType {
   Cli = 'cli',
 }
 
-export interface LaravelWebArgs extends ClusterServiceArgs {
+export interface LaravelWebArgs {
   /**
    * Domain for the web layer.
    */
@@ -38,9 +39,14 @@ export interface LaravelWebArgs extends ClusterServiceArgs {
       dns?: Input<false | (Dns & {})>;
     }
   >;
+
+  loadBalancer?: ServiceArgs["loadBalancer"];
+  image?: ServiceArgs["image"];
+  scaling: ServiceArgs["scaling"];
 }
 
 export interface LaravelArgs extends ClusterArgs {
+
   // dev?: false | DevArgs["dev"];
   path?: Input<string>;
   link?: any[];
@@ -54,16 +60,16 @@ export interface LaravelArgs extends ClusterArgs {
   * If enabled, Laravel Scheduler will run on an isolated container.
   */
   scheduler?: boolean | {
-    link?: ClusterServiceArgs["link"],
-    scaling?: ClusterServiceArgs["scaling"],
+    link?: ServiceArgs["link"],
+    scaling?: ServiceArgs["scaling"],
   },
 
   /**
   * Queue settings.
   */
   queue?: boolean | {
-    link?: ClusterServiceArgs["link"],
-    scaling?: ClusterServiceArgs["scaling"],
+    link?: ServiceArgs["link"],
+    scaling?: ServiceArgs["scaling"],
 
     /**
     * Running horizon?
@@ -115,37 +121,32 @@ export class Laravel extends Component {
     }
 
     function addWebService() {
-      cluster.addService(`${name}-Web`, {
+      const envVariables = getEnvironmentVariables();
+      console.log('envVariables', envVariables);
+
+      const webService = new sst.aws.Service(`${name}-Web`, {
+        cluster,
+
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Web),
-
-        environment: getEnvironmentVariables(),
-
+        image: args.web && args.web.image
+          ? args.web.image
+          : getDefaultImage(ImageType.Web),
+        environment: envVariables,
         scaling: args.web.scaling ?? null,
 
-        // TODO: Check if it is really required to have the containerDefinitions
-
-        // transform: {
-        //   taskDefinition: {
-        //     containerDefinitions: $jsonStringify([
-        //       {
-        //         name: "LaravelSst",
-        //         image: "120266070056.dkr.ecr.us-east-1.amazonaws.com/sst-asset:LaravelSst",
-        //         portMappings: [{
-        //           containerPort: 8080,
-        //           hostPort: 8080,
-        //         }],
-        //       }
-        //     ])
-        //   },
-        // },
-
-        public: args.web && args.web.public ? args.web.public : {
+        loadBalancer: args.web && args.web.loadBalancer ? args.web.loadBalancer : {
           domain: args.web?.domain,
           ports: getDefaultPublicPorts(),
         },
+
+        permissions: [
+          {
+            actions: ["ses:SendEmail", "ses:SendRawEmail"],
+            resources: ["arn:aws:ses:us-east-1:664418955379:identity/*"]
+          },
+        ],
 
         dev: {
           command: `php ${sitePath}/artisan serve`,
@@ -154,7 +155,9 @@ export class Laravel extends Component {
     }
 
     function addCliService() {
-      cluster.addService(`${name}-Cli`, {
+      const cliService = new sst.aws.Service(`${name}-Cli`, {
+        cluster,
+
         /**
          * Image passed or use our default provided image.
          */
@@ -170,7 +173,9 @@ export class Laravel extends Component {
     }
 
     function addWorkerService() {
-      cluster.addService(`${name}-Worker`, {
+      const workerService = new sst.aws.Service(`${name}-Worker`, {
+        cluster,
+
         /**
          * Image passed or use our default provided image.
          */
@@ -220,7 +225,7 @@ export class Laravel extends Component {
     };
 
     function getPhpVersion() {
-      return args.config.php ?? 8.3;
+      return args.config.php ?? 8.4;
     }
 
     function getEnvironmentVariables() {

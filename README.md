@@ -2,6 +2,10 @@
 
 This is an unofficial extension of SST to help you deploy Laravel applications with all the power the SST provides.
 
+## What it deploys
+
+Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using some pre-built Docker containers.
+
 ### Installation instructions
 
 Pull in the package using npm:
@@ -16,11 +20,11 @@ Import the component in your `sst.config.ts` file:
 import { Laravel } from "@kirschbaum-development/sst-laravel";
 ```
 
-And now you can start using the `Laravel` SST component. Here are some examples:
+And now you can start using the `Laravel` SST component.
 
 ### HTTP
 
-Setting up your app to run receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain, with auto-scaling with a max of 3 servers.
+Setting up your app to run receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain (with SSL), with auto-scaling with a max of 3 servers.
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -109,7 +113,10 @@ php artisan migrate --force
 
 ### Roadmap/Ideas
 
+* Full queue support;
+* Dev mode;
 * Add better support for linked resources (Mail, Database, Redis, etc);
+* DynamoDB support;
 * Add more examples;
 * Add support for Octane;
 * Add support for Laravel Reverb;

@@ -4,9 +4,10 @@ import { Redis } from "../../../.sst/platform/src/components/aws/redis.js";
 import { Output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
 import * as pulumiAws from "../../../.sst/platform/node_modules/@pulumi/aws";
 import { Queue } from "../../../.sst/platform/src/components/aws/queue.js";
+import { Aurora } from "../../../.sst/platform/src/components/aws/aurora.js";
 
 type EnvType = Record<string, string | Output<string>>;
-type Database = Postgres | pulumiAws.rds.Instance;
+type Database = Postgres | Aurora | pulumiAws.rds.Instance;
 type LinkSupportedTypes = Database | Email | Queue | Redis;
 
 export function applyLinkedResourcesEnv(links: LinkSupportedTypes[]): EnvType {
@@ -46,18 +47,21 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[]): EnvType {
 }
 
 function applyDatabaseEnv(database: Database): EnvType {
-  if (database instanceof Postgres) {
+  let port: number;
+  database.port.apply(value => port = value);
+
+  if (database instanceof Postgres || (database instanceof Aurora && port === 5432)) {
     return applyPostgresEnv(database);
   }
 
-  if (database instanceof pulumiAws.rds.Instance) {
+  if ((database instanceof Aurora && port === 3306) || database instanceof pulumiAws.rds.Instance) {
     return applyMySqlEnv(database);
   }
 
   return {};
 }
 
-function applyPostgresEnv(database: Postgres): EnvType {
+function applyPostgresEnv(database: Postgres|Aurora): EnvType {
   const port: Output<number> = database.port;
 
   return {
@@ -70,13 +74,13 @@ function applyPostgresEnv(database: Postgres): EnvType {
   };
 }
 
-function applyMySqlEnv(database: pulumiAws.rds.Instance): EnvType {
+function applyMySqlEnv(database: Aurora|pulumiAws.rds.Instance): EnvType {
   const port: Output<number> = database.port;
 
   return {
     DB_CONNECTION: 'mysql',
-    DB_HOST: database.endpoint,
-    DB_DATABASE: database.dbName,
+    DB_HOST: database instanceof Aurora ? database.host : database.endpoint,
+    DB_DATABASE: database instanceof Aurora ? database.database : database.dbName,
     DB_USERNAME: database.username,
     DB_PASSWORD: database.password,
     DB_PORT: port.apply(port => port.toString()),
@@ -84,8 +88,9 @@ function applyMySqlEnv(database: pulumiAws.rds.Instance): EnvType {
 }
 
 export function applyRedisEnv(database: Redis): EnvType {
+  // TODO: Check if when encryption at rest is disabled, TLS is not required/throw errors
   return {
-    REDIS_HOST: database.host,
+    REDIS_HOST: database.host.apply(host => host ? `tls://${host}` : ''),
     REDIS_PORT: database.port.apply(port => port.toString()),
     REDIS_PASSWORD: database.password,
   };
@@ -102,7 +107,6 @@ export function applyEmailEnv(mail: Email): EnvType {
 // TODO
 export function applyQueueEnv(queue: Queue): EnvType {
   const queueUrl: Output<string> = queue.url;
-
 
   return {
     SQS_QUEUE: queue.url,
