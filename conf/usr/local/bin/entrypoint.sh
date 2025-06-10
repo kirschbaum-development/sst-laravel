@@ -1,0 +1,76 @@
+#!/bin/sh
+set -e
+
+##############
+# BASED ON https://github.com/serversideup/docker-php/blob/main/src/common/usr/local/bin/docker-php-serversideup-entrypoint
+##############
+
+# Initialize variables
+DEFAULT_COMMAND="false"
+S6_INITIALIZED="false"
+
+echo "🔥🔥🔥 STARTING ENTRYPOINT SCRIPT 🔥🔥🔥"
+
+# Enable debug mode if LOG_OUTPUT_LEVEL is set to "debug"
+if [ "$LOG_OUTPUT_LEVEL" = "debug" ]; then
+    echo "🔥🔥🔥 DEBUG MODE has been set. Get ready for a ton of debug log output..."
+    set -x
+fi
+
+# Check if the default command is being used
+case "$1" in
+    "/init")
+        DEFAULT_COMMAND="true"
+        ;;
+    "unitd")
+        if [ "$2" = "--no-daemon" ]; then
+            DEFAULT_COMMAND="true"
+        fi
+        ;;
+esac
+
+# Check if S6 overlay is initialized
+if [ -d "/etc/s6-overlay" ] && [ "$DEFAULT_COMMAND" = "true" ]; then
+    S6_INITIALIZED="true"
+fi
+
+# Export variables
+export DEFAULT_COMMAND
+export S6_INITIALIZED
+
+###############################################
+# Usage: entrypoint.sh
+###############################################
+# This script is used to execute scripts from "/etc/entrypoint.d" and then
+# execute the CMD passed in from the Dockerfile.
+
+# Execute scripts from /etc/entrypoint.d/ in numeric order
+find /etc/entrypoint.d/ -type f -name '*.sh' | sort -V | while IFS= read -r f; do
+    if [ -e "$f" ]; then
+        if [ "$LOG_OUTPUT_LEVEL" = "debug" ]; then
+            echo "Executing $f"
+        fi
+        if ! . "$f"; then
+            echo "Error executing $f" >&2
+            exit 1
+        fi
+    else
+        echo "Warning: $f not found" >&2
+    fi
+done
+
+# first arg is `-f` or `--some-option`
+if [ "${1#-}" != "$1" ]; then
+	set -- php "$@"
+fi
+
+# Some scripts may need to change the CMD based on the log level. If this file is set, execute the contents of that file instead of the Dockerfile CMD.
+if [ -f /tmp/docker_cmd_override ]; then
+    docker_cmd_override=$(cat /tmp/docker_cmd_override)
+    rm /tmp/docker_cmd_override
+    set -- $docker_cmd_override # Perform word splitting by not quoting the commands
+    exec "$@"
+else
+    # Execute the CMD passed in from the Dockerfile
+    exec "$@"
+fi

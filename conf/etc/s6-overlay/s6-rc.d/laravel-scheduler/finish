@@ -1,0 +1,4 @@
+#!/command/execlineb -S0
+php artisan schedule:interrupt
+echo "0" > /run/s6-linux-init-container-results/exitcode
+/run/s6/basedir/bin/halt

@@ -1,5 +1,27 @@
 ARG PHP_VERSION=8.3
-FROM serversideup/php:${PHP_VERSION}-cli as base
+FROM serversideup/php:${PHP_VERSION}-cli AS phpcli
+
+##########
+# S6 Build
+##########
+FROM phpcli AS s6-build
+
+USER root
+
+ARG S6_DIR='/opt/s6/'
+ARG S6_SRC_URL="https://github.com/just-containers/s6-overlay/releases/download"
+
+# copy our scripts
+COPY --chmod=755 infra/sst-laravel/conf/ /
+
+RUN s6-install.sh
+
+############
+# BASE IMAGE
+############
+FROM phpcli AS base
+
+ARG CUSTOM_FILES_PATH
 
 USER root
 
@@ -9,14 +31,24 @@ LABEL maintainer="Kirschbaum"
 ENV AUTORUN_ENABLED=false
 ENV AUTORUN_LARAVEL_MIGRATION=false
 
+# copy our scripts
+RUN test -n "$CUSTOM_FILES_PATH"
+
+COPY --chmod=755 infra/sst-laravel/conf/ /
+COPY --chmod=755 $CUSTOM_FILES_PATH /
+
+# copy s6-overlay from s6-build
+COPY --from=s6-build /opt/s6/ /
+
 RUN apt-get update \
 && apt-get upgrade -y
 
 RUN install-php-extensions gd intl
 
-COPY --chmod=755 infra/deploy.sh /etc/entrypoint.d/60-deploy.sh
-
-FROM base as development
+###################
+# Development image
+###################
+FROM base AS development
 
 # Save the build arguments as a variable
 ARG USER_ID
@@ -25,13 +57,23 @@ ARG GROUP_ID
 # Drop back to our unprivileged user
 USER www-data
 
-FROM base as deploy
+##############
+# Deploy image
+##############
+FROM base AS deploy
 
 ENV CONTAINER_TYPE=cli
 
 COPY --chown=www-data:www-data . /var/www/html
 
-# Drop back to our unprivileged user
+# Fix S6 Overlay issues with Big Cloud PaaS (https://github.com/serversideup/docker-php/pull/376#issuecomment-2179262427)
+RUN chown -R www-data:www-data /run
+
 USER www-data
 
-ENTRYPOINT ["/bin/sh", "-c", "/etc/entrypoint.d/60-deploy.sh && php /var/www/html/artisan horizon"]
+ENTRYPOINT ["entrypoint.sh"]
+
+# Set stop signal to SIGQUIT for a graceful shutdown instead of S6's preferred SIGTERM (https://github.com/just-containers/s6-overlay/issues/586)
+STOPSIGNAL SIGQUIT
+
+CMD ["/init"]

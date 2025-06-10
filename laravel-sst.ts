@@ -1,17 +1,15 @@
 /// <reference path="./../../.sst/platform/config.d.ts" />
 
-import { Component } from "../../.sst/platform/src/components/component.js";
-import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
-import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import { Input } from "../../.sst/platform/src/components/input.js";
-import { Link } from "../../.sst/platform/src/components/link.js";
-import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
-import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
-import { Dns } from "../../.sst/platform/src/components/dns.js";
-import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
-import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
-import { Email } from "../../.sst/platform/src/components/aws/email.js";
-import { applyLinkedResourcesEnv } from "./src/laravel-env.js";
+import * as path from 'path';
+import * as fs from 'fs';
+import {Component} from "../../.sst/platform/src/components/component.js";
+import {FunctionArgs} from "../../.sst/platform/src/components/aws/function.js";
+import {ComponentResourceOptions} from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import {Input} from "../../.sst/platform/src/components/input.js";
+import {ClusterArgs} from "../../.sst/platform/src/components/aws/cluster.js";
+import {ServiceArgs} from "../../.sst/platform/src/components/aws/service.js";
+import {Dns} from "../../.sst/platform/src/components/dns.js";
+import {applyLinkedResourcesEnv} from "./src/laravel-env.js";
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -42,7 +40,7 @@ export interface LaravelWebArgs {
 
   loadBalancer?: ServiceArgs["loadBalancer"];
   image?: ServiceArgs["image"];
-  scaling: ServiceArgs["scaling"];
+  scaling?: ServiceArgs["scaling"];
 }
 
 export interface LaravelArgs extends ClusterArgs {
@@ -75,6 +73,21 @@ export interface LaravelArgs extends ClusterArgs {
     * Running horizon?
     */
     horizon?: Input<boolean>;
+
+    /**
+     * Running scheduler?
+     */
+    scheduler?: Input<boolean>;
+
+    /**
+     * Multiple daemons can be run in the queue.
+     */
+    daemons?: {
+      [key: string]: {
+        command: string;
+        dependencies?: string[];
+      }
+    }
   }
 
   /**
@@ -103,6 +116,9 @@ export class Laravel extends Component {
     const parent = this;
     const sitePath = args.path ?? '.';
     args.config = args.config ?? {};
+
+    const sstBuildPath = path.resolve(sitePath.toString(), '.sst/laravel');
+    // const sstBuildPath = path.resolve(sitePath.toString(), 'infra/sst-laravel/.build');
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
@@ -173,18 +189,56 @@ export class Laravel extends Component {
     }
 
     function addWorkerService() {
+      const absWorkerBuildPath = path.resolve(sstBuildPath, 'worker');
+
+      if (typeof args.queue === 'object' && args.queue.daemons) {
+        const s6RcDPath = path.resolve(absWorkerBuildPath, 's6-rc.d');
+        const s6UserContentsPath = path.resolve(absWorkerBuildPath,'s6-rc.d/user/contents.d');
+
+        fs.mkdirSync(s6UserContentsPath, { recursive: true });
+
+        if (args.queue.horizon) {
+          fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-horizon'), '');
+        }
+
+        if (args.queue.scheduler) {
+          fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-scheduler'), '');
+        }
+
+        Object.entries(args.queue.daemons).forEach(([name, config]) => {
+          const daemonDir = path.resolve(s6RcDPath, `${name}`);
+          fs.mkdirSync(daemonDir, { recursive: true });
+
+          const scriptSrcPath = path.join(daemonDir, 'script');
+
+          // Create the actual script file, with the command provided
+          fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\n${config.command}`, { mode: 0o777 });
+
+          // Create the files that s6 will execute
+          fs.writeFileSync(path.join(daemonDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${name}/script`, { mode: 0o777 });
+
+          fs.writeFileSync(path.join(daemonDir, 'type'), 'longrun');
+          fs.writeFileSync(path.join(daemonDir, 'dependencies'), (config.dependencies || []).join('\n'));
+        });
+      }
+
       const workerService = new sst.aws.Service(`${name}-Worker`, {
         cluster,
 
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker),
+        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker, {
+          'CUSTOM_FILES_PATH': absWorkerBuildPath,
+        }),
         scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
 
         dev: {
+          // TODO
           command: `php ${sitePath}/artisan horizon`,
         },
+      }, {
+        dependsOn: [],
       });
     }
 
@@ -211,7 +265,7 @@ export class Laravel extends Component {
     function getDefaultImage(imageType: ImageType, extraArgs: object = {}) {
       return {
         context: sitePath,
-        dockerfile: `./infra/laravel-sst/Dockerfile.${imageType}`,
+        dockerfile: `./infra/sst-laravel/Dockerfile.${imageType}`,
         args: {
           'PHP_VERSION': getPhpVersion().toString(),
           'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
