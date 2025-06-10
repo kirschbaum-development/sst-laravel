@@ -117,8 +117,8 @@ export class Laravel extends Component {
     const sitePath = args.path ?? '.';
     args.config = args.config ?? {};
 
-    const sstBuildPath = path.resolve(sitePath.toString(), '.sst/laravel');
-    // const sstBuildPath = path.resolve(sitePath.toString(), 'infra/sst-laravel/.build');
+    // const sstBuildPath = path.resolve(sitePath.toString(), '.sst/laravel');
+    const sstBuildPath = path.resolve(sitePath.toString(), 'infra/sst-laravel/.build');
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
@@ -229,7 +229,7 @@ export class Laravel extends Component {
          * Image passed or use our default provided image.
          */
         image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker, {
-          'CUSTOM_FILES_PATH': absWorkerBuildPath,
+          'CUSTOM_FILES_PATH': 'infra/sst-laravel/.build', // absWorkerBuildPath,
         }),
         scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
 
