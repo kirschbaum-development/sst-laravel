@@ -237,6 +237,19 @@ export class Laravel extends Component {
           // TODO
           command: `php ${sitePath}/artisan horizon`,
         },
+
+        transform: {
+          taskDefinition: (args) => {
+            args.containerDefinitions = (args.containerDefinitions as $util.Output<string>).apply(a => {
+              return JSON.stringify([{
+                ...JSON.parse(a)[0],
+                linuxParameters: {
+                  initProcessEnabled: false,
+                }
+              }]);
+            })
+          }
+        }
       }, {
         dependsOn: [],
       });

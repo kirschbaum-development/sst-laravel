@@ -43,7 +43,7 @@ COPY --from=s6-build /opt/s6/ /
 RUN apt-get update \
 && apt-get upgrade -y
 
-RUN install-php-extensions gd intl
+# RUN install-php-extensions gd intl
 
 ###################
 # Development image
