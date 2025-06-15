@@ -11,7 +11,7 @@ import { Dns } from "../../.sst/platform/src/components/dns.js";
 import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
 import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
 import { Email } from "../../.sst/platform/src/components/aws/email.js";
-import { applyLinkedResourcesEnv } from "./src/laravel-env.js";
+import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -42,14 +42,20 @@ export interface LaravelWebArgs {
 
   loadBalancer?: ServiceArgs["loadBalancer"];
   image?: ServiceArgs["image"];
-  scaling: ServiceArgs["scaling"];
+  scaling?: ServiceArgs["scaling"];
 }
 
 export interface LaravelArgs extends ClusterArgs {
 
   // dev?: false | DevArgs["dev"];
   path?: Input<string>;
-  link?: any[];
+  link?: Array<
+    | any
+    | {
+        resource: any;
+        environment?: EnvCallback;
+      }
+  >;
 
   /**
   * If enabled, a container will be created to handle HTTP traffic.
@@ -75,6 +81,12 @@ export interface LaravelArgs extends ClusterArgs {
     * Running horizon?
     */
     horizon?: Input<boolean>;
+
+    daemons?: Input<[
+      {
+        command: Input<string>,
+      }
+    ]>;
   }
 
   /**
@@ -249,10 +261,31 @@ export class Laravel extends Component {
 
     function applyLinkedResourcesToEnvironment() {
       const links = (args.link || []);
+      const resources: any[] = [];
+      const customEnv: Record<string, string | Output<string>> = {};
 
+      // Process links to separate resources and custom env callbacks
+      links.forEach(link => {
+        if (link && typeof link === 'object' && 'resource' in link) {
+          // Link is an object with resource and optional envCallback
+          resources.push(link.resource);
+
+          // If there's an envCallback, call it and merge the result
+          if (link.envCallback) {
+            const callbackResult = link.envCallback(link.resource);
+            Object.assign(customEnv, callbackResult);
+          }
+        } else {
+          // Link is just a resource
+          resources.push(link);
+        }
+      });
+
+      // Apply default environment variables for all resources
       args.config.environment = {
         ...args.config.environment,
-        ...applyLinkedResourcesEnv(links),
+        ...applyLinkedResourcesEnv(resources),
+        ...customEnv,
       };
     };
   };

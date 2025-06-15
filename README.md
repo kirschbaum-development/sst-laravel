@@ -73,6 +73,39 @@ const app = new Laravel('MyLaravelApp', {
 
 This will automatically inject the `DB_*`, `REDIS_*` and `MAIL_*` environment variables into your Laravel application, according to the created resources.
 
+#### Custom Environment Key Names
+
+If you need to customize the environment variable names, you can provide an object with the resource and a callback function in the `link` array:
+
+```js
+const app = new Laravel('MyLaravelApp', {
+    link: [
+        email, 
+        {
+            resource: database,
+            environment: (resource) => ({
+                // Custom environment variables for Postgres
+                CUSTOM_DB_HOST: resource.host,
+                CUSTOM_DB_NAME: resource.database,
+                CUSTOM_DB_USER: resource.username,
+                CUSTOM_DB_PASSWORD: resource.password,
+            })
+        },
+        {
+            resource: redis,
+            environment: (resource) => ({
+                // Custom environment variables for Redis
+                CUSTOM_REDIS_HOST: resource.host.apply(host => host ? `tls://${host}` : ''),
+                CUSTOM_REDIS_PORT: resource.port.apply(port => port.toString()),
+            })
+        }
+    ],
+    web: {}
+});
+```
+
+The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones.
+
 ### Extra configurations
 
 You can configure the PHP version, custom environment variables and a custom deployment script.

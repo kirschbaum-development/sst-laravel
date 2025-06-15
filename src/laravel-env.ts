@@ -10,35 +10,56 @@ type EnvType = Record<string, string | Output<string>>;
 type Database = Postgres | Aurora | pulumiAws.rds.Instance;
 type LinkSupportedTypes = Database | Email | Queue | Redis;
 
-export function applyLinkedResourcesEnv(links: LinkSupportedTypes[]): EnvType {
+export type EnvCallback = (resource: any) => EnvType;
+export type EnvCallbacks = {
+  postgres?: EnvCallback;
+  mysql?: EnvCallback;
+  redis?: EnvCallback;
+  email?: EnvCallback;
+  queue?: EnvCallback;
+};
+
+export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?: EnvCallbacks): EnvType {
   let environment: EnvType  = {};
 
   links.forEach((link: LinkSupportedTypes) => {
     if (link instanceof Postgres) {
+      const defaultEnv = applyDatabaseEnv(link);
+      
       environment = {
         ...environment,
-        ...applyDatabaseEnv(link),
+        ...defaultEnv,
+        ...(callbacks?.postgres ? callbacks.postgres(link) : {}),
       };
     }
 
     if (link instanceof Redis) {
+      const defaultEnv = applyRedisEnv(link);
+      
       environment = {
         ...environment,
-        ...applyRedisEnv(link),
+        ...defaultEnv,
+        ...(callbacks?.redis ? callbacks.redis(link) : {}),
       };
     }
 
     if (link instanceof Email) {
+      const defaultEnv = applyEmailEnv(link);
+      
       environment = {
         ...environment,
-        ...applyEmailEnv(link),
+        ...defaultEnv,
+        ...(callbacks?.email ? callbacks.email(link) : {}),
       };
     }
 
     if (link instanceof Queue) {
+      const defaultEnv = applyQueueEnv(link);
+      
       environment = {
         ...environment,
-        ...applyQueueEnv(link),
+        ...defaultEnv,
+        ...(callbacks?.queue ? callbacks.queue(link) : {}),
       };
     }
   });
@@ -46,7 +67,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[]): EnvType {
   return environment;
 }
 
-function applyDatabaseEnv(database: Database): EnvType {
+function applyDatabaseEnv(database: Database, callbacks?: EnvCallbacks): EnvType {
   let port: number;
   database.port.apply(value => port = value);
 
