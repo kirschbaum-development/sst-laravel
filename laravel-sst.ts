@@ -192,8 +192,8 @@ export class Laravel extends Component {
       const absWorkerBuildPath = path.resolve(sstBuildPath, 'worker');
 
       if (typeof args.queue === 'object' && args.queue.daemons) {
-        const s6RcDPath = path.resolve(absWorkerBuildPath, 's6-rc.d');
-        const s6UserContentsPath = path.resolve(absWorkerBuildPath,'s6-rc.d/user/contents.d');
+        const s6RcDPath = path.resolve(absWorkerBuildPath, 'etc/s6-overlay/s6-rc.d');
+        const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 
         fs.mkdirSync(s6UserContentsPath, { recursive: true });
 
@@ -219,6 +219,7 @@ export class Laravel extends Component {
 
           fs.writeFileSync(path.join(daemonDir, 'type'), 'longrun');
           fs.writeFileSync(path.join(daemonDir, 'dependencies'), (config.dependencies || []).join('\n'));
+          fs.writeFileSync(path.join(s6UserContentsPath, name), '');
         });
       }
 
@@ -229,7 +230,7 @@ export class Laravel extends Component {
          * Image passed or use our default provided image.
          */
         image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker, {
-          'CUSTOM_FILES_PATH': 'infra/sst-laravel/.build', // absWorkerBuildPath,
+          'CUSTOM_FILES_PATH': 'infra/sst-laravel/.build/worker', // absWorkerBuildPath,
         }),
         scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
 
