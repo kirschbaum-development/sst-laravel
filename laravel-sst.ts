@@ -82,12 +82,12 @@ export interface LaravelArgs extends ClusterArgs {
     /**
      * Multiple daemons can be run in the queue.
      */
-    daemons?: {
-      [key: string]: {
-        command: string;
-        dependencies?: string[];
-      }
-    }
+    daemons?: Input<{
+      [key: string]: Input<{
+        command: Input<string>;
+        dependencies?: Input<string[]>;
+      }>
+    }>
   }
 
   /**
