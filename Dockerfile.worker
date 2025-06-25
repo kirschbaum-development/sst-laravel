@@ -6,13 +6,15 @@ FROM serversideup/php:${PHP_VERSION}-cli AS phpcli
 ##########
 FROM phpcli AS s6-build
 
+ARG CONF_PATH
+
 USER root
 
 ARG S6_DIR='/opt/s6/'
 ARG S6_SRC_URL="https://github.com/just-containers/s6-overlay/releases/download"
 
 # copy our scripts
-COPY --chmod=755 infra/sst-laravel/conf/ /
+COPY --chmod=755 $CONF_PATH /
 
 RUN s6-install.sh
 
@@ -21,7 +23,8 @@ RUN s6-install.sh
 ############
 FROM phpcli AS base
 
-ARG CUSTOM_FILES_PATH
+ARG CONF_PATH
+ARG CUSTOM_CONF_PATH
 
 USER root
 
@@ -32,10 +35,10 @@ ENV AUTORUN_ENABLED=false
 ENV AUTORUN_LARAVEL_MIGRATION=false
 
 # copy our scripts
-RUN test -n "$CUSTOM_FILES_PATH"
+RUN test -n "$CUSTOM_CONF_PATH"
 
-COPY --chmod=755 infra/sst-laravel/conf/ /
-COPY --chmod=755 $CUSTOM_FILES_PATH /
+COPY --chmod=755 $CONF_PATH /
+COPY --chmod=755 $CUSTOM_CONF_PATH /
 
 # copy s6-overlay from s6-build
 COPY --from=s6-build /opt/s6/ /

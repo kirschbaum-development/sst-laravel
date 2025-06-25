@@ -113,12 +113,14 @@ export class Laravel extends Component {
   ) {
     super(__pulumiType, name, args, opts);
 
-    const parent = this;
-    const sitePath = args.path ?? '.';
     args.config = args.config ?? {};
+    const sitePath = args.path ?? '.';
+    const absSitePath = path.resolve(sitePath.toString());
+    // TODO: We need to update sst-laravel to whatever the real package name will be.
+    const nodeModulePath = path.resolve(__dirname, '../../node_modules/sst-laravel');
 
-    // const sstBuildPath = path.resolve(sitePath.toString(), '.sst/laravel');
-    const sstBuildPath = path.resolve(sitePath.toString(), 'infra/sst-laravel/.build');
+    // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
+    const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
@@ -146,9 +148,7 @@ export class Laravel extends Component {
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image
-          ? args.web.image
-          : getDefaultImage(ImageType.Web),
+        image: getImage( args.web?.image, ImageType.Web),
         environment: envVariables,
         scaling: args.web.scaling ?? null,
 
@@ -177,7 +177,7 @@ export class Laravel extends Component {
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Cli),
+        image: getImage(args.web?.image, ImageType.Cli),
 
         environment: getEnvironmentVariables(),
         scaling: typeof args.scheduler === 'object' ? args.scheduler.scaling : undefined,
@@ -189,7 +189,7 @@ export class Laravel extends Component {
     }
 
     function addWorkerService() {
-      const absWorkerBuildPath = path.resolve(sstBuildPath, 'worker');
+      const absWorkerBuildPath = path.resolve(pluginBuildPath, 'worker');
 
       if (typeof args.queue === 'object' && args.queue.daemons) {
         const s6RcDPath = path.resolve(absWorkerBuildPath, 'etc/s6-overlay/s6-rc.d');
@@ -223,15 +223,18 @@ export class Laravel extends Component {
         });
       }
 
+      const imgBuildArgs = {
+        'CONF_PATH': path.resolve(nodeModulePath, 'conf').replace(absSitePath, ''),
+        'CUSTOM_CONF_PATH': absWorkerBuildPath.replace(absSitePath, ''),
+      };
+
       const workerService = new sst.aws.Service(`${name}-Worker`, {
         cluster,
 
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker, {
-          'CUSTOM_FILES_PATH': 'infra/sst-laravel/.build/worker', // absWorkerBuildPath,
-        }),
+        image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
         scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
 
         dev: {
@@ -276,10 +279,55 @@ export class Laravel extends Component {
       return ports;
     }
 
+    // TODO: We have to test if it works when an image is provided in sst.config.js
+    function getImage(imgFromConfig: LaravelWebArgs["image"] | null | undefined, imgType: ImageType, extraArgs: object = {}) {
+      const img = imgFromConfig
+        ? imgFromConfig
+        : getDefaultImage(imgType, extraArgs);
+
+      const context = typeof img === 'string'
+        ? sitePath.toString()
+        : (img as { context: string }).context.toString();
+
+      const dockerfile = typeof img === 'string'
+        ? 'Dockerfile'
+        : (img as { dockerfile: string }).dockerfile;
+
+      // add .sst/laravel to .dockerignore if not exist
+      const dockerIgnore = (() => {
+        let filePath = path.join(context, `${dockerfile}.dockerignore`);
+        if (fs.existsSync(filePath)) return filePath;
+
+        filePath = path.join(context, ".dockerignore");
+        if (fs.existsSync(filePath)) return filePath;
+      })();
+
+      const content = dockerfile ? fs.readFileSync(dockerIgnore).toString() : "";
+
+      const lines = content.split("\n");
+
+      // SST adds it later, so we need to add it here to ensure .sst/laravel is after it and is not ignored
+      if (!lines.find((line) => line === ".sst")) {
+        fs.writeFileSync(
+          dockerIgnore,
+          [...lines, "", "# sst", "!.sst/laravel"].join("\n"),
+        );
+      }
+
+      if (!lines.find((line) => line === "!.sst/laravel")) {
+        fs.writeFileSync(
+          dockerIgnore,
+          [...lines, "", "# sst-laravel", "!.sst/laravel"].join("\n"),
+        );
+      }
+
+      return img;
+    }
+
     function getDefaultImage(imageType: ImageType, extraArgs: object = {}) {
       return {
         context: sitePath,
-        dockerfile: `./infra/sst-laravel/Dockerfile.${imageType}`,
+        dockerfile: path.resolve(nodeModulePath, `Dockerfile.${imageType}`).replace(absSitePath, '.'),
         args: {
           'PHP_VERSION': getPhpVersion().toString(),
           'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
