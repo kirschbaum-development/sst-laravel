@@ -1,5 +1,6 @@
 /// <reference path="./../../.sst/platform/config.d.ts" />
 
+<<<<<<< 1-multiple-daemons
 import * as path from 'path';
 import * as fs from 'fs';
 import {Component} from "../../.sst/platform/src/components/component.js";
@@ -10,6 +11,20 @@ import {ClusterArgs} from "../../.sst/platform/src/components/aws/cluster.js";
 import {ServiceArgs} from "../../.sst/platform/src/components/aws/service.js";
 import {Dns} from "../../.sst/platform/src/components/dns.js";
 import {applyLinkedResourcesEnv} from "./src/laravel-env.js";
+=======
+import { Component } from "../../.sst/platform/src/components/component.js";
+import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
+import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import { Input } from "../../.sst/platform/src/components/input.js";
+import { Link } from "../../.sst/platform/src/components/link.js";
+import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
+import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
+import { Dns } from "../../.sst/platform/src/components/dns.js";
+import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
+import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
+import { Email } from "../../.sst/platform/src/components/aws/email.js";
+import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
+>>>>>>> main
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -47,7 +62,13 @@ export interface LaravelArgs extends ClusterArgs {
 
   // dev?: false | DevArgs["dev"];
   path?: Input<string>;
-  link?: any[];
+  link?: Array<
+    | any
+    | {
+        resource: any;
+        environment?: EnvCallback;
+      }
+  >;
 
   /**
   * If enabled, a container will be created to handle HTTP traffic.
@@ -74,6 +95,7 @@ export interface LaravelArgs extends ClusterArgs {
     */
     horizon?: Input<boolean>;
 
+<<<<<<< 1-multiple-daemons
     /**
      * Running scheduler?
      */
@@ -88,6 +110,13 @@ export interface LaravelArgs extends ClusterArgs {
         dependencies?: Input<string[]>;
       }>
     }>
+=======
+    daemons?: Input<[
+      {
+        command: Input<string>,
+      }
+    ]>;
+>>>>>>> main
   }
 
   /**
@@ -365,10 +394,31 @@ export class Laravel extends Component {
 
     function applyLinkedResourcesToEnvironment() {
       const links = (args.link || []);
+      const resources: any[] = [];
+      const customEnv: Record<string, string | Output<string>> = {};
 
+      // Process links to separate resources and custom env callbacks
+      links.forEach(link => {
+        if (link && typeof link === 'object' && 'resource' in link) {
+          // Link is an object with resource and optional envCallback
+          resources.push(link.resource);
+
+          // If there's an envCallback, call it and merge the result
+          if (link.envCallback) {
+            const callbackResult = link.envCallback(link.resource);
+            Object.assign(customEnv, callbackResult);
+          }
+        } else {
+          // Link is just a resource
+          resources.push(link);
+        }
+      });
+
+      // Apply default environment variables for all resources
       args.config.environment = {
         ...args.config.environment,
-        ...applyLinkedResourcesEnv(links),
+        ...applyLinkedResourcesEnv(resources),
+        ...customEnv,
       };
     };
   };
