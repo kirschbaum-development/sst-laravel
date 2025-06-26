@@ -1,30 +1,18 @@
 /// <reference path="./../../.sst/platform/config.d.ts" />
 
-<<<<<<< 1-multiple-daemons
 import * as path from 'path';
 import * as fs from 'fs';
 import {Component} from "../../.sst/platform/src/components/component.js";
 import {FunctionArgs} from "../../.sst/platform/src/components/aws/function.js";
-import {ComponentResourceOptions} from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
 import {Input} from "../../.sst/platform/src/components/input.js";
 import {ClusterArgs} from "../../.sst/platform/src/components/aws/cluster.js";
 import {ServiceArgs} from "../../.sst/platform/src/components/aws/service.js";
 import {Dns} from "../../.sst/platform/src/components/dns.js";
-import {applyLinkedResourcesEnv} from "./src/laravel-env.js";
-=======
-import { Component } from "../../.sst/platform/src/components/component.js";
-import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
-import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import { Input } from "../../.sst/platform/src/components/input.js";
-import { Link } from "../../.sst/platform/src/components/link.js";
-import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
-import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
-import { Dns } from "../../.sst/platform/src/components/dns.js";
 import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
 import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
 import { Email } from "../../.sst/platform/src/components/aws/email.js";
 import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
->>>>>>> main
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -95,7 +83,6 @@ export interface LaravelArgs extends ClusterArgs {
     */
     horizon?: Input<boolean>;
 
-<<<<<<< 1-multiple-daemons
     /**
      * Running scheduler?
      */
@@ -109,14 +96,7 @@ export interface LaravelArgs extends ClusterArgs {
         command: Input<string>;
         dependencies?: Input<string[]>;
       }>
-    }>
-=======
-    daemons?: Input<[
-      {
-        command: Input<string>,
-      }
-    ]>;
->>>>>>> main
+    }>;
   }
 
   /**
