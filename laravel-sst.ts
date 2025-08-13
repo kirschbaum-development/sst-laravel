@@ -2,13 +2,14 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
-import {Component} from "../../.sst/platform/src/components/component.js";
-import {FunctionArgs} from "../../.sst/platform/src/components/aws/function.js";
+import { Component } from "../../.sst/platform/src/components/component.js";
+import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
 import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import {Input} from "../../.sst/platform/src/components/input.js";
-import {ClusterArgs} from "../../.sst/platform/src/components/aws/cluster.js";
-import {ServiceArgs} from "../../.sst/platform/src/components/aws/service.js";
-import {Dns} from "../../.sst/platform/src/components/dns.js";
+import { Input } from "../../.sst/platform/src/components/input.js";
+import { Link } from "../../.sst/platform/src/components/link.js";
+import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
+import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
+import { Dns } from "../../.sst/platform/src/components/dns.js";
 import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
 import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
 import { Email } from "../../.sst/platform/src/components/aws/email.js";
@@ -72,9 +73,9 @@ export interface LaravelArgs extends ClusterArgs {
   },
 
   /**
-  * Queue settings.
+  * Worker settings.
   */
-  queue?: boolean | {
+  worker?: boolean | {
     link?: ServiceArgs["link"],
     scaling?: ServiceArgs["scaling"],
 
@@ -96,7 +97,7 @@ export interface LaravelArgs extends ClusterArgs {
         command: Input<string>;
         dependencies?: Input<string[]>;
       }>
-    }>;
+    }>
   }
 
   /**
@@ -139,7 +140,7 @@ export class Laravel extends Component {
       addWebService();
     }
 
-    if (args.queue) {
+    if (args.worker) {
       addWorkerService();
     }
 
@@ -200,28 +201,28 @@ export class Laravel extends Component {
     function addWorkerService() {
       const absWorkerBuildPath = path.resolve(pluginBuildPath, 'worker');
 
-      if (typeof args.queue === 'object' && args.queue.daemons) {
+      if (typeof args.worker === 'object' && args.worker.daemons) {
         const s6RcDPath = path.resolve(absWorkerBuildPath, 'etc/s6-overlay/s6-rc.d');
         const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 
         fs.mkdirSync(s6UserContentsPath, { recursive: true });
 
-        if (args.queue.horizon) {
+        if (args.worker.horizon) {
           fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-horizon'), '');
         }
 
-        if (args.queue.scheduler) {
+        if (args.worker.scheduler) {
           fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-scheduler'), '');
         }
 
-        Object.entries(args.queue.daemons).forEach(([name, config]) => {
+        Object.entries(args.worker.daemons).forEach(([name, config]) => {
           const daemonDir = path.resolve(s6RcDPath, `${name}`);
           fs.mkdirSync(daemonDir, { recursive: true });
 
           const scriptSrcPath = path.join(daemonDir, 'script');
 
           // Create the actual script file, with the command provided
-          fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\n${config.command}`, { mode: 0o777 });
+          fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`, { mode: 0o777 });
 
           // Create the files that s6 will execute
           fs.writeFileSync(path.join(daemonDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${name}/script`, { mode: 0o777 });
@@ -244,7 +245,7 @@ export class Laravel extends Component {
          * Image passed or use our default provided image.
          */
         image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
-        scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
+        scaling: typeof args.worker === 'object' ? args.worker.scaling : undefined,
 
         dev: {
           // TODO
@@ -350,13 +351,13 @@ export class Laravel extends Component {
     };
 
     function getPhpVersion() {
-      return args.config.php ?? 8.4;
+      return args.config?.php ?? 8.4;
     }
 
     function getEnvironmentVariables() {
       applyLinkedResourcesToEnvironment();
 
-      const env = args.config.environment || {};
+      const env = args.config?.environment || {};
 
       if (args.web?.domain) {
         if (typeof args.web.domain === 'string') {
