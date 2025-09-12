@@ -63,9 +63,9 @@ export interface LaravelWorkerConfig {
   scheduler?: Input<boolean>;
 
   /**
-   * Multiple daemons can be run in the queue.
+   * Multiple tasks can be run in the worker.
    */
-  daemons?: Input<{
+  tasks?: Input<{
     [key: string]: Input<{
       command: Input<string>;
       dependencies?: Input<string[]>;
@@ -74,7 +74,6 @@ export interface LaravelWorkerConfig {
 }
 
 export interface LaravelArgs extends ClusterArgs {
-
   // dev?: false | DevArgs["dev"];
   path?: Input<string>;
   link?: Array<
@@ -210,38 +209,44 @@ export class Laravel extends Component {
       });
     }
 
-    function createWorkerDaemons(workerConfig: LaravelWorkerConfig, workerBuildPath: string) {
-      if (!workerConfig.daemons) return;
-
+    function createWorkerTasks(workerConfig: LaravelWorkerConfig, workerBuildPath: string) {
       const s6RcDPath = path.resolve(workerBuildPath, 'etc/s6-overlay/s6-rc.d');
       const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 
       fs.mkdirSync(s6UserContentsPath, { recursive: true });
 
+      const tasks: Record<string, { command: string; dependencies?: string[] }> = {
+        ...((workerConfig.tasks as any) ?? {}),
+      };
+
       if (workerConfig.horizon) {
-        fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-horizon'), '');
+        tasks['laravel-horizon'] = {
+          command: 'php artisan horizon',
+        };
       }
 
       if (workerConfig.scheduler) {
-        fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-scheduler'), '');
+        tasks['laravel-scheduler'] = {
+          command: 'php artisan schedule:work',
+        };
       }
 
-      Object.entries(workerConfig.daemons).forEach(([daemonName, config]) => {
-        const daemonDir = path.resolve(s6RcDPath, `${daemonName}`);
-        fs.mkdirSync(daemonDir, { recursive: true });
+      Object.entries(tasks).forEach(([taskName, config]) => {
+        const tasksDir = path.resolve(s6RcDPath, `${taskName}`);
+        fs.mkdirSync(tasksDir, { recursive: true });
 
-        const scriptSrcPath = path.join(daemonDir, 'script');
+        const scriptSrcPath = path.join(tasksDir, 'script');
 
         fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`, { mode: 0o777 });
-        fs.writeFileSync(path.join(daemonDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${daemonName}/script`, { mode: 0o777 });
-        fs.writeFileSync(path.join(daemonDir, 'type'), 'longrun');
-        fs.writeFileSync(path.join(daemonDir, 'dependencies'), (config.dependencies || []).join('\n'));
-        fs.writeFileSync(path.join(s6UserContentsPath, daemonName), '');
+        fs.writeFileSync(path.join(tasksDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${taskName}/script`, { mode: 0o777 });
+        fs.writeFileSync(path.join(tasksDir, 'type'), 'longrun');
+        fs.writeFileSync(path.join(tasksDir, 'dependencies'), (config.dependencies || []).join('\n'));
+        fs.writeFileSync(path.join(s6UserContentsPath, taskName), '');
       });
     }
 
     function createWorkerService(workerConfig: LaravelWorkerConfig, serviceName: string, workerBuildPath: string) {
-      createWorkerDaemons(workerConfig, workerBuildPath);
+      createWorkerTasks(workerConfig, workerBuildPath);
 
       const imgBuildArgs = {
         'CONF_PATH': path.resolve(nodeModulePath, 'conf').replace(absSitePath, ''),
@@ -286,6 +291,7 @@ export class Laravel extends Component {
       args.workers?.forEach((workerConfig, index) => {
         const workerName = workerConfig.name || `worker-${index + 1}`;
         const absWorkerBuildPath = path.resolve(pluginBuildPath, `worker-${workerName}`);
+        console.log('absWorkerBuildPath', absWorkerBuildPath);
 
         createWorkerService(workerConfig, `${name}-${workerName}`, absWorkerBuildPath);
       });
