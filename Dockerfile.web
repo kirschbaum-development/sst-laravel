@@ -45,7 +45,6 @@ FROM base as deploy
 ENV CONTAINER_TYPE=web
 
 COPY --chown=www-data:www-data . /var/www/html
-COPY --chmod=755 infra/deploy.sh /etc/entrypoint.d/60-deploy.sh
 
 # Drop back to our unprivileged user
 USER www-data

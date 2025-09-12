@@ -1,0 +1,33 @@
+#!/bin/sh
+set -oue
+
+######################
+# Usage: s6-install.sh
+######################
+
+# BASED ON https://github.com/serversideup/docker-php/blob/main/src/s6/usr/local/bin/docker-php-serversideup-s6-install
+# This script is used to install S6 Overlay. It is intended to be used during the build process only.
+# Be sure to set the S6_SRC_URL, S6_SRC_DEP, and S6_DIR  environment variables before running this script.
+
+S6_VERSION=v3.2.0.2
+mkdir -p $S6_DIR
+export SYS_ARCH=$(uname -m)
+case "$SYS_ARCH" in
+    aarch64 ) export S6_ARCH='aarch64' ;;
+    arm64   ) export S6_ARCH='aarch64' ;;
+    armhf   ) export S6_ARCH='armhf'   ;;
+    arm*    ) export S6_ARCH='arm'     ;;
+    i4*     ) export S6_ARCH='i486'    ;;
+    i6*     ) export S6_ARCH='i686'    ;;
+    s390*   ) export S6_ARCH='s390x'   ;;
+    *       ) export S6_ARCH='x86_64'  ;;
+esac
+
+untar() {
+    echo "⏬ Downloading $1"
+    curl -L $1 -o - | tar Jxp -C $S6_DIR
+}
+
+echo "⬇️ Downloading s6 overlay:${S6_ARCH}-${S6_VERSION} for ${SYS_ARCH}"
+untar ${S6_SRC_URL}/${S6_VERSION}/s6-overlay-noarch.tar.xz
+untar ${S6_SRC_URL}/${S6_VERSION}/s6-overlay-${S6_ARCH}.tar.xz

@@ -1,5 +1,7 @@
 /// <reference path="./../../.sst/platform/config.d.ts" />
 
+import * as path from 'path';
+import * as fs from 'fs';
 import { Component } from "../../.sst/platform/src/components/component.js";
 import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
 import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
@@ -45,8 +47,33 @@ export interface LaravelWebArgs {
   scaling?: ServiceArgs["scaling"];
 }
 
-export interface LaravelArgs extends ClusterArgs {
+export interface LaravelWorkerConfig {
+  name?: Input<string>;
+  link?: ServiceArgs["link"];
+  scaling?: ServiceArgs["scaling"];
 
+  /**
+  * Running horizon?
+  */
+  horizon?: Input<boolean>;
+
+  /**
+   * Running scheduler?
+   */
+  scheduler?: Input<boolean>;
+
+  /**
+   * Multiple tasks can be run in the worker.
+   */
+  tasks?: Input<{
+    [key: string]: Input<{
+      command: Input<string>;
+      dependencies?: Input<string[]>;
+    }>
+  }>
+}
+
+export interface LaravelArgs extends ClusterArgs {
   // dev?: false | DevArgs["dev"];
   path?: Input<string>;
   link?: Array<
@@ -63,31 +90,9 @@ export interface LaravelArgs extends ClusterArgs {
   web?: LaravelWebArgs;
 
   /**
-  * If enabled, Laravel Scheduler will run on an isolated container.
+  * Multiple workers settings.
   */
-  scheduler?: boolean | {
-    link?: ServiceArgs["link"],
-    scaling?: ServiceArgs["scaling"],
-  },
-
-  /**
-  * Queue settings.
-  */
-  queue?: boolean | {
-    link?: ServiceArgs["link"],
-    scaling?: ServiceArgs["scaling"],
-
-    /**
-    * Running horizon?
-    */
-    horizon?: Input<boolean>;
-
-    daemons?: Input<[
-      {
-        command: Input<string>,
-      }
-    ]>;
-  }
+  workers?: LaravelWorkerConfig[];
 
   /**
    * Config settings.
@@ -112,9 +117,14 @@ export class Laravel extends Component {
   ) {
     super(__pulumiType, name, args, opts);
 
-    const parent = this;
-    const sitePath = args.path ?? '.';
     args.config = args.config ?? {};
+    const sitePath = args.path ?? '.';
+    const absSitePath = path.resolve(sitePath.toString());
+    // TODO: We need to update sst-laravel to whatever the real package name will be.
+    const nodeModulePath = path.resolve(__dirname, '../../node_modules/sst-laravel');
+
+    // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
+    const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
@@ -124,12 +134,8 @@ export class Laravel extends Component {
       addWebService();
     }
 
-    if (args.queue) {
-      addWorkerService();
-    }
-
-    if (args.scheduler) {
-      addCliService();
+    if (args.workers) {
+      addWorkerServices();
     }
 
     function addWebService() {
@@ -142,11 +148,9 @@ export class Laravel extends Component {
         /**
          * Image passed or use our default provided image.
          */
-        image: args.web && args.web.image
-          ? args.web.image
-          : getDefaultImage(ImageType.Web),
+        image: getImage( args.web?.image, ImageType.Web),
         environment: envVariables,
-        scaling: args.web.scaling ?? null,
+        scaling: args.web?.scaling,
 
         loadBalancer: args.web && args.web.loadBalancer ? args.web.loadBalancer : {
           domain: args.web?.domain,
@@ -166,37 +170,84 @@ export class Laravel extends Component {
       });
     }
 
-    function addCliService() {
-      const cliService = new sst.aws.Service(`${name}-Cli`, {
-        cluster,
+    function createWorkerTasks(workerConfig: LaravelWorkerConfig, workerBuildPath: string) {
+      const s6RcDPath = path.resolve(workerBuildPath, 'etc/s6-overlay/s6-rc.d');
+      const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 
-        /**
-         * Image passed or use our default provided image.
-         */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Cli),
+      fs.mkdirSync(s6UserContentsPath, { recursive: true });
 
-        environment: getEnvironmentVariables(),
-        scaling: typeof args.scheduler === 'object' ? args.scheduler.scaling : undefined,
+      const tasks: Record<string, { command: string; dependencies?: string[] }> = {
+        ...((workerConfig.tasks as any) ?? {}),
+      };
 
-        dev: {
-          command: `php ${sitePath}/artisan schedule:work`,
-        },
+      if (workerConfig.horizon) {
+        tasks['laravel-horizon'] = {
+          command: 'php artisan horizon',
+        };
+      }
+
+      if (workerConfig.scheduler) {
+        tasks['laravel-scheduler'] = {
+          command: 'php artisan schedule:work',
+        };
+      }
+
+      Object.entries(tasks).forEach(([taskName, config]) => {
+        const tasksDir = path.resolve(s6RcDPath, `${taskName}`);
+        fs.mkdirSync(tasksDir, { recursive: true });
+
+        const scriptSrcPath = path.join(tasksDir, 'script');
+
+        fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`, { mode: 0o777 });
+        fs.writeFileSync(path.join(tasksDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${taskName}/script`, { mode: 0o777 });
+        fs.writeFileSync(path.join(tasksDir, 'type'), 'longrun');
+        fs.writeFileSync(path.join(tasksDir, 'dependencies'), (config.dependencies || []).join('\n'));
+        fs.writeFileSync(path.join(s6UserContentsPath, taskName), '');
       });
     }
 
-    function addWorkerService() {
-      const workerService = new sst.aws.Service(`${name}-Worker`, {
-        cluster,
+    function createWorkerService(workerConfig: LaravelWorkerConfig, serviceName: string, workerBuildPath: string) {
+      createWorkerTasks(workerConfig, workerBuildPath);
 
-        /**
-         * Image passed or use our default provided image.
-         */
-        image: args.web && args.web.image ? args.web.image : getDefaultImage(ImageType.Worker),
-        scaling: typeof args.queue === 'object' ? args.queue.scaling : undefined,
+      const imgBuildArgs = {
+        'CONF_PATH': path.resolve(nodeModulePath, 'conf').replace(absSitePath, ''),
+        'CUSTOM_CONF_PATH': workerBuildPath.replace(absSitePath, ''),
+      };
+
+      return new sst.aws.Service(serviceName, {
+        cluster,
+        image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
+        scaling: workerConfig.scaling,
+        environment: getEnvironmentVariables(),
 
         dev: {
           command: `php ${sitePath}/artisan horizon`,
         },
+
+        transform: {
+          taskDefinition: (args) => {
+            args.containerDefinitions = (args.containerDefinitions as $util.Output<string>).apply(a => {
+              return JSON.stringify([{
+                ...JSON.parse(a)[0],
+                linuxParameters: {
+                  initProcessEnabled: false,
+                }
+              }]);
+            })
+          }
+        }
+      }, {
+        dependsOn: [],
+      });
+    }
+
+    function addWorkerServices() {
+      args.workers?.forEach((workerConfig, index) => {
+        const workerName = workerConfig.name || `worker-${index + 1}`;
+        const absWorkerBuildPath = path.resolve(pluginBuildPath, `worker-${workerName}`);
+        console.log('absWorkerBuildPath', absWorkerBuildPath);
+
+        createWorkerService(workerConfig, `${name}-${workerName}`, absWorkerBuildPath);
       });
     }
 
@@ -220,10 +271,57 @@ export class Laravel extends Component {
       return ports;
     }
 
+    // TODO: We have to test if it works when an image is provided in sst.config.js
+    function getImage(imgFromConfig: LaravelWebArgs["image"] | null | undefined, imgType: ImageType, extraArgs: object = {}) {
+      const img = imgFromConfig
+        ? imgFromConfig
+        : getDefaultImage(imgType, extraArgs);
+
+      const context = typeof img === 'string'
+        ? sitePath.toString()
+        : (img as { context: string }).context.toString();
+
+      const dockerfile = typeof img === 'string'
+        ? 'Dockerfile'
+        : (img as { dockerfile: string }).dockerfile;
+
+      // add .sst/laravel to .dockerignore if not exist
+      const dockerIgnore = (() => {
+        let filePath = path.join(context, `${dockerfile}.dockerignore`);
+        if (fs.existsSync(filePath)) return filePath;
+
+        filePath = path.join(context, ".dockerignore");
+        if (fs.existsSync(filePath)) return filePath;
+      })();
+
+      const content = dockerIgnore ? fs.readFileSync(dockerIgnore).toString() : "";
+
+      const lines = content.split("\n");
+
+      // SST adds it later, so we need to add it here to ensure .sst/laravel is after it and is not ignored
+      if (dockerIgnore) {
+        if (!lines.find((line) => line === ".sst")) {
+          fs.writeFileSync(
+            dockerIgnore,
+            [...lines, "", "# sst", "!.sst/laravel"].join("\n"),
+          );
+        }
+
+        if (!lines.find((line) => line === "!.sst/laravel")) {
+          fs.writeFileSync(
+            dockerIgnore,
+            [...lines, "", "# sst-laravel", "!.sst/laravel"].join("\n"),
+          );
+        }
+      }
+
+      return img;
+    }
+
     function getDefaultImage(imageType: ImageType, extraArgs: object = {}) {
       return {
         context: sitePath,
-        dockerfile: `./infra/laravel-sst/Dockerfile.${imageType}`,
+        dockerfile: path.resolve(nodeModulePath, `Dockerfile.${imageType}`).replace(absSitePath, '.'),
         args: {
           'PHP_VERSION': getPhpVersion().toString(),
           'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
@@ -237,23 +335,18 @@ export class Laravel extends Component {
     };
 
     function getPhpVersion() {
-      return args.config.php ?? 8.4;
+      return args.config?.php ?? 8.4;
     }
 
     function getEnvironmentVariables() {
       applyLinkedResourcesToEnvironment();
 
-      const env = args.config.environment || {};
+      const env = args.config?.environment || {};
 
       if (args.web?.domain) {
         if (typeof args.web.domain === 'string') {
-          env['APP_URL'] = args.web.domain;
+          (env as any)['APP_URL'] = args.web.domain;
         }
-
-        // figure out why TS is complaining about this
-        // if (typeof args.web.domain !== 'string' && args.web.domain !== undefined) {
-        //   args.config.environment['APP_URL'] = args.web.domain.name;
-        // }
       }
 
       return env;
@@ -282,6 +375,7 @@ export class Laravel extends Component {
       });
 
       // Apply default environment variables for all resources
+      if (!args.config) args.config = {};
       args.config.environment = {
         ...args.config.environment,
         ...applyLinkedResourcesEnv(resources),

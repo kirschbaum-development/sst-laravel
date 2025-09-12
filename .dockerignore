@@ -1,3 +1,4 @@
 # sst
-.sst
+.sst/**
+!.sst/laravel
 .env
