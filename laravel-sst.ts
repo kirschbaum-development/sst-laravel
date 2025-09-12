@@ -47,6 +47,32 @@ export interface LaravelWebArgs {
   scaling?: ServiceArgs["scaling"];
 }
 
+export interface LaravelWorkerConfig {
+  name?: Input<string>;
+  link?: ServiceArgs["link"];
+  scaling?: ServiceArgs["scaling"];
+
+  /**
+  * Running horizon?
+  */
+  horizon?: Input<boolean>;
+
+  /**
+   * Running scheduler?
+   */
+  scheduler?: Input<boolean>;
+
+  /**
+   * Multiple daemons can be run in the queue.
+   */
+  daemons?: Input<{
+    [key: string]: Input<{
+      command: Input<string>;
+      dependencies?: Input<string[]>;
+    }>
+  }>
+}
+
 export interface LaravelArgs extends ClusterArgs {
 
   // dev?: false | DevArgs["dev"];
@@ -75,30 +101,12 @@ export interface LaravelArgs extends ClusterArgs {
   /**
   * Worker settings.
   */
-  worker?: boolean | {
-    link?: ServiceArgs["link"],
-    scaling?: ServiceArgs["scaling"],
+  worker?: boolean | LaravelWorkerConfig;
 
-    /**
-    * Running horizon?
-    */
-    horizon?: Input<boolean>;
-
-    /**
-     * Running scheduler?
-     */
-    scheduler?: Input<boolean>;
-
-    /**
-     * Multiple daemons can be run in the queue.
-     */
-    daemons?: Input<{
-      [key: string]: Input<{
-        command: Input<string>;
-        dependencies?: Input<string[]>;
-      }>
-    }>
-  }
+  /**
+  * Multiple workers settings.
+  */
+  workers?: LaravelWorkerConfig[];
 
   /**
    * Config settings.
@@ -144,6 +152,10 @@ export class Laravel extends Component {
       addWorkerService();
     }
 
+    if (args.workers) {
+      addWorkerServices();
+    }
+
     if (args.scheduler) {
       addCliService();
     }
@@ -160,7 +172,7 @@ export class Laravel extends Component {
          */
         image: getImage( args.web?.image, ImageType.Web),
         environment: envVariables,
-        scaling: args.web.scaling ?? null,
+        scaling: args.web?.scaling,
 
         loadBalancer: args.web && args.web.loadBalancer ? args.web.loadBalancer : {
           domain: args.web?.domain,
@@ -198,57 +210,51 @@ export class Laravel extends Component {
       });
     }
 
-    function addWorkerService() {
-      const absWorkerBuildPath = path.resolve(pluginBuildPath, 'worker');
+    function createWorkerDaemons(workerConfig: LaravelWorkerConfig, workerBuildPath: string) {
+      if (!workerConfig.daemons) return;
 
-      if (typeof args.worker === 'object' && args.worker.daemons) {
-        const s6RcDPath = path.resolve(absWorkerBuildPath, 'etc/s6-overlay/s6-rc.d');
-        const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
+      const s6RcDPath = path.resolve(workerBuildPath, 'etc/s6-overlay/s6-rc.d');
+      const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 
-        fs.mkdirSync(s6UserContentsPath, { recursive: true });
+      fs.mkdirSync(s6UserContentsPath, { recursive: true });
 
-        if (args.worker.horizon) {
-          fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-horizon'), '');
-        }
-
-        if (args.worker.scheduler) {
-          fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-scheduler'), '');
-        }
-
-        Object.entries(args.worker.daemons).forEach(([name, config]) => {
-          const daemonDir = path.resolve(s6RcDPath, `${name}`);
-          fs.mkdirSync(daemonDir, { recursive: true });
-
-          const scriptSrcPath = path.join(daemonDir, 'script');
-
-          // Create the actual script file, with the command provided
-          fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`, { mode: 0o777 });
-
-          // Create the files that s6 will execute
-          fs.writeFileSync(path.join(daemonDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${name}/script`, { mode: 0o777 });
-
-          fs.writeFileSync(path.join(daemonDir, 'type'), 'longrun');
-          fs.writeFileSync(path.join(daemonDir, 'dependencies'), (config.dependencies || []).join('\n'));
-          fs.writeFileSync(path.join(s6UserContentsPath, name), '');
-        });
+      if (workerConfig.horizon) {
+        fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-horizon'), '');
       }
+
+      if (workerConfig.scheduler) {
+        fs.writeFileSync(path.join(s6UserContentsPath, 'laravel-scheduler'), '');
+      }
+
+      Object.entries(workerConfig.daemons).forEach(([daemonName, config]) => {
+        const daemonDir = path.resolve(s6RcDPath, `${daemonName}`);
+        fs.mkdirSync(daemonDir, { recursive: true });
+
+        const scriptSrcPath = path.join(daemonDir, 'script');
+
+        fs.writeFileSync(scriptSrcPath, `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`, { mode: 0o777 });
+        fs.writeFileSync(path.join(daemonDir, 'run'), `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${daemonName}/script`, { mode: 0o777 });
+        fs.writeFileSync(path.join(daemonDir, 'type'), 'longrun');
+        fs.writeFileSync(path.join(daemonDir, 'dependencies'), (config.dependencies || []).join('\n'));
+        fs.writeFileSync(path.join(s6UserContentsPath, daemonName), '');
+      });
+    }
+
+    function createWorkerService(workerConfig: LaravelWorkerConfig, serviceName: string, workerBuildPath: string) {
+      createWorkerDaemons(workerConfig, workerBuildPath);
 
       const imgBuildArgs = {
         'CONF_PATH': path.resolve(nodeModulePath, 'conf').replace(absSitePath, ''),
-        'CUSTOM_CONF_PATH': absWorkerBuildPath.replace(absSitePath, ''),
+        'CUSTOM_CONF_PATH': workerBuildPath.replace(absSitePath, ''),
       };
 
-      const workerService = new sst.aws.Service(`${name}-Worker`, {
+      return new sst.aws.Service(serviceName, {
         cluster,
-
-        /**
-         * Image passed or use our default provided image.
-         */
         image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
-        scaling: typeof args.worker === 'object' ? args.worker.scaling : undefined,
+        scaling: workerConfig.scaling,
+        environment: getEnvironmentVariables(),
 
         dev: {
-          // TODO
           command: `php ${sitePath}/artisan horizon`,
         },
 
@@ -266,6 +272,22 @@ export class Laravel extends Component {
         }
       }, {
         dependsOn: [],
+      });
+    }
+
+    function addWorkerService() {
+      const workerConfig = typeof args.worker === 'object' ? args.worker : {};
+      const absWorkerBuildPath = path.resolve(pluginBuildPath, 'worker');
+
+      createWorkerService(workerConfig, `${name}-Worker`, absWorkerBuildPath);
+    }
+
+    function addWorkerServices() {
+      args.workers?.forEach((workerConfig, index) => {
+        const workerName = workerConfig.name || `worker-${index + 1}`;
+        const absWorkerBuildPath = path.resolve(pluginBuildPath, `worker-${workerName}`);
+
+        createWorkerService(workerConfig, `${name}-${workerName}`, absWorkerBuildPath);
       });
     }
 
@@ -312,23 +334,25 @@ export class Laravel extends Component {
         if (fs.existsSync(filePath)) return filePath;
       })();
 
-      const content = dockerfile ? fs.readFileSync(dockerIgnore).toString() : "";
+      const content = dockerIgnore ? fs.readFileSync(dockerIgnore).toString() : "";
 
       const lines = content.split("\n");
 
       // SST adds it later, so we need to add it here to ensure .sst/laravel is after it and is not ignored
-      if (!lines.find((line) => line === ".sst")) {
-        fs.writeFileSync(
-          dockerIgnore,
-          [...lines, "", "# sst", "!.sst/laravel"].join("\n"),
-        );
-      }
+      if (dockerIgnore) {
+        if (!lines.find((line) => line === ".sst")) {
+          fs.writeFileSync(
+            dockerIgnore,
+            [...lines, "", "# sst", "!.sst/laravel"].join("\n"),
+          );
+        }
 
-      if (!lines.find((line) => line === "!.sst/laravel")) {
-        fs.writeFileSync(
-          dockerIgnore,
-          [...lines, "", "# sst-laravel", "!.sst/laravel"].join("\n"),
-        );
+        if (!lines.find((line) => line === "!.sst/laravel")) {
+          fs.writeFileSync(
+            dockerIgnore,
+            [...lines, "", "# sst-laravel", "!.sst/laravel"].join("\n"),
+          );
+        }
       }
 
       return img;
@@ -361,13 +385,8 @@ export class Laravel extends Component {
 
       if (args.web?.domain) {
         if (typeof args.web.domain === 'string') {
-          env['APP_URL'] = args.web.domain;
+          (env as any)['APP_URL'] = args.web.domain;
         }
-
-        // figure out why TS is complaining about this
-        // if (typeof args.web.domain !== 'string' && args.web.domain !== undefined) {
-        //   args.config.environment['APP_URL'] = args.web.domain.name;
-        // }
       }
 
       return env;
@@ -396,6 +415,7 @@ export class Laravel extends Component {
       });
 
       // Apply default environment variables for all resources
+      if (!args.config) args.config = {};
       args.config.environment = {
         ...args.config.environment,
         ...applyLinkedResourcesEnv(resources),
