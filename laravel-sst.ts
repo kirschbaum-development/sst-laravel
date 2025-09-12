@@ -90,19 +90,6 @@ export interface LaravelArgs extends ClusterArgs {
   web?: LaravelWebArgs;
 
   /**
-  * If enabled, Laravel Scheduler will run on an isolated container.
-  */
-  scheduler?: boolean | {
-    link?: ServiceArgs["link"],
-    scaling?: ServiceArgs["scaling"],
-  },
-
-  /**
-  * Worker settings.
-  */
-  worker?: boolean | LaravelWorkerConfig;
-
-  /**
   * Multiple workers settings.
   */
   workers?: LaravelWorkerConfig[];
@@ -147,16 +134,8 @@ export class Laravel extends Component {
       addWebService();
     }
 
-    if (args.worker) {
-      addWorkerService();
-    }
-
     if (args.workers) {
       addWorkerServices();
-    }
-
-    if (args.scheduler) {
-      addCliService();
     }
 
     function addWebService() {
@@ -187,24 +166,6 @@ export class Laravel extends Component {
 
         dev: {
           command: `php ${sitePath}/artisan serve`,
-        },
-      });
-    }
-
-    function addCliService() {
-      const cliService = new sst.aws.Service(`${name}-Cli`, {
-        cluster,
-
-        /**
-         * Image passed or use our default provided image.
-         */
-        image: getImage(args.web?.image, ImageType.Cli),
-
-        environment: getEnvironmentVariables(),
-        scaling: typeof args.scheduler === 'object' ? args.scheduler.scaling : undefined,
-
-        dev: {
-          command: `php ${sitePath}/artisan schedule:work`,
         },
       });
     }
@@ -278,13 +239,6 @@ export class Laravel extends Component {
       }, {
         dependsOn: [],
       });
-    }
-
-    function addWorkerService() {
-      const workerConfig = typeof args.worker === 'object' ? args.worker : {};
-      const absWorkerBuildPath = path.resolve(pluginBuildPath, 'worker');
-
-      createWorkerService(workerConfig, `${name}-Worker`, absWorkerBuildPath);
     }
 
     function addWorkerServices() {
