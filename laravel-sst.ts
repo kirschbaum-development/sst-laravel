@@ -126,6 +126,8 @@ export class Laravel extends Component {
     // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
     const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
+    prepareDeploymentScript();
+
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
       vpc: args.vpc
     });
@@ -148,7 +150,7 @@ export class Laravel extends Component {
         /**
          * Image passed or use our default provided image.
          */
-        image: getImage( args.web?.image, ImageType.Web),
+        image: getImage(args.web?.image, ImageType.Web),
         environment: envVariables,
         scaling: args.web?.scaling,
 
@@ -382,6 +384,25 @@ export class Laravel extends Component {
         ...customEnv,
       };
     };
+    function prepareDeploymentScript() {
+      const deployDir = path.resolve(pluginBuildPath, 'deploy');
+      const dst = path.resolve(deployDir, '60-deploy.sh');
+
+      fs.mkdirSync(deployDir, { recursive: true });
+
+      const script = args.config?.deployment?.script as string | undefined;
+      if (script) {
+        const src = path.resolve(absSitePath, script);
+        if (fs.existsSync(src)) {
+          fs.copyFileSync(src, dst);
+          fs.chmodSync(dst, 0o755);
+          return;
+        }
+      }
+
+      fs.writeFileSync(dst, "#!/bin/sh\nexit 0\n");
+      fs.chmodSync(dst, 0o755);
+    }
   };
 }
 

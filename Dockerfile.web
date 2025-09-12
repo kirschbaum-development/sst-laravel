@@ -44,7 +44,11 @@ FROM base as deploy
 
 ENV CONTAINER_TYPE=web
 
+
 COPY --chown=www-data:www-data . /var/www/html
+
+# Copy deploy script generated into .sst/laravel by the build step
+COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
 
 # Drop back to our unprivileged user
 USER www-data

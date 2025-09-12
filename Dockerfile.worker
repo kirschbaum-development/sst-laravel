@@ -72,6 +72,9 @@ COPY --chown=www-data:www-data . /var/www/html
 # Fix S6 Overlay issues with Big Cloud PaaS (https://github.com/serversideup/docker-php/pull/376#issuecomment-2179262427)
 RUN chown -R www-data:www-data /run
 
+# Copy deploy script generated into .sst/laravel by the build step
+COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
+
 USER www-data
 
 ENTRYPOINT ["entrypoint.sh"]
