@@ -142,7 +142,6 @@ export class Laravel extends Component {
 
     function addWebService() {
       const envVariables = getEnvironmentVariables();
-      console.log('envVariables', envVariables);
 
       const webService = new sst.aws.Service(`${name}-Web`, {
         cluster,
@@ -158,13 +157,6 @@ export class Laravel extends Component {
           domain: args.web?.domain,
           ports: getDefaultPublicPorts(),
         },
-
-        permissions: [
-          {
-            actions: ["ses:SendEmail", "ses:SendRawEmail"],
-            resources: ["arn:aws:ses:us-east-1:664418955379:identity/*"]
-          },
-        ],
 
         dev: {
           command: `php ${sitePath}/artisan serve`,
@@ -247,7 +239,6 @@ export class Laravel extends Component {
       args.workers?.forEach((workerConfig, index) => {
         const workerName = workerConfig.name || `worker-${index + 1}`;
         const absWorkerBuildPath = path.resolve(pluginBuildPath, `worker-${workerName}`);
-        console.log('absWorkerBuildPath', absWorkerBuildPath);
 
         createWorkerService(workerConfig, `${name}-${workerName}`, absWorkerBuildPath);
       });

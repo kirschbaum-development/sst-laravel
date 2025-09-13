@@ -146,12 +146,9 @@ php artisan migrate --force
 
 ### Roadmap/Ideas
 
-* Full queue support;
+* Automatically add permissions to the ECS IAM Role for linked resources;
 * Dev mode;
 * Add better support for linked resources (Mail, Database, Redis, etc);
-* DynamoDB support;
-* Add more examples;
 * Add support for Octane;
 * Add support for Laravel Reverb;
-* Automatically set up Monitors & Alerts;
 * Logs;

@@ -5,6 +5,7 @@ import { Output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index
 import * as pulumiAws from "../../../.sst/platform/node_modules/@pulumi/aws";
 import { Queue } from "../../../.sst/platform/src/components/aws/queue.js";
 import { Aurora } from "../../../.sst/platform/src/components/aws/aurora.js";
+import { Bucket } from "../../../.sst/platform/src/components/aws/bucket.js";
 
 type EnvType = Record<string, string | Output<string>>;
 type Database = Postgres | Aurora | pulumiAws.rds.Instance;
@@ -25,7 +26,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
   links.forEach((link: LinkSupportedTypes) => {
     if (link instanceof Postgres) {
       const defaultEnv = applyDatabaseEnv(link);
-      
+
       environment = {
         ...environment,
         ...defaultEnv,
@@ -35,7 +36,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
 
     if (link instanceof Redis) {
       const defaultEnv = applyRedisEnv(link);
-      
+
       environment = {
         ...environment,
         ...defaultEnv,
@@ -45,7 +46,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
 
     if (link instanceof Email) {
       const defaultEnv = applyEmailEnv(link);
-      
+
       environment = {
         ...environment,
         ...defaultEnv,
@@ -55,11 +56,20 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
 
     if (link instanceof Queue) {
       const defaultEnv = applyQueueEnv(link);
-      
+
       environment = {
         ...environment,
         ...defaultEnv,
         ...(callbacks?.queue ? callbacks.queue(link) : {}),
+      };
+    }
+
+    if (link instanceof Bucket) {
+      const defaultEnv = applyBucketEnv(link);
+
+      environment = {
+        ...environment,
+        ...defaultEnv,
       };
     }
   });
@@ -132,5 +142,12 @@ export function applyQueueEnv(queue: Queue): EnvType {
   return {
     SQS_QUEUE: queue.url,
     // MAIL_FROM_ADDRESS: link.sender,
+  };
+}
+
+export function applyBucketEnv(bucket: Bucket): EnvType {
+  return {
+      FILESYSTEM_DISK: 's3',
+      AWS_BUCKET: bucket.name,
   };
 }
