@@ -84,6 +84,11 @@ export interface LaravelArgs extends ClusterArgs {
       }
   >;
 
+  permissions?: Array<{
+    actions: string[];
+    resources: string[];
+  }>;
+
   /**
   * If enabled, a container will be created to handle HTTP traffic.
   */
@@ -145,6 +150,8 @@ export class Laravel extends Component {
 
       const webService = new sst.aws.Service(`${name}-Web`, {
         cluster,
+        link: getLinks(),
+        permissions: args.permissions,
 
         /**
          * Image passed or use our default provided image.
@@ -210,6 +217,9 @@ export class Laravel extends Component {
 
       return new sst.aws.Service(serviceName, {
         cluster,
+        link: getLinks(),
+        permissions: args.permissions,
+
         image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
         scaling: workerConfig.scaling,
         environment: getEnvironmentVariables(),
@@ -375,6 +385,20 @@ export class Laravel extends Component {
         ...customEnv,
       };
     };
+
+    /**
+     * Return the links as an array of resources in the original SST format.
+     */
+    function getLinks(): any[] {
+      return (args.link || []).map(link => {
+        if (link && typeof link === 'object' && 'resource' in link) {
+          return link.resource;
+        }
+
+        return link;
+      });
+    }
+
     function prepareDeploymentScript() {
       const deployDir = path.resolve(pluginBuildPath, 'deploy');
       const dst = path.resolve(deployDir, '60-deploy.sh');
