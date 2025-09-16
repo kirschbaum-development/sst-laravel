@@ -38,40 +38,73 @@ const app = new Laravel('MyLaravelApp', {
 });
 ```
 
-### Scheduler
+### Workers
 
-By setting up the `scheduler` property, SST Laravel will automatically deploy and configure a custom container running your Laravel scheduled commands using the `php artisan schedule:work` command.
+By setting up the `workers` property, SST Laravel will automatically deploy and configure a custom container running your Laravel scheduled commands using the `php artisan schedule:work` command.
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    scheduler: true,
+    workers: [
+        {
+            name: 'scheduler',
+            scheduler: true,
+        },
+    ],
 });
 ```
 
-### Queue
+You can also set up a Horizon worker by setting the `horizon` property to `true`.
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    queue: true,
+    workers: [
+        {
+            name: 'horizon',
+            horizon: true,
+        },
+    ],
+});
+```
+
+But you can actually set up any command you want to run in the worker by setting the `tasks` property.
+
+```js
+const app = new Laravel('MyLaravelApp', {
+    workers: [
+        {
+            name: 'worker',
+            tasks: {
+                'scheduler': {
+                    command: 'php artisan schedule:work',
+                },
+                'queue': {
+                    command: 'php artisan queue:work',
+                },
+                'reverb': {
+                    command: 'php artisan reverb:start',
+                },
+            },
+        },
+    ],
 });
 ```
 
 ### Links & Environment Variables
 
-SST has a concept of linking resources together. By using this component, you don't need to worry (too much) about environment variables, as SST Laravel will automatically inject them into your applications using sensible defaults for Laravel (and of course you can customize them as well).
+SST has a concept of [linking resources](https://sst.dev/docs/linking) together. By using this component, you don't need to worry (too much) about environment variables, as SST Laravel will automatically inject them into your applications using sensible defaults for Laravel (and of course you can customize them as you wish).
 
 ```js
-const email = new sst.aws.Email("Email", { sender: "mail@example.com" });
 const database = new sst.aws.Postgres('MyDatabase', { vpc });
 const redis = new sst.aws.Redis("MyRedis", { vpc });
+const bucket = new sst.aws.Bucket("MyBucket");
 
 const app = new Laravel('MyLaravelApp', {
-    link: [email, database, redis],
+    link: [database, redis, bucket],
     web: {},
 });
 ```
 
-This will automatically inject the `DB_*`, `REDIS_*` and `MAIL_*` environment variables into your Laravel application, according to the created resources.
+This will automatically inject the `DB_*`, `REDIS_*` and `AWS_*` environment variables into your Laravel application, according to the created resources. The IAM permissions for the linked resources are also automatically added to the ECS IAM Role.
 
 #### Custom Environment Key Names
 
