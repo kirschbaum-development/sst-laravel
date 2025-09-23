@@ -179,7 +179,6 @@ php artisan migrate --force
 
 ### Roadmap/Ideas
 
-* Automatically add permissions to the ECS IAM Role for linked resources;
 * Dev mode;
 * Add better support for linked resources (Mail, Database, Redis, etc);
 * Add support for Octane;
