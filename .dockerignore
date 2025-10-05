@@ -1,4 +1,5 @@
 # sst
 .sst/**
 !.sst/laravel
+node_modules
 .env

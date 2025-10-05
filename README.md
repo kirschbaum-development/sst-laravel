@@ -1,30 +1,46 @@
 # SST Laravel
 
-This is an unofficial extension of SST to help you deploy Laravel applications with all the power the SST provides.
+This is an unofficial extension of SST to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power the SST provides.
+
+**TODO: Add explanation about what exactly SST is.**
 
 ## What it deploys
 
-Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using some pre-built Docker containers.
+Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using pre-built Docker containers. Behind the scenes, we use the powerful PHP containers from Serverside Up.
 
-### Installation instructions
+This package deploys a full-blown infrastructure in AWS, as it can be seeing in the image below.
+
+TODO: Diagrama with infrastructure
+
+## Pre-requisites
+
+1. NodeJS.
+1. Have [SST](https://sst.dev) installed and configured.
+
+## Installation instructions
 
 Pull in the package using npm:
 
 ```bash
-npm install @kirschbaum/sst-laravel
+npm install @kirschbaum/sst-laravel --save
 ```
 
-Import the component in your `sst.config.ts` file:
+## Usage
+
+To start using, you only need to import the component in your `sst.config.ts` file:
 
 ```ts
 import { Laravel } from "@kirschbaum-development/sst-laravel";
 ```
 
-And now you can start using the `Laravel` SST component.
+And now you can start using the `Laravel` SST component. All the configuration options are Typescript files with documentation, so
+
+// TODO: Add full list of options (auto generate?)
+To check the full list of options. check [here](). 
 
 ### HTTP
 
-Setting up your app to run receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain (with SSL), with auto-scaling with a max of 3 servers.
+Setting up your app to receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain (with SSL), with auto-scaling with a max of 3 servers.
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -40,7 +56,12 @@ const app = new Laravel('MyLaravelApp', {
 
 ### Workers
 
-By setting up the `workers` property, SST Laravel will automatically deploy and configure a custom container running your Laravel scheduled commands using the `php artisan schedule:work` command.
+Beyond HTTP requests, you can set up one or more `workers` for your Laravel application. Workers are meant to run background commands like Laravel Horizon, the Laravel Scheduler or any background command you may need to run.
+
+SST Laravel will automatically deploy and configure worker containers running your configured commands. See some examples below.
+
+
+**Running the Laravel scheduler**
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -53,7 +74,7 @@ const app = new Laravel('MyLaravelApp', {
 });
 ```
 
-You can also set up a Horizon worker by setting the `horizon` property to `true`.
+**Running the Laravel Horizon**
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -66,7 +87,7 @@ const app = new Laravel('MyLaravelApp', {
 });
 ```
 
-But you can actually set up any command you want to run in the worker by setting the `tasks` property.
+**Running custom commands**
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -80,8 +101,8 @@ const app = new Laravel('MyLaravelApp', {
                 'queue': {
                     command: 'php artisan queue:work',
                 },
-                'reverb': {
-                    command: 'php artisan reverb:start',
+                'pulse': {
+                    command: 'php artisan pulse:work',
                 },
             },
         },
@@ -89,9 +110,41 @@ const app = new Laravel('MyLaravelApp', {
 });
 ```
 
-### Links & Environment Variables
+## Environment Variables
 
-SST has a concept of [linking resources](https://sst.dev/docs/linking) together. By using this component, you don't need to worry (too much) about environment variables, as SST Laravel will automatically inject them into your applications using sensible defaults for Laravel (and of course you can customize them as you wish).
+There are multiple ways to configure environment variables. If you want SST Laravel to copy an environment file, you can configure the `config.environment.file` entry.
+
+The below configuration would copy a file named `.env.$STAGE` into the deployment containers as your `.env` file.
+
+```js
+const app = new Laravel('MyLaravelApp', {
+  // ...
+  config: {
+    environment: {
+      file: `.env.${$app.stage}`,
+    }
+  }
+});
+```
+
+You can also configure it to use simply `.env`.
+
+```js
+const app = new Laravel('MyLaravelApp', {
+  // ...
+  config: {
+    environment: {
+      file: `.env`,
+    }
+  }
+});
+```
+
+### Resources
+
+In SST, you can [link resources](https://sst.dev/docs/linking). If you link resources to your Laravel component, SST Laravel will automatically inject and configure environment variables using sensible defaults for all the linked resources.
+
+In the example configuration below, SST Laravel will automatically inject environment variables for the database, cache and filesystem.
 
 ```js
 const database = new sst.aws.Postgres('MyDatabase', { vpc });
@@ -100,15 +153,14 @@ const bucket = new sst.aws.Bucket("MyBucket");
 
 const app = new Laravel('MyLaravelApp', {
     link: [database, redis, bucket],
-    web: {},
 });
 ```
 
-This will automatically inject the `DB_*`, `REDIS_*` and `AWS_*` environment variables into your Laravel application, according to the created resources. The IAM permissions for the linked resources are also automatically added to the ECS IAM Role.
+The `DB_*`, `REDIS_*` and `AWS_*` environment variables will be automatically injected into your Laravel application. 
 
 #### Custom Environment Key Names
 
-If you need to customize the environment variable names, you can provide an object with the resource and a callback function in the `link` array:
+If you need to customize the environment variable names for your resources, you can provide an object with the resource and a callback function in the `link` array:
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -116,20 +168,19 @@ const app = new Laravel('MyLaravelApp', {
         email, 
         {
             resource: database,
-            environment: (resource) => ({
-                // Custom environment variables for Postgres
-                CUSTOM_DB_HOST: resource.host,
-                CUSTOM_DB_NAME: resource.database,
-                CUSTOM_DB_USER: resource.username,
-                CUSTOM_DB_PASSWORD: resource.password,
+            environment: (database: sst.aws.Postgres) => ({
+                CUSTOM_DB_HOST: database.host.apply(host => host.toString()),
+                CUSTOM_DB_NAME: database.database.apply(database => database.toString()),
+                CUSTOM_DB_USER: database.username.apply(username => username.toString()),
+                CUSTOM_DB_PASSWORD: database.password.apply(password => password.toString()),
             })
         },
         {
             resource: redis,
-            environment: (resource) => ({
-                // Custom environment variables for Redis
-                CUSTOM_REDIS_HOST: resource.host.apply(host => host ? `tls://${host}` : ''),
-                CUSTOM_REDIS_PORT: resource.port.apply(port => port.toString()),
+            environment: (redis: sst.aws.Redis) => ({
+                QUEUE_CONNECTION: 'redis',
+                QUEUE_REDIS_HOST: redis.host.apply(host => host ? `tls://${host}` : ''),
+                QUEUE_REDIS_PORT: redis.port.apply(port => port.toString()),
             })
         }
     ],
@@ -139,7 +190,23 @@ const app = new Laravel('MyLaravelApp', {
 
 The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones.
 
-### Extra configurations
+#### Disabling the auto-inject of environment variables
+
+If you don't want SST Laravel to auto-inject environment variables, you can disable with the following option:
+
+```js
+config: {
+  environment: {
+    autoInject: false,
+  }
+}
+```
+
+#### IAM Roles and Permissions
+
+The IAM permissions for the linked resources are also automatically added to the ECS IAM Execution Role, meaning your application has access to all the linked resources.
+
+### Other Configurations
 
 You can configure the PHP version, custom environment variables and a custom deployment script.
 
@@ -148,9 +215,6 @@ const app = new Laravel('MyLaravelApp', {
     config: {
         php: 8.4,
         opcache: true,
-        environment: {
-            AWS_ACCESS_KEY_ID: 'xxx',
-        },
         deployment: {
             script: './infra/deploy.sh'
         },
@@ -177,10 +241,28 @@ echo "🚀 Running Laravel Migrations..."
 php artisan migrate --force
 ```
 
-### Roadmap/Ideas
+## Debugging Containers
 
-* Dev mode;
-* Add better support for linked resources (Mail, Database, Redis, etc);
+TODO: Add documentation on how to SSH to debug containers.
+
+***
+
+### Roadmap
+
+* Custom CLI to facilitate accessing resources;
+* Add support for Inertia SSR;
 * Add support for Octane;
 * Add support for Laravel Reverb;
-* Logs;
+* Dev mode;
+
+## Security
+
+If you discover any security related issues, please email security@kirschbaumdevelopment.com instead of using the issue tracker.
+
+## Sponsorship
+
+Development of this package is sponsored by Kirschbaum Development Group, a developer driven company focused on problem solving, team building, and community. Learn more [about us](https://kirschbaumdevelopment.com) or [join us](https://careers.kirschbaumdevelopment.com)!
+
+## License
+
+The MIT License (MIT). Please see [License File](LICENSE.md) for more information.

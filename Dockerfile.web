@@ -8,7 +8,6 @@ LABEL maintainer="Kirschbaum"
 
 ENV AUTORUN_ENABLED=false
 # ENV AUTORUN_LARAVEL_MIGRATION=true
-# ENV AUTORUN_LARAVEL_STORAGE_LINK=false
 
 RUN apt-get update \
     && apt-get upgrade -y
@@ -42,10 +41,14 @@ USER www-data
 
 FROM base as deploy
 
+ARG ENV_FILENAME
 ENV CONTAINER_TYPE=web
 
+# Enable OPCache
+ENV PHP_OPCACHE_ENABLE=1
 
 COPY --chown=www-data:www-data . /var/www/html
+COPY --chown=www-data:www-data $ENV_FILENAME /var/www/html/.env
 
 # Copy deploy script generated into .sst/laravel by the build step
 COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh

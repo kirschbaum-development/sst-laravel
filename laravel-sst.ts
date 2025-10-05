@@ -104,8 +104,57 @@ export interface LaravelArgs extends ClusterArgs {
    */
   config?: {
     php?: Input<Number>;
+
+    /**
+     * PHP Opcache should be enabled?
+     *
+     * @default `true`
+     */
     opcache?: Input<boolean>;
-    environment?: FunctionArgs["environment"];
+    environment?: {
+      /**
+       * Use this option if you want to import an .env file during build. By default, SST Laravel won't use your .env file since that might be the wrong file when deploying from your local machine.
+       *
+       * @example
+       * ```js
+       * # Use use a fila named .env.$stage as your .env file
+       * environment: {
+       *   file: `.env.${$app.stage}`,
+       * }
+       * OR
+       * environment: {
+       *   file: `.env`,
+       * }
+       * ```
+       */
+      file?: Input<string>,
+
+      /**
+       * Set this to false in case you don't want to auto inject environment variables from your linked resources.
+       *
+       * @default `true`
+       */
+      autoInject?: Input<boolean>,
+
+      /**
+       * Custom environment variables that will be automatically injected into your application.
+       *
+       * @example
+       * ```js
+       * environment: {
+       *   vars: {
+       *     SESSION_DRIVER: 'redis',
+       *     QUEUE_CONNECTION: 'redis',
+       *   }
+       * }
+       * ```
+       */
+      vars?: FunctionArgs["environment"],
+    };
+
+    /**
+     * Custom deployment configurations.
+     */
     deployment?: {
       migrate?: Input<boolean>;
       optimize?: Input<boolean>;
@@ -131,6 +180,7 @@ export class Laravel extends Component {
     // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
     const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
+    prepareEnvironmentFile();
     prepareDeploymentScript();
 
     const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
@@ -342,9 +392,7 @@ export class Laravel extends Component {
     }
 
     function getEnvironmentVariables() {
-      applyLinkedResourcesToEnvironment();
-
-      const env = args.config?.environment || {};
+      const env = args.config?.environment?.vars || {};
 
       if (args.web?.domain) {
         if (typeof args.web.domain === 'string') {
@@ -360,7 +408,6 @@ export class Laravel extends Component {
       const resources: any[] = [];
       const customEnv: Record<string, string | Output<string>> = {};
 
-      // Process links to separate resources and custom env callbacks
       links.forEach(link => {
         if (link && typeof link === 'object' && 'resource' in link) {
           // Link is an object with resource and optional envCallback
@@ -379,11 +426,15 @@ export class Laravel extends Component {
 
       // Apply default environment variables for all resources
       if (!args.config) args.config = {};
-      args.config.environment = {
-        ...args.config.environment,
+      if (!args.config.environment) args.config.environment = {};
+
+      const resourcesEnvVars = {
         ...applyLinkedResourcesEnv(resources),
         ...customEnv,
       };
+
+      // TODO: Write resourcesEnvVars to the .env file
+      // TODO: Add proper types
     };
 
     /**
@@ -397,6 +448,29 @@ export class Laravel extends Component {
 
         return link;
       });
+    }
+
+    function prepareEnvironmentFile() {
+      const envFile = args.config?.environment?.file as string | undefined;
+
+      if (! envFile) {
+        return;
+      }
+
+      const envDir = path.resolve(pluginBuildPath, 'deploy');
+      const dst = path.resolve(envDir, '.env');
+      const src = path.resolve(absSitePath, envFile);
+
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, dst);
+        fs.chmodSync(dst, 0o755);
+      } else {
+        fs.writeFileSync(dst, '');
+      }
+
+      if (! args.config?.environment?.autoInject === false) {
+        applyLinkedResourcesToEnvironment();
+      }
     }
 
     function prepareDeploymentScript() {
