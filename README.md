@@ -6,11 +6,11 @@ This is an unofficial extension of SST to deploy your Laravel application to AWS
 
 ## What it deploys
 
-Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using pre-built Docker containers. Behind the scenes, we use the powerful PHP containers from Serverside Up.
+Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using pre-built Docker containers. This all gets deployed on your own AWS account, and you have full control over the infrastructure. Behind the scenes, we use the powerful PHP containers from Serverside Up.
 
-This package deploys a full-blown infrastructure in AWS, as it can be seeing in the image below.
+This package deploys a full-blown infrastructure in AWS, with zero downtime deployments, as it can be seeing in the image below.
 
-TODO: Diagrama with infrastructure
+![](./images/diagram.png)
 
 ## Pre-requisites
 
