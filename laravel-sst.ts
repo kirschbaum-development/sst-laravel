@@ -1,18 +1,18 @@
-/// <reference path="./../../.sst/platform/config.d.ts" />
+/// <reference path="./../../../.sst/platform/config.d.ts" />
 
 import * as path from 'path';
 import * as fs from 'fs';
-import { Component } from "../../.sst/platform/src/components/component.js";
-import { FunctionArgs } from "../../.sst/platform/src/components/aws/function.js";;
-import { ComponentResourceOptions, Output, all, output } from "../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import { Input } from "../../.sst/platform/src/components/input.js";
-import { Link } from "../../.sst/platform/src/components/link.js";
-import { ClusterArgs } from "../../.sst/platform/src/components/aws/cluster.js";
-import { ServiceArgs } from "../../.sst/platform/src/components/aws/service.js";
-import { Dns } from "../../.sst/platform/src/components/dns.js";
-import { Postgres } from "../../.sst/platform/src/components/aws/postgres.js";
-import { Redis } from "../../.sst/platform/src/components/aws/redis.js";
-import { Email } from "../../.sst/platform/src/components/aws/email.js";
+import { Component } from "../../../.sst/platform/src/components/component.js";
+import { FunctionArgs } from "../../../.sst/platform/src/components/aws/function.js";;
+import { ComponentResourceOptions, Output, all, output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import { Input } from "../../../.sst/platform/src/components/input.js";
+import { Link } from "../../../.sst/platform/src/components/link.js";
+import { ClusterArgs } from "../../../.sst/platform/src/components/aws/cluster.js";
+import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.js";
+import { Dns } from "../../../.sst/platform/src/components/dns.js";
+import { Postgres } from "../../../.sst/platform/src/components/aws/postgres.js";
+import { Redis } from "../../../.sst/platform/src/components/aws/redis.js";
+import { Email } from "../../../.sst/platform/src/components/aws/email.js";
 import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
 
 // duplicate from cluster.ts
@@ -175,7 +175,7 @@ export class Laravel extends Component {
     const sitePath = args.path ?? '.';
     const absSitePath = path.resolve(sitePath.toString());
     // TODO: We need to update sst-laravel to whatever the real package name will be.
-    const nodeModulePath = path.resolve(__dirname, '../../node_modules/sst-laravel');
+    const nodeModulePath = path.resolve(__dirname, '../../node_modules/@kirschbaum-development/sst-laravel');
 
     // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
     const pluginBuildPath = path.resolve(__dirname, '../laravel');

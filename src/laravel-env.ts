@@ -1,12 +1,12 @@
-import { Email } from "../../../.sst/platform/src/components/aws/email.js";
-import { Mysql } from "../../../.sst/platform/src/components/aws/mysql.js";
-import { Postgres } from "../../../.sst/platform/src/components/aws/postgres.js";
-import { Redis } from "../../../.sst/platform/src/components/aws/redis.js";
-import { Output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import * as pulumiAws from "../../../.sst/platform/node_modules/@pulumi/aws";
-import { Queue } from "../../../.sst/platform/src/components/aws/queue.js";
-import { Aurora } from "../../../.sst/platform/src/components/aws/aurora.js";
-import { Bucket } from "../../../.sst/platform/src/components/aws/bucket.js";
+import { Email } from "../../../../.sst/platform/src/components/aws/email.js";
+import { Mysql } from "../../../../.sst/platform/src/components/aws/mysql.js";
+import { Postgres } from "../../../../.sst/platform/src/components/aws/postgres.js";
+import { Redis } from "../../../../.sst/platform/src/components/aws/redis.js";
+import { Output } from "../../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import * as pulumiAws from "../../../../.sst/platform/node_modules/@pulumi/aws/index.js";
+import { Queue } from "../../../../.sst/platform/src/components/aws/queue.js";
+import { Aurora } from "../../../../.sst/platform/src/components/aws/aurora.js";
+import { Bucket } from "../../../../.sst/platform/src/components/aws/bucket.js";
 
 type EnvType = Record<string, string | Output<string>>|Record<string, string | Output<string | undefined> | undefined>;
 type Database = Postgres | Mysql | Aurora | pulumiAws.rds.Instance;

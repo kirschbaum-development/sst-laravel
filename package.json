@@ -1,8 +1,11 @@
 {
-  "name": "sst-laravel",
-  "version": "0.0.1",
+  "name": "@kirschbaum-development/sst-laravel",
+  "version": "0.0.4",
   "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
   "main": "laravel-sst.ts",
+  "scripts": {
+    "publish": "npm publish --access public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kirschbaumdevelopment/sst-laravel.git"
