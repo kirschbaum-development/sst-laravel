@@ -1,11 +1,11 @@
 {
   "name": "sst-laravel",
-  "version": "1.0.0",
-  "description": "An unofficial extension of SST to deploy Laravel applications.",
+  "version": "0.0.1",
+  "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
   "main": "laravel-sst.ts",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/your-repo/sst-laravel.git"
+    "url": "git+https://github.com/kirschbaumdevelopment/sst-laravel.git"
   },
   "keywords": [
     "laravel",
@@ -19,8 +19,8 @@
   },
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/your-repo/sst-laravel/issues"
+    "url": "https://github.com/kirschbaum-development/sst-laravel/issues"
   },
-  "homepage": "https://github.com/your-repo/sst-laravel#readme",
+  "homepage": "https://github.com/kirschbaum-development/sst-laravel#readme",
   "dependencies": {}
 }
