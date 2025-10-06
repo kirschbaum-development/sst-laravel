@@ -174,7 +174,6 @@ export class Laravel extends Component {
     args.config = args.config ?? {};
     const sitePath = args.path ?? '.';
     const absSitePath = path.resolve(sitePath.toString());
-    // TODO: We need to update sst-laravel to whatever the real package name will be.
     const nodeModulePath = path.resolve(__dirname, '../../node_modules/@kirschbaum-development/sst-laravel');
 
     // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
@@ -380,6 +379,7 @@ export class Laravel extends Component {
           'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
           'AUTORUN_LARAVEL_MIGRATION': imageType === ImageType.Web ? 'true' : 'false',
           'CONTAINER_TYPE': imageType,
+          'ENV_FILENAME': args.config?.environment?.file ?? '.env',
           stage: "deploy",
           platform: "linux/amd64",
           ...extraArgs

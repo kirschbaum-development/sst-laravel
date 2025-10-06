@@ -44,13 +44,13 @@ Setting up your app to receive HTTP requests, on the `laravel-sst-demo.kdg.dev` 
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    web: {
-        domain: 'laravel-sst-demo.kdg.dev',
-        scaling: {
-            min: 1, 
-            max: 3,
-        }
-    },
+  web: {
+    domain: 'laravel-sst-demo.kdg.dev',
+    scaling: {
+      min: 1, 
+      max: 3,
+    }
+  },
 });
 ```
 
@@ -65,12 +65,12 @@ SST Laravel will automatically deploy and configure worker containers running yo
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    workers: [
-        {
-            name: 'scheduler',
-            scheduler: true,
-        },
-    ],
+  workers: [
+    {
+      name: 'scheduler',
+      scheduler: true,
+    },
+  ],
 });
 ```
 
@@ -78,12 +78,12 @@ const app = new Laravel('MyLaravelApp', {
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    workers: [
-        {
-            name: 'horizon',
-            horizon: true,
-        },
-    ],
+  workers: [
+    {
+      name: 'horizon',
+      horizon: true,
+    },
+  ],
 });
 ```
 
@@ -91,22 +91,22 @@ const app = new Laravel('MyLaravelApp', {
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    workers: [
-        {
-            name: 'worker',
-            tasks: {
-                'scheduler': {
-                    command: 'php artisan schedule:work',
-                },
-                'queue': {
-                    command: 'php artisan queue:work',
-                },
-                'pulse': {
-                    command: 'php artisan pulse:work',
-                },
-            },
+  workers: [
+    {
+      name: 'worker',
+      tasks: {
+        'scheduler': {
+          command: 'php artisan schedule:work',
         },
-    ],
+        'queue': {
+          command: 'php artisan queue:work',
+        },
+        'pulse': {
+          command: 'php artisan pulse:work',
+        },
+      },
+    },
+  ],
 });
 ```
 
@@ -152,7 +152,7 @@ const redis = new sst.aws.Redis("MyRedis", { vpc });
 const bucket = new sst.aws.Bucket("MyBucket");
 
 const app = new Laravel('MyLaravelApp', {
-    link: [database, redis, bucket],
+  link: [database, redis, bucket],
 });
 ```
 
@@ -164,27 +164,27 @@ If you need to customize the environment variable names for your resources, you 
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    link: [
-        email, 
-        {
-            resource: database,
-            environment: (database: sst.aws.Postgres) => ({
-                CUSTOM_DB_HOST: database.host.apply(host => host.toString()),
-                CUSTOM_DB_NAME: database.database.apply(database => database.toString()),
-                CUSTOM_DB_USER: database.username.apply(username => username.toString()),
-                CUSTOM_DB_PASSWORD: database.password.apply(password => password.toString()),
-            })
-        },
-        {
-            resource: redis,
-            environment: (redis: sst.aws.Redis) => ({
-                QUEUE_CONNECTION: 'redis',
-                QUEUE_REDIS_HOST: redis.host.apply(host => host ? `tls://${host}` : ''),
-                QUEUE_REDIS_PORT: redis.port.apply(port => port.toString()),
-            })
-        }
-    ],
-    web: {}
+  link: [
+    email, 
+    {
+      resource: database,
+      environment: (database: sst.aws.Postgres) => ({
+        CUSTOM_DB_HOST: database.host.apply(host => host.toString()),
+        CUSTOM_DB_NAME: database.database.apply(database => database.toString()),
+        CUSTOM_DB_USER: database.username.apply(username => username.toString()),
+        CUSTOM_DB_PASSWORD: database.password.apply(password => password.toString()),
+      })
+    },
+    {
+      resource: redis,
+      environment: (redis: sst.aws.Redis) => ({
+        QUEUE_CONNECTION: 'redis',
+        QUEUE_REDIS_HOST: redis.host.apply(host => host ? `tls://${host}` : ''),
+        QUEUE_REDIS_PORT: redis.port.apply(port => port.toString()),
+      })
+    }
+  ],
+  web: {}
 });
 ```
 
@@ -212,13 +212,13 @@ You can configure the PHP version, custom environment variables and a custom dep
 
 ```js
 const app = new Laravel('MyLaravelApp', {
-    config: {
-        php: 8.4,
-        opcache: true,
-        deployment: {
-            script: './infra/deploy.sh'
-        },
+  config: {
+    php: 8.4,
+    opcache: true,
+    deployment: {
+      script: './infra/deploy.sh'
     },
+  },
 });
 ```
 
