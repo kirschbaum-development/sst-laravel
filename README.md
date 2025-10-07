@@ -1,16 +1,18 @@
 # SST Laravel
 
-This is an unofficial extension of SST to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power the SST provides.
+SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
 
-**TODO: Add explanation about what exactly SST is.**
+SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
 
-## What it deploys
+## What gets deployed
 
-Behind the scenes, this extension uses the SST Cluster + Service component, which runs in AWS Fargate using pre-built Docker containers. This all gets deployed on your own AWS account, and you have full control over the infrastructure. Behind the scenes, we use the powerful PHP containers from Serverside Up.
+Behind the scenes, this extension uses the SST Cluster + Service component, which deploys custom Docker containers to AWS Fargate. It all gets deployed on your own AWS account, and you have full control over the infrastructure and which services are connected to your application. 
 
 This package deploys a full-blown infrastructure in AWS, with zero downtime deployments, as it can be seeing in the image below.
 
-![](./images/diagram.png)
+Behind the scenes, we use the powerful PHP containers from [Serverside Up](https://serversideup.net/open-source/docker-php/).
+
+![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/diagram.png)
 
 ## Pre-requisites
 
