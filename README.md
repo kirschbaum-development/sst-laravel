@@ -1,7 +1,5 @@
 # SST Laravel
 
-![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/deploy.png)
-
 SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
 
 SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
@@ -20,6 +18,8 @@ Behind the scenes, we use the powerful PHP containers from [Serverside Up](https
 
 1. NodeJS.
 1. Have [SST](https://sst.dev) installed and configured.
+1. Have [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured.
+  * Guide on how to set up IAM Credentials [here](https://sst.dev/docs/iam-credentials/).
 
 ## Installation instructions
 
@@ -27,6 +27,14 @@ Pull in the package using npm:
 
 ```bash
 npm install @kirschbaum/sst-laravel --save
+```
+
+## Quick start
+
+To get started quickly, you can use the `init` command:
+
+```bash
+npx sst-laravel init
 ```
 
 ## Usage
@@ -245,9 +253,29 @@ echo "🚀 Running Laravel Migrations..."
 php artisan migrate --force
 ```
 
-## Debugging Containers
+## Accessing Containers
 
-TODO: Add documentation on how to SSH to debug containers.
+Using the `sst-laravel` CLI tool, you can easily connect to your running ECS containers for debugging and troubleshooting.
+
+```bash
+npx sst-laravel ssh --stage production
+```
+
+This will list all running tasks in your cluster and let you choose which one to connect to.
+
+**Connect to a specific service:**
+
+```bash
+npx sst-laravel ssh web --stage production
+npx sst-laravel ssh worker --stage production
+```
+
+If you are naming your workers differently, you can specify the worker name:
+
+```bash
+npx sst-laravel ssh {worker-name} --stage production
+npx sst-laravel ssh worker --stage production
+```
 
 ***
 

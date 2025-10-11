@@ -25,5 +25,16 @@
     "url": "https://github.com/kirschbaum-development/sst-laravel/issues"
   },
   "homepage": "https://github.com/kirschbaum-development/sst-laravel#readme",
-  "dependencies": {}
+  "bin": {
+    "sst-laravel": "./bin/cli.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ecs": "^3.0.0",
+    "@inquirer/prompts": "^7.0.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
 }
