@@ -1,0 +1,35 @@
+/// <reference path="./.sst/platform/config.d.ts" />
+
+export default $config({
+  app(input) {
+    return {
+      name: "my-laravel-app",
+      removal: input?.stage === "production" ? "retain" : "remove",
+      protect: ["production"].includes(input?.stage),
+      home: "aws",
+    };
+  },
+  async run() {
+    const { Laravel } = await import("@kirschbaum-development/sst-laravel");
+    const vpc = new sst.aws.Vpc("MyVpc");
+
+    const app = new Laravel("MyLaravelApp", {
+      vpc,
+
+      web: {
+        domain: $app.stage === "production"
+          ? "example.com"
+          : `${$app.stage}.example.com`,
+      },
+
+      workers: [{
+        horizon: true,
+        scheduler: true,
+      }]
+    });
+
+    return {
+      url: app.url,
+    };
+  },
+});

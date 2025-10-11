@@ -6,13 +6,9 @@ import { Component } from "../../../.sst/platform/src/components/component.js";
 import { FunctionArgs } from "../../../.sst/platform/src/components/aws/function.js";;
 import { ComponentResourceOptions, Output, all, output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
 import { Input } from "../../../.sst/platform/src/components/input.js";
-import { Link } from "../../../.sst/platform/src/components/link.js";
 import { ClusterArgs } from "../../../.sst/platform/src/components/aws/cluster.js";
 import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.js";
 import { Dns } from "../../../.sst/platform/src/components/dns.js";
-import { Postgres } from "../../../.sst/platform/src/components/aws/postgres.js";
-import { Redis } from "../../../.sst/platform/src/components/aws/redis.js";
-import { Email } from "../../../.sst/platform/src/components/aws/email.js";
 import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
 
 // duplicate from cluster.ts
@@ -164,6 +160,8 @@ export interface LaravelArgs extends ClusterArgs {
 }
 
 export class Laravel extends Component {
+  private readonly services: Record<string, sst.aws.Service>;
+
   constructor(
     name: string,
     args: LaravelArgs,
@@ -171,12 +169,15 @@ export class Laravel extends Component {
   ) {
     super(__pulumiType, name, args, opts);
 
+    this.services = {};
+
     args.config = args.config ?? {};
     const sitePath = args.path ?? '.';
     const absSitePath = path.resolve(sitePath.toString());
     const nodeModulePath = path.resolve(__dirname, '../../node_modules/@kirschbaum-development/sst-laravel');
 
-    // Determine the path where our plugin will save build files. SST sets __dirname to the .sst/platform directory.
+    // Determine the path where our plugin will save build files.
+    // SST sets __dirname to the .sst/platform directory.
     const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
     prepareEnvironmentFile();
@@ -186,18 +187,10 @@ export class Laravel extends Component {
       vpc: args.vpc
     });
 
-    if (args.web) {
-      addWebService();
-    }
-
-    if (args.workers) {
-      addWorkerServices();
-    }
-
-    function addWebService() {
+    const addWebService = () => {
       const envVariables = getEnvironmentVariables();
 
-      const webService = new sst.aws.Service(`${name}-Web`, {
+      this.services['web'] = new sst.aws.Service(`${name}-Web`, {
         cluster,
         link: getLinks(),
         permissions: args.permissions,
@@ -256,7 +249,7 @@ export class Laravel extends Component {
       });
     }
 
-    function createWorkerService(workerConfig: LaravelWorkerConfig, serviceName: string, workerBuildPath: string) {
+    const createWorkerService = (workerConfig: LaravelWorkerConfig, serviceName: string, workerBuildPath: string) => {
       createWorkerTasks(workerConfig, workerBuildPath);
 
       const imgBuildArgs = {
@@ -264,7 +257,7 @@ export class Laravel extends Component {
         'CUSTOM_CONF_PATH': workerBuildPath.replace(absSitePath, ''),
       };
 
-      return new sst.aws.Service(serviceName, {
+      this.services[serviceName] = new sst.aws.Service(serviceName, {
         cluster,
         link: getLinks(),
         permissions: args.permissions,
@@ -303,6 +296,14 @@ export class Laravel extends Component {
       });
     }
 
+    if (args.web) {
+      addWebService();
+    }
+
+    if (args.workers) {
+      addWorkerServices();
+    }
+
     function getDefaultPublicPorts(): Ports {
       let ports;
       const forwardPort: Port = "8080/http";
@@ -323,7 +324,7 @@ export class Laravel extends Component {
       return ports;
     }
 
-    // TODO: We have to test if it works when an image is provided in sst.config.js
+    // TODO: We have to test if it works when a custom image is provided in sst.config.js
     function getImage(imgFromConfig: LaravelWebArgs["image"] | null | undefined, imgType: ImageType, extraArgs: object = {}) {
       const img = imgFromConfig
         ? imgFromConfig
@@ -493,6 +494,16 @@ export class Laravel extends Component {
       fs.chmodSync(dst, 0o755);
     }
   };
+
+  /**
+   * The URL of the service.
+   *
+   * If `public.domain` is set, this is the URL with the custom domain.
+   * Otherwise, it's the auto-generated load balancer URL.
+   */
+  public get url() {
+    return this.services['web'].url;
+  }
 }
 
 const __pulumiType = "sst:aws:Laravel";

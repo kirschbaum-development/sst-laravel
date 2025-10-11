@@ -50,6 +50,55 @@ program
   .version('0.0.4');
 
 program
+  .command('init')
+  .description('Initialize a new sst.config.ts file with Laravel boilerplate')
+  .action(() => {
+    try {
+      const cwd = process.cwd();
+      const targetPath = path.join(cwd, 'sst.config.ts');
+
+      if (fs.existsSync(targetPath)) {
+        console.error('Warning: sst.config.ts already exists in the current directory.');
+        console.error('Will not overwrite existing file.');
+        process.exit(1);
+      }
+
+      const templatePath = path.join(__dirname, '..', 'templates', 'sst.config.ts.template');
+      
+      if (!fs.existsSync(templatePath)) {
+        console.error('Error: Template file not found.');
+        process.exit(1);
+      }
+
+      let templateContent = fs.readFileSync(templatePath, 'utf-8');
+
+      const envPath = path.join(cwd, '.env');
+      let appName = 'my-laravel-app';
+
+      if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf-8');
+        const appNameMatch = envContent.match(/^APP_NAME=(.+)$/m);
+        
+        if (appNameMatch && appNameMatch[1]) {
+          const rawAppName = appNameMatch[1].trim().replace(/^["']|["']$/g, '');
+          appName = rawAppName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          console.log(`Using APP_NAME from .env: ${rawAppName}`);
+        }
+      }
+
+      templateContent = templateContent.replace('my-laravel-app', appName);
+
+      fs.writeFileSync(targetPath, templateContent, 'utf-8');
+
+      console.log('Successfully created sst.config.ts');
+      console.log('You can now customize the configuration for your Laravel application.');
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+program
   .command('ssh')
   .description('SSH into a running ECS task')
   .argument('[service]', 'Service to connect to (web, worker, or worker name) - optional')
