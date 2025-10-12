@@ -126,7 +126,7 @@ const app = new Laravel('MyLaravelApp', {
 
 There are multiple ways to configure environment variables. If you want SST Laravel to copy an environment file, you can configure the `config.environment.file` entry.
 
-The below configuration would copy a file named `.env.$STAGE` into the deployment containers as your `.env` file.
+The below configuration would copy a file named `.env.$STAGE` (e.g. `.env.production`) into the deployment containers as your `.env` file.
 
 ```js
 const app = new Laravel('MyLaravelApp', {
@@ -253,6 +253,16 @@ echo "🚀 Running Laravel Migrations..."
 php artisan migrate --force
 ```
 
+## Deploying
+
+To deploy your application, you can use the `sst deploy` command. You must be authenticated with AWS in your terminal session to deploy.
+
+```bash
+npx sst deploy --stage {stage}
+npx sst deploy --stage sandbox
+npx sst deploy --stage production
+```
+
 ## Accessing Containers
 
 Using the `sst-laravel` CLI tool, you can easily connect to your running ECS containers for debugging and troubleshooting.
@@ -293,7 +303,7 @@ If you discover any security related issues, please email security@kirschbaumdev
 
 ## Sponsorship
 
-Development of this package is sponsored by Kirschbaum Development Group, a developer driven company focused on problem solving, team building, and community. Learn more [about us](https://kirschbaumdevelopment.com) or [join us](https://careers.kirschbaumdevelopment.com)!
+Development of this package is developed and sponsored by Kirschbaum Development Group, a developer driven company focused on problem solving, team building, and community. Learn more [about us](https://kirschbaumdevelopment.com) or [join us](https://careers.kirschbaumdevelopment.com)!
 
 ## License
 

@@ -64,7 +64,7 @@ program
       }
 
       const templatePath = path.join(__dirname, '..', 'templates', 'sst.config.ts.template');
-      
+
       if (!fs.existsSync(templatePath)) {
         console.error('Error: Template file not found.');
         process.exit(1);
@@ -78,7 +78,7 @@ program
       if (fs.existsSync(envPath)) {
         const envContent = fs.readFileSync(envPath, 'utf-8');
         const appNameMatch = envContent.match(/^APP_NAME=(.+)$/m);
-        
+
         if (appNameMatch && appNameMatch[1]) {
           const rawAppName = appNameMatch[1].trim().replace(/^["']|["']$/g, '');
           appName = rawAppName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -90,8 +90,9 @@ program
 
       fs.writeFileSync(targetPath, templateContent, 'utf-8');
 
-      console.log('Successfully created sst.config.ts');
-      console.log('You can now customize the configuration for your Laravel application.');
+      console.log('✅ Successfully created sst.config.ts');
+      console.log('💡 You can now customize the configuration for your own Laravel application.');
+      console.log('🔏 Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
@@ -222,7 +223,7 @@ program
           const taskId = task.taskArn?.split('/').pop() || '';
           const containerName = task.containers?.[0]?.name || 'unknown';
           const status = task.lastStatus || 'unknown';
-          
+
           return {
             name: `${containerName} (${taskId.substring(0, 8)}...) - ${status}`,
             value: task,
