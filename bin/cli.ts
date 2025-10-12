@@ -11,6 +11,10 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const version = packageJson.version;
+
 interface SshOptions {
   stage?: string;
   cluster?: string;
@@ -51,12 +55,12 @@ const program = new Command();
 program
   .name('sst-laravel')
   .description('CLI tools for SST Laravel deployments')
-  .version('0.0.7');
+  .version(version);
 
 program
   .command('init')
   .description('Initialize a new sst.config.ts file with Laravel boilerplate')
-  .action(() => {
+  .action(async () => {
     try {
       const cwd = process.cwd();
       const targetPath = path.join(cwd, 'sst.config.ts');
@@ -67,14 +71,49 @@ program
         process.exit(1);
       }
 
-      const templatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.ts.template');
+      const packageJsonPath = path.join(cwd, 'package.json');
+      let packageJson: any = { dependencies: {}, devDependencies: {} };
+      let hasPackageJson = false;
 
-      if (!fs.existsSync(templatePath)) {
-        console.error('Error: Template file not found.');
+      if (fs.existsSync(packageJsonPath)) {
+        hasPackageJson = true;
+        packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      }
+
+      const hasSst = packageJson.dependencies?.sst || packageJson.devDependencies?.sst;
+
+      if (!hasSst) {
+        console.log('📦 SST not found in project. Installing SST...');
+        
+        const installProcess = spawn('npm', ['install', '--save-dev', 'sst@latest'], {
+          cwd,
+          stdio: 'inherit',
+          shell: true
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          installProcess.on('exit', (code) => {
+            if (code === 0) {
+              console.log('✅ SST installed successfully');
+              resolve();
+            } else {
+              reject(new Error('Failed to install SST'));
+            }
+          });
+          installProcess.on('error', reject);
+        });
+      } else {
+        console.log('✅ SST is already installed');
+      }
+
+      const initTemplatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.init.template');
+
+      if (!fs.existsSync(initTemplatePath)) {
+        console.error('Error: Init template file not found.');
         process.exit(1);
       }
 
-      let templateContent = fs.readFileSync(templatePath, 'utf-8');
+      let initTemplateContent = fs.readFileSync(initTemplatePath, 'utf-8');
 
       const envPath = path.join(cwd, '.env');
       let appName = 'my-laravel-app';
@@ -90,11 +129,46 @@ program
         }
       }
 
-      templateContent = templateContent.replace('my-laravel-app', appName);
+      initTemplateContent = initTemplateContent.replace('my-laravel-app', appName);
 
-      fs.writeFileSync(targetPath, templateContent, 'utf-8');
+      fs.writeFileSync(targetPath, initTemplateContent, 'utf-8');
 
-      console.log('✅ Successfully created sst.config.ts');
+      console.log('✅ Created initial sst.config.ts');
+      console.log('🚀 Running sst install to set up providers...');
+
+      const sstInstallProcess = spawn('npx', ['sst', 'install'], {
+        cwd,
+        stdio: 'inherit',
+        shell: true
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        sstInstallProcess.on('exit', (code) => {
+          if (code === 0) {
+            console.log('✅ SST providers installed successfully');
+            resolve();
+          } else {
+            reject(new Error('Failed to run sst install'));
+          }
+        });
+        sstInstallProcess.on('error', reject);
+      });
+
+      const runTemplatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.run.template');
+
+      if (!fs.existsSync(runTemplatePath)) {
+        console.error('Error: Run template file not found.');
+        process.exit(1);
+      }
+
+      const runTemplateContent = fs.readFileSync(runTemplatePath, 'utf-8');
+
+      let finalConfig = fs.readFileSync(targetPath, 'utf-8');
+      finalConfig = finalConfig.replace('  async run() {\n  },', `  async run() {\n${runTemplateContent}\n  },`);
+
+      fs.writeFileSync(targetPath, finalConfig, 'utf-8');
+
+      console.log('✅ Successfully configured sst.config.ts with Laravel boilerplate');
       console.log('💡 You can now customize the configuration for your own Laravel application.');
       console.log('🔏 Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');
     } catch (error) {

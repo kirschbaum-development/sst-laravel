@@ -1,0 +1,33 @@
+    const { Laravel } = await import("@kirschbaum-development/sst-laravel");
+    const vpc = new sst.aws.Vpc("MyVpc");
+    // you can also use an existing VPC
+    // const vpc = sst.aws.Vpc.get("DefaultVpc", "vpc-12345678901234567");
+
+    const database = new sst.aws.Postgres('MyDB', { vpc });
+
+    const app = new Laravel("MyLaravelApp", {
+      vpc,
+      link: [database],
+
+      config: {
+        php: 8.4,
+        environment: {
+          file: `.env.${$app.stage}`,
+        },
+      },
+
+      web: {
+        domain: $app.stage === "production"
+          ? "example.com"
+          : `${$app.stage}.example.com`,
+      },
+
+      workers: [{
+        horizon: true,
+        scheduler: true,
+      }]
+    });
+
+    return {
+      url: app.url,
+    };
