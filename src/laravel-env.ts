@@ -79,7 +79,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
 }
 
 function applyDatabaseEnv(database: Database, callbacks?: EnvCallbacks): EnvType {
-  let port: number;
+  let port: number | undefined;
 database.port.apply(value => port = value);
 
   if (database instanceof Postgres || (database instanceof Aurora && port === 5432)) {

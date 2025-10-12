@@ -1,9 +1,23 @@
 {
   "name": "@kirschbaum-development/sst-laravel",
-  "version": "0.0.6",
+  "version": "0.0.8",
+  "type": "module",
   "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
   "main": "laravel-sst.ts",
+  "files": [
+    "dist/bin",
+    "src",
+    "laravel-sst.ts",
+    "sst-env.d.ts",
+    "templates",
+    "conf",
+    "images",
+    "Dockerfile.web",
+    "Dockerfile.worker",
+    ".dockerignore"
+  ],
   "scripts": {
+    "build": "tsc",
     "publish": "npm publish --access public"
   },
   "repository": {
@@ -26,7 +40,7 @@
   },
   "homepage": "https://github.com/kirschbaum-development/sst-laravel#readme",
   "bin": {
-    "sst-laravel": "./bin/cli.ts"
+    "sst-laravel": "./dist/bin/cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.0.0",

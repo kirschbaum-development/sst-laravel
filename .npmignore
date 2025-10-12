@@ -1,0 +1,7 @@
+bin/*.ts
+tsconfig.json
+node_modules/
+.git/
+.gitignore
+.build/
+AGENTS.md

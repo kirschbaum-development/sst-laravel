@@ -6,6 +6,10 @@ import { select } from '@inquirer/prompts';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 interface SshOptions {
   stage?: string;
@@ -47,7 +51,7 @@ const program = new Command();
 program
   .name('sst-laravel')
   .description('CLI tools for SST Laravel deployments')
-  .version('0.0.4');
+  .version('0.0.7');
 
 program
   .command('init')
@@ -63,7 +67,7 @@ program
         process.exit(1);
       }
 
-      const templatePath = path.join(__dirname, '..', 'templates', 'sst.config.ts.template');
+      const templatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.ts.template');
 
       if (!fs.existsSync(templatePath)) {
         console.error('Error: Template file not found.');

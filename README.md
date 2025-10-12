@@ -26,7 +26,7 @@ Behind the scenes, we use the powerful PHP containers from [Serverside Up](https
 Pull in the package using npm:
 
 ```bash
-npm install @kirschbaum/sst-laravel --save
+npm install @kirschbaum-development/sst-laravel --save
 ```
 
 ## Quick start
