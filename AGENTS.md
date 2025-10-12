@@ -26,3 +26,13 @@ This project is an NPM package, and it is an extension of SST to add some functi
 - Use `fs.existsSync()` checks before reading files
 - Never log or expose secrets/passwords
 - Set proper file permissions (0o755 for scripts, 0o777 for s6 executables)
+
+## Documenting API
+
+- When asked to document the API, you should document the `Laravel` class in the `laravel-sst.ts` file.
+- When documenting the API, ALWAYS skip the following ones:
+  * web.loadBalancer
+  * web.image
+  * workers[].link
+  * Any option that's not yet implemented
+- The generated file should be called `api.md` and should be placed in the `docs` directory.

@@ -99,6 +99,12 @@ export interface LaravelArgs extends ClusterArgs {
    * Config settings.
    */
   config?: {
+    /**
+     * PHP version.
+     * Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
+     *
+     * @default `8.4`
+     */
     php?: Input<Number>;
 
     /**
@@ -107,6 +113,7 @@ export interface LaravelArgs extends ClusterArgs {
      * @default `true`
      */
     opcache?: Input<boolean>;
+
     environment?: {
       /**
        * Use this option if you want to import an .env file during build. By default, SST Laravel won't use your .env file since that might be the wrong file when deploying from your local machine.

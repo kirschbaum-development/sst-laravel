@@ -17,7 +17,6 @@ Behind the scenes, we use the powerful PHP containers from [Serverside Up](https
 ## Pre-requisites
 
 1. NodeJS.
-1. Have [SST](https://sst.dev) installed and configured.
 1. Have [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured.
   * Guide on how to set up IAM Credentials [here](https://sst.dev/docs/iam-credentials/).
 
@@ -47,8 +46,7 @@ import { Laravel } from "@kirschbaum-development/sst-laravel";
 
 And now you can start using the `Laravel` SST component. All the configuration options are Typescript files with documentation, so
 
-// TODO: Add full list of options (auto generate?)
-To check the full list of options. check [here](). 
+To check the full list of options. check [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md). 
 
 ### HTTP
 
