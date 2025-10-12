@@ -29,9 +29,16 @@ export default $config({
       },
 
       web: {
-        domain: $app.stage === "production"
-          ? "example.com"
-          : `${$app.stage}.example.com`,
+        domain: {
+          // if your domain is managed via Route53 in the same account, SST will handle the DNS for you
+          // you can also use Cloudflare DNS (see https://sst.dev/docs/component/cloudflare/dns/)
+          // you can also manually configure DNS. Check all "domain" options in "loadBalancer.domain" here: https://sst.dev/docs/component/aws/service/#loadbalancer-domain.
+          // dns: false,
+
+          name: $app.stage === "production"
+            ? "example.com"
+            : `${$app.stage}.example.com`,
+        }
       },
 
       workers: [{

@@ -84,7 +84,7 @@ program
 
       if (!hasSst) {
         console.log('📦 SST not found in project. Installing SST...');
-        
+
         const installProcess = spawn('npm', ['install', '--save-dev', 'sst@latest'], {
           cwd,
           stdio: 'inherit',
@@ -168,9 +168,14 @@ program
 
       fs.writeFileSync(targetPath, finalConfig, 'utf-8');
 
+      console.log('\n');
+      console.log('\n');
       console.log('✅ Successfully configured sst.config.ts with Laravel boilerplate');
       console.log('💡 You can now customize the configuration for your own Laravel application.');
-      console.log('🔏 Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');
+      console.log('\n');
+      console.log('🔏🔏🔏 Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');
+      console.log('\n');
+      console.log('🚀🚀🚀 Run `npx sst deploy --stage {stage}` to deploy your application.');
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);
