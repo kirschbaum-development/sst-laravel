@@ -30,6 +30,7 @@ This project is an NPM package, and it is an extension of SST to add some functi
 ## Documenting API
 
 - When asked to document the API, you should document the `Laravel` class in the `laravel-sst.ts` file.
+- When the option has comments, make sure what's there is captured in the documentation.
 - When documenting the API, ALWAYS skip the following ones:
   * web.loadBalancer
   * web.image

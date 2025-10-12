@@ -159,8 +159,8 @@ export interface LaravelArgs extends ClusterArgs {
      * Custom deployment configurations.
      */
     deployment?: {
-      migrate?: Input<boolean>;
-      optimize?: Input<boolean>;
+      // migrate?: Input<boolean>;
+      // optimize?: Input<boolean>;
       script?: Input<string>;
     };
   }

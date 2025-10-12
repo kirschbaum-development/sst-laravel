@@ -256,9 +256,9 @@ php artisan migrate --force
 To deploy your application, you can use the `sst deploy` command. You must be authenticated with AWS in your terminal session to deploy.
 
 ```bash
-npx sst deploy --stage {stage}
-npx sst deploy --stage sandbox
-npx sst deploy --stage production
+npx sst-laravel deploy --stage {stage}
+npx sst-laravel deploy --stage sandbox
+npx sst-laravel deploy --stage production
 ```
 
 ## Accessing Containers
@@ -289,11 +289,12 @@ npx sst-laravel ssh worker --stage production
 
 ### Roadmap
 
-* Custom CLI to facilitate accessing resources;
+* Support for [SST Secrets](https://sst.dev/docs/component/secret/);
 * Add support for Inertia SSR;
-* Add support for Octane;
+* Add support for Octane with FrankedPHP;
 * Add support for Laravel Reverb;
 * Dev mode;
+* ...what else are we missing?
 
 ## Security
 
