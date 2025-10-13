@@ -59,7 +59,7 @@ program
 
 program
   .command('init')
-  .description('Initialize a new sst.config.ts file with Laravel boilerplate')
+  .description('Initialize SST and SST Laravel, creating a new sst.config.ts file to deploy your Laravel application')
   .action(async () => {
     try {
       const cwd = process.cwd();
@@ -168,12 +168,29 @@ program
 
       fs.writeFileSync(targetPath, finalConfig, 'utf-8');
 
+      const deployTemplatePath = path.join(__dirname, '..', '..', 'templates', 'deploy.template');
+      
+      if (fs.existsSync(deployTemplatePath)) {
+        const infraDir = path.join(cwd, 'infra');
+        if (!fs.existsSync(infraDir)) {
+          fs.mkdirSync(infraDir, { recursive: true });
+        }
+        
+        const deployScriptPath = path.join(infraDir, 'deploy.sh');
+        const deployTemplateContent = fs.readFileSync(deployTemplatePath, 'utf-8');
+        fs.writeFileSync(deployScriptPath, deployTemplateContent, 'utf-8');
+        fs.chmodSync(deployScriptPath, 0o755);
+        console.log('✅ Created infra/deploy.sh script');
+      }
+
       console.log('\n');
       console.log('\n');
       console.log('✅ Successfully configured sst.config.ts with Laravel boilerplate');
       console.log('💡 You can now customize the configuration for your own Laravel application.');
       console.log('\n');
       console.log('🔏🔏🔏 Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');
+      console.log('\n');
+      console.log('📝📝📝 A deploy.sh script has been created with example deployment tasks (migrations, caching, etc.). Customize it as needed.');
       console.log('\n');
       console.log('🚀🚀🚀 Run `npx sst deploy --stage {stage}` to deploy your application.');
     } catch (error) {

@@ -14,12 +14,23 @@
         environment: {
           file: `.env.${$app.stage}`,
         },
+        deployment: {
+          script: 'infra/deploy.sh',
+        },
       },
 
       web: {
-        domain: $app.stage === "production"
-          ? "example.com"
-          : `${$app.stage}.example.com`,
+        domain: {
+          // if your domain is managed via Route53 in the same account, SST will handle the DNS for you
+          // you can also use Cloudflare DNS (see https://sst.dev/docs/component/cloudflare/dns/)
+          // you can also manually configure DNS. Check all "domain" options in "loadBalancer.domain" here: https://sst.dev/docs/component/aws/service/#loadbalancer-domain.
+          // dns: false,
+
+          // if you don't provide a domain name, you will be able to use the load balancer domain for testing (http only)
+          name: $app.stage === "production"
+            ? "example.com"
+            : `${$app.stage}.example.com`,
+        }
       },
 
       workers: [{

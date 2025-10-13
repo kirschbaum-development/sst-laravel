@@ -27,20 +27,56 @@ enum ImageType {
 
 export interface LaravelWebArgs {
   /**
-   * Domain for the web layer.
+   * Custom domain for the web layer. (if you don't provide a domain name, you will be able to use the load balancer domain for testing (http only))
    */
   domain?: Input<
     string
     | {
+      /**
+       * Domain name. You are able to use variables from the SST config file here.
+       *
+       * @example
+       * ```js
+       * domain: {
+       *   name: `${$app.stage}.example.com`,
+       * }
+       * ```
+       */
       name: Input<string>;
+
+      /**
+       * Certificate ARN. Use this in case you are manually setting up the SSL certificate.
+       * This is usually needed when your DNS is not in the same AWS account or is outside of AWS.
+       *
+       * @example
+       * ```js
+       * domain: {
+       *   cert: 'arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012',
+       * }
+       * ```
+       */
       cert?: Input<string>;
+
+      /**
+       * SST DNS configuration. You can use this configuration if your DNS is in Cloudflare or another AWS account.
+       *
+       * @see https://sst.dev/docs/component/cloudflare/dns/
+       * @see https://sst.dev/docs/component/aws/dns/
+       * @example
+       * ```js
+       * domain: {
+       *   dns: sst.cloudflare.dns(),
+       * }
+       * ```
+       */
       dns?: Input<false | (Dns & {})>;
     }
   >;
 
   loadBalancer?: ServiceArgs["loadBalancer"];
-  image?: ServiceArgs["image"];
   scaling?: ServiceArgs["scaling"];
+
+  // image?: ServiceArgs["image"];
 }
 
 export interface LaravelWorkerConfig {
@@ -205,7 +241,7 @@ export class Laravel extends Component {
         /**
          * Image passed or use our default provided image.
          */
-        image: getImage(args.web?.image, ImageType.Web),
+        image: getImage(ImageType.Web),
         environment: envVariables,
         scaling: args.web?.scaling,
 
@@ -269,7 +305,7 @@ export class Laravel extends Component {
         link: getLinks(),
         permissions: args.permissions,
 
-        image: getImage(args.web?.image, ImageType.Worker, imgBuildArgs),
+        image: getImage(ImageType.Worker, imgBuildArgs),
         scaling: workerConfig.scaling,
         environment: getEnvironmentVariables(),
 
@@ -332,10 +368,8 @@ export class Laravel extends Component {
     }
 
     // TODO: We have to test if it works when a custom image is provided in sst.config.js
-    function getImage(imgFromConfig: LaravelWebArgs["image"] | null | undefined, imgType: ImageType, extraArgs: object = {}) {
-      const img = imgFromConfig
-        ? imgFromConfig
-        : getDefaultImage(imgType, extraArgs);
+    function getImage(imgType: ImageType, extraArgs: object = {}) {
+      const img = getDefaultImage(imgType, extraArgs);
 
       const context = typeof img === 'string'
         ? sitePath.toString()

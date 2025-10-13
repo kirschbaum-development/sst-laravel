@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# This script runs during container deployment
+# Add your deployment commands here (migrations, cache clearing, etc.)
+# You can use the CONTAINER_TYPE variable to determine the type of container ("web" or "worker")
+
+# Exit on error
+set -e
+
+echo "🚀 Running Deployment Script..."
+
+cd "$APP_BASE_DIR"
+
+echo "🚀 Running PHP Artisan Optimize..."
+php artisan optimize
+
+if [ "$CONTAINER_TYPE" = "web" ]; then
+    echo "🚀 Running Laravel Migrations..."
+    php artisan migrate --force
+else
+    echo "👉 Skipping Laravel Migrations since this is not the web container"
+fi

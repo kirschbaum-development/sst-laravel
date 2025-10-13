@@ -65,20 +65,40 @@ permissions: [
 
 #### `web.domain`
 - **Type:** `Input<string | { name: Input<string>; cert?: Input<string>; dns?: Input<false | Dns> }>`
-- **Description:** Custom domain configuration for the web service.
+- **Description:** Custom domain for the web layer. If you don't provide a domain name, you will be able to use the load balancer domain for testing (http only).
 
-**Example:**
+**Example (simple string):**
 ```typescript
 web: {
   domain: "example.com"
 }
+```
 
-// or with advanced configuration
+**Example (with stage variable):**
+```typescript
+web: {
+  domain: {
+    name: `${$app.stage}.example.com`
+  }
+}
+```
+
+**Example (with custom certificate):**
+```typescript
 web: {
   domain: {
     name: "example.com",
-    cert: "arn:aws:acm:...",
-    dns: false
+    cert: "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012"
+  }
+}
+```
+
+**Example (with custom DNS provider):**
+```typescript
+web: {
+  domain: {
+    name: "example.com",
+    dns: sst.cloudflare.dns()
   }
 }
 ```
@@ -114,16 +134,16 @@ web: {
 #### `workers[].horizon`
 - **Type:** `Input<boolean>`
 - **Default:** `false`
-- **Description:** Enable Laravel Horizon for queue processing.
+- **Description:** Running horizon?
 
 #### `workers[].scheduler`
 - **Type:** `Input<boolean>`
 - **Default:** `false`
-- **Description:** Enable Laravel scheduler (`schedule:work`).
+- **Description:** Running scheduler?
 
 #### `workers[].tasks`
 - **Type:** `Input<{ [key: string]: Input<{ command: Input<string>; dependencies?: Input<string[]> }> }>`
-- **Description:** Custom tasks to run in the worker container using s6-overlay.
+- **Description:** Multiple tasks can be run in the worker.
 
 **Example:**
 ```typescript
@@ -151,17 +171,17 @@ workers: [
 
 ### `config`
 - **Type:** `object`
-- **Description:** Configuration settings for PHP, environment, and deployment.
+- **Description:** Config settings.
 
 #### `config.php`
 - **Type:** `Input<Number>`
 - **Default:** `8.4`
-- **Description:** PHP version to use. Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
+- **Description:** PHP version. Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
 
 #### `config.opcache`
 - **Type:** `Input<boolean>`
 - **Default:** `true`
-- **Description:** Enable PHP OPcache for better performance.
+- **Description:** PHP Opcache should be enabled?
 
 #### `config.environment`
 - **Type:** `object`
@@ -169,7 +189,7 @@ workers: [
 
 ##### `config.environment.file`
 - **Type:** `Input<string>`
-- **Description:** Path to the `.env` file to use during build. By default, no `.env` file is used to avoid deploying incorrect environment variables from local development.
+- **Description:** Use this option if you want to import an .env file during build. By default, SST Laravel won't use your .env file since that might be the wrong file when deploying from your local machine.
 
 **Example:**
 ```typescript
@@ -183,11 +203,11 @@ config: {
 ##### `config.environment.autoInject`
 - **Type:** `Input<boolean>`
 - **Default:** `true`
-- **Description:** Automatically inject environment variables from linked resources. Set to `false` to disable automatic injection.
+- **Description:** Set this to false in case you don't want to auto inject environment variables from your linked resources.
 
 ##### `config.environment.vars`
 - **Type:** `FunctionArgs["environment"]`
-- **Description:** Custom environment variables to inject into the application.
+- **Description:** Custom environment variables that will be automatically injected into your application.
 
 **Example:**
 ```typescript
@@ -204,15 +224,7 @@ config: {
 
 #### `config.deployment`
 - **Type:** `object`
-- **Description:** Deployment configuration options.
-
-##### `config.deployment.migrate`
-- **Type:** `Input<boolean>`
-- **Description:** Run database migrations during deployment.
-
-##### `config.deployment.optimize`
-- **Type:** `Input<boolean>`
-- **Description:** Run Laravel optimization commands during deployment.
+- **Description:** Custom deployment configurations.
 
 ##### `config.deployment.script`
 - **Type:** `Input<string>`
@@ -222,8 +234,6 @@ config: {
 ```typescript
 config: {
   deployment: {
-    migrate: true,
-    optimize: true,
     script: "./deploy.sh"
   }
 }
