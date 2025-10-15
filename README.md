@@ -168,6 +168,8 @@ const app = new Laravel('MyLaravelApp', {
 
 The `DB_*`, `REDIS_*` and `AWS_*` environment variables will be automatically injected into your Laravel application. 
 
+You can also [import existing resources](https://sst.dev/docs/import-resources/) into SST, in case you already have resources like databases, buckets, etc. created and in use in your AWS account.
+
 #### Custom Environment Key Names
 
 If you need to customize the environment variable names for your resources, you can provide an object with the resource and a callback function in the `link` array:
