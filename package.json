@@ -41,7 +41,7 @@
   },
   "homepage": "https://github.com/kirschbaum-development/sst-laravel#readme",
   "bin": {
-    "sst-laravel": "./dist/bin/cli.js"
+    "sst-laravel": "dist/bin/cli.js"
   },
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.0.0",
