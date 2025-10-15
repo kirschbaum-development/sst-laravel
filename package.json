@@ -1,6 +1,6 @@
 {
   "name": "@kirschbaum-development/sst-laravel",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "type": "module",
   "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
   "main": "laravel-sst.ts",
