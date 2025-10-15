@@ -223,6 +223,14 @@ export class Laravel extends Component {
     // SST sets __dirname to the .sst/platform directory.
     const pluginBuildPath = path.resolve(__dirname, '../laravel');
 
+    if (!fs.existsSync(pluginBuildPath)) {
+      fs.mkdirSync(pluginBuildPath, { recursive: true });
+    }
+
+    if (!fs.existsSync(pluginBuildPath + '/deploy')) {
+      fs.mkdirSync(pluginBuildPath + '/deploy', { recursive: true });
+    }
+
     prepareEnvironmentFile();
     prepareDeploymentScript();
 
