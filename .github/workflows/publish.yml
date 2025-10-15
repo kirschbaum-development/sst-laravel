@@ -5,12 +5,14 @@ on:
     types: [published]
 
 permissions:
-  id-token: write  # Required for OIDC
+  id-token: write # Required for OIDC
   contents: read
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -21,4 +23,5 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - run: npm install
+      - run: npm run build
       - run: npm publish --provenance --access public

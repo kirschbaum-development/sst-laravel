@@ -1,11 +1,11 @@
-    const { Laravel } = await import("@kirschbaum-development/sst-laravel");
+    const { LaravelService } = await import("@kirschbaum-development/sst-laravel");
     const vpc = new sst.aws.Vpc("MyVpc");
     // you can also use an existing VPC
     // const vpc = sst.aws.Vpc.get("DefaultVpc", "vpc-12345678901234567");
 
     const database = new sst.aws.Postgres('MyDB', { vpc });
 
-    const app = new Laravel("MyLaravelApp", {
+    const app = new LaravelService("MyLaravelApp", {
       vpc,
       link: [database],
 

@@ -41,7 +41,7 @@ npx sst-laravel init
 To start using, you only need to import the component in your `sst.config.ts` file:
 
 ```ts
-import { Laravel } from "@kirschbaum-development/sst-laravel";
+import { LaravelService } from "@kirschbaum-development/sst-laravel";
 ```
 
 And now you can start using the `Laravel` SST component. All the configuration options are Typescript files with documentation, so
@@ -53,7 +53,7 @@ To check the full list of options. check [here](https://github.com/kirschbaum-de
 Setting up your app to receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain (with SSL), with auto-scaling with a max of 3 servers.
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   web: {
     domain: 'laravel-sst-demo.kdg.dev',
     scaling: {
@@ -74,7 +74,7 @@ SST Laravel will automatically deploy and configure worker containers running yo
 **Running the Laravel scheduler**
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   workers: [
     {
       name: 'scheduler',
@@ -87,7 +87,7 @@ const app = new Laravel('MyLaravelApp', {
 **Running the Laravel Horizon**
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   workers: [
     {
       name: 'horizon',
@@ -100,7 +100,7 @@ const app = new Laravel('MyLaravelApp', {
 **Running custom commands**
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   workers: [
     {
       name: 'worker',
@@ -127,7 +127,7 @@ There are multiple ways to configure environment variables. If you want SST Lara
 The below configuration would copy a file named `.env.$STAGE` (e.g. `.env.production`) into the deployment containers as your `.env` file.
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   // ...
   config: {
     environment: {
@@ -140,7 +140,7 @@ const app = new Laravel('MyLaravelApp', {
 You can also configure it to use simply `.env`.
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   // ...
   config: {
     environment: {
@@ -161,7 +161,7 @@ const database = new sst.aws.Postgres('MyDatabase', { vpc });
 const redis = new sst.aws.Redis("MyRedis", { vpc });
 const bucket = new sst.aws.Bucket("MyBucket");
 
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   link: [database, redis, bucket],
 });
 ```
@@ -175,7 +175,7 @@ You can also [import existing resources](https://sst.dev/docs/import-resources/)
 If you need to customize the environment variable names for your resources, you can provide an object with the resource and a callback function in the `link` array:
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   link: [
     email, 
     {
@@ -223,7 +223,7 @@ The IAM permissions for the linked resources are also automatically added to the
 You can configure the PHP version, custom environment variables and a custom deployment script.
 
 ```js
-const app = new Laravel('MyLaravelApp', {
+const app = new LaravelService('MyLaravelApp', {
   config: {
     php: 8.4,
     opcache: true,

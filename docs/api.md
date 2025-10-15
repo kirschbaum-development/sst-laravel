@@ -3,7 +3,7 @@
 ## Constructor
 
 ```typescript
-new Laravel(name: string, args: LaravelArgs, opts?: ComponentResourceOptions)
+new LaravelService(name: string, args: LaravelArgs, opts?: ComponentResourceOptions)
 ```
 
 Creates a new Laravel component for deploying Laravel applications to AWS Fargate.
@@ -247,7 +247,7 @@ config: {
 
 **Example:**
 ```typescript
-const app = new Laravel("MyApp", { ... });
+const app = new LaravelService("MyApp", { ... });
 console.log(app.url); // https://example.com or https://xyz.elb.amazonaws.com
 ```
 
@@ -259,7 +259,7 @@ const database = new sst.aws.Postgres("MyDatabase", { vpc });
 const redis = new sst.aws.Redis("MyRedis", { vpc });
 const bucket = new sst.aws.Bucket("MyBucket");
 
-const app = new Laravel("MyApp", {
+const app = new LaravelService("MyApp", {
   path: "./",
   vpc,
   

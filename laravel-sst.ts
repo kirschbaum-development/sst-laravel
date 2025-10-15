@@ -202,7 +202,7 @@ export interface LaravelArgs extends ClusterArgs {
   }
 }
 
-export class Laravel extends Component {
+export class LaravelService extends Component {
   private readonly services: Record<string, sst.aws.Service>;
 
   constructor(
