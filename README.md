@@ -48,14 +48,15 @@ And now you can start using the `Laravel` SST component. All the configuration o
 
 To check the full list of options. check [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md). 
 
-### HTTP
+### Web (HTTP)
 
-Setting up your app to receive HTTP requests, on the `laravel-sst-demo.kdg.dev` domain (with SSL), with auto-scaling with a max of 3 servers.
+Below is an example of setting up your application to receive HTTP requests, on the `laravel-sst-demo.example.com` domain (with SSL), with auto-scaling with a max of 3 servers.
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
   web: {
-    domain: 'laravel-sst-demo.kdg.dev',
+    dns: sst.cloudflare.dns(),
+    domain: 'laravel-sst-demo.example.com',
     scaling: {
       min: 1, 
       max: 3,
@@ -63,6 +64,8 @@ const app = new LaravelService('MyLaravelApp', {
   },
 });
 ```
+
+Check all the `web` options [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md#web).
 
 ### Workers
 
@@ -119,6 +122,8 @@ const app = new LaravelService('MyLaravelApp', {
   ],
 });
 ```
+
+Check all the `workers` options [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md#workers).
 
 ## Environment Variables
 
