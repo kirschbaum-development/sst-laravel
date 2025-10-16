@@ -1,5 +1,7 @@
 # SST Laravel
 
+![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/deploy.png)
+
 SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
 
 SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
@@ -55,8 +57,12 @@ Below is an example of setting up your application to receive HTTP requests, on 
 ```js
 const app = new LaravelService('MyLaravelApp', {
   web: {
-    dns: sst.cloudflare.dns(),
-    domain: 'laravel-sst-demo.example.com',
+    cpu: 1024,
+    memory: 2048,
+    domain: {
+      dns: sst.cloudflare.dns(),
+      name: 'laravel-sst-demo.example.com',
+    },
     scaling: {
       min: 1, 
       max: 3,

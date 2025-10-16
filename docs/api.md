@@ -103,6 +103,22 @@ web: {
 }
 ```
 
+#### `web.architecture`
+- **Type:** `ServiceArgs["architecture"]`
+- **Description:** The CPU architecture for the web service.
+
+#### `web.cpu`
+- **Type:** `ServiceArgs["cpu"]`
+- **Description:** CPU units for the web service.
+
+#### `web.memory`
+- **Type:** `ServiceArgs["memory"]`
+- **Description:** Memory allocation for the web service.
+
+#### `web.storage`
+- **Type:** `ServiceArgs["storage"]`
+- **Description:** Storage configuration for the web service.
+
 #### `web.scaling`
 - **Type:** `ServiceArgs["scaling"]`
 - **Description:** Auto-scaling configuration for the web service.
@@ -119,6 +135,22 @@ web: {
 }
 ```
 
+#### `web.logging`
+- **Type:** `ServiceArgs["logging"]`
+- **Description:** Logging configuration for the web service.
+
+#### `web.health`
+- **Type:** `ServiceArgs["health"]`
+- **Description:** Health check configuration for the web service.
+
+#### `web.executionRole`
+- **Type:** `ServiceArgs["executionRole"]`
+- **Description:** Execution role for the web service.
+
+#### `web.permissions`
+- **Type:** `ServiceArgs["permissions"]`
+- **Description:** IAM permissions specific to the web service.
+
 ### `workers`
 - **Type:** `LaravelWorkerConfig[]`
 - **Description:** Configuration for worker services (Horizon, scheduler, or custom tasks).
@@ -126,10 +158,6 @@ web: {
 #### `workers[].name`
 - **Type:** `Input<string>`
 - **Description:** Name of the worker service. If not provided, defaults to `worker-{index}`.
-
-#### `workers[].scaling`
-- **Type:** `ServiceArgs["scaling"]`
-- **Description:** Auto-scaling configuration for the worker service.
 
 #### `workers[].horizon`
 - **Type:** `Input<boolean>`
@@ -168,6 +196,42 @@ workers: [
   }
 ]
 ```
+
+#### `workers[].architecture`
+- **Type:** `ServiceArgs["architecture"]`
+- **Description:** The CPU architecture for the worker service.
+
+#### `workers[].cpu`
+- **Type:** `ServiceArgs["cpu"]`
+- **Description:** CPU units for the worker service.
+
+#### `workers[].memory`
+- **Type:** `ServiceArgs["memory"]`
+- **Description:** Memory allocation for the worker service.
+
+#### `workers[].storage`
+- **Type:** `ServiceArgs["storage"]`
+- **Description:** Storage configuration for the worker service.
+
+#### `workers[].scaling`
+- **Type:** `ServiceArgs["scaling"]`
+- **Description:** Auto-scaling configuration for the worker service.
+
+#### `workers[].logging`
+- **Type:** `ServiceArgs["logging"]`
+- **Description:** Logging configuration for the worker service.
+
+#### `workers[].health`
+- **Type:** `ServiceArgs["health"]`
+- **Description:** Health check configuration for the worker service.
+
+#### `workers[].executionRole`
+- **Type:** `ServiceArgs["executionRole"]`
+- **Description:** Execution role for the worker service.
+
+#### `workers[].permissions`
+- **Type:** `ServiceArgs["permissions"]`
+- **Description:** IAM permissions specific to this worker.
 
 ### `config`
 - **Type:** `object`
@@ -306,8 +370,7 @@ const app = new LaravelService("MyApp", {
     },
     
     deployment: {
-      migrate: true,
-      optimize: true
+      script: "./deploy.sh"
     }
   }
 });

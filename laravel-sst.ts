@@ -25,7 +25,20 @@ enum ImageType {
   Cli = 'cli',
 }
 
-export interface LaravelWebArgs {
+export interface LaravelServiceArgs {
+  architecture?: ServiceArgs["architecture"];
+  cpu?: ServiceArgs["cpu"];
+  memory?: ServiceArgs["memory"];
+  storage?: ServiceArgs["storage"];
+  loadBalancer?: ServiceArgs["loadBalancer"];
+  scaling?: ServiceArgs["scaling"];
+  logging?: ServiceArgs["logging"];
+  health?: ServiceArgs["health"];
+  executionRole?: ServiceArgs["executionRole"];
+  permissions?: ServiceArgs["permissions"];
+}
+
+export interface LaravelWebArgs extends LaravelServiceArgs {
   /**
    * Custom domain for the web layer. (if you don't provide a domain name, you will be able to use the load balancer domain for testing (http only))
    */
@@ -72,18 +85,10 @@ export interface LaravelWebArgs {
       dns?: Input<false | (Dns & {})>;
     }
   >;
-
-  loadBalancer?: ServiceArgs["loadBalancer"];
-  scaling?: ServiceArgs["scaling"];
-
-  // image?: ServiceArgs["image"];
 }
 
-export interface LaravelWorkerConfig {
+export interface LaravelWorkerConfig extends LaravelServiceArgs {
   name?: Input<string>;
-  link?: ServiceArgs["link"];
-  scaling?: ServiceArgs["scaling"];
-
   /**
   * Running horizon?
   */
@@ -446,7 +451,7 @@ export class LaravelService extends Component {
 
       if (args.web?.domain) {
         if (typeof args.web.domain === 'string') {
-          (env as any)['APP_URL'] = args.web.domain;
+          (env as any)['APP_URL'] = `https://${args.web.domain}`;
         }
       }
 
