@@ -483,8 +483,17 @@ export class LaravelService extends Component {
         ...customEnv,
       };
 
-      // TODO: Write resourcesEnvVars to the .env file
-      // TODO: Add proper types
+      const envFile = path.resolve(pluginBuildPath, 'deploy', '.env');
+      
+      all(Object.entries(resourcesEnvVars)).apply(entries => {
+        const envContent = entries
+          .map(([key, value]) => `${key}=${value}`)
+          .join('\n');
+        
+        if (envContent) {
+          fs.appendFileSync(envFile, '\n' + envContent);
+        }
+      });
     };
 
     /**
@@ -555,6 +564,6 @@ export class LaravelService extends Component {
   }
 }
 
-const __pulumiType = "sst:aws:Laravel";
+const __pulumiType = "sst:aws:LaravelService";
 // @ts-expect-error
-Laravel.__pulumiType = __pulumiType;
+LaravelService.__pulumiType = __pulumiType;
