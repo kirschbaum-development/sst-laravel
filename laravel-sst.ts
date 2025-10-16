@@ -4,12 +4,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { Component } from "../../../.sst/platform/src/components/component.js";
 import { FunctionArgs } from "../../../.sst/platform/src/components/aws/function.js";;
-import { ComponentResourceOptions, Output, all, output } from "../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
+import { ComponentResourceOptions, Output, all, output } from "@pulumi/pulumi";
 import { Input } from "../../../.sst/platform/src/components/input.js";
 import { ClusterArgs } from "../../../.sst/platform/src/components/aws/cluster.js";
 import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.js";
 import { Dns } from "../../../.sst/platform/src/components/dns.js";
-import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env.js";
+import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env";
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -484,12 +484,12 @@ export class LaravelService extends Component {
       };
 
       const envFile = path.resolve(pluginBuildPath, 'deploy', '.env');
-      
+
       all(Object.entries(resourcesEnvVars)).apply(entries => {
         const envContent = entries
           .map(([key, value]) => `${key}=${value}`)
           .join('\n');
-        
+
         if (envContent) {
           fs.appendFileSync(envFile, '\n' + envContent);
         }

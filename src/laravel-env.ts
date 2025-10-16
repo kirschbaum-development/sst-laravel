@@ -2,8 +2,8 @@ import { Email } from "../../../../.sst/platform/src/components/aws/email.js";
 import { Mysql } from "../../../../.sst/platform/src/components/aws/mysql.js";
 import { Postgres } from "../../../../.sst/platform/src/components/aws/postgres.js";
 import { Redis } from "../../../../.sst/platform/src/components/aws/redis.js";
-import { Output } from "../../../../.sst/platform/node_modules/@pulumi/pulumi/index.js";
-import * as pulumiAws from "../../../../.sst/platform/node_modules/@pulumi/aws/index.js";
+import { Output } from "@pulumi/pulumi";
+import * as pulumiAws from "@pulumi/aws";
 import { Queue } from "../../../../.sst/platform/src/components/aws/queue.js";
 import { Aurora } from "../../../../.sst/platform/src/components/aws/aurora.js";
 import { Bucket } from "../../../../.sst/platform/src/components/aws/bucket.js";
@@ -128,7 +128,6 @@ export function applyRedisEnv(database: Redis): EnvType {
   };
 }
 
-// TODO
 export function applyEmailEnv(mail: Email): EnvType {
   return {
     MAIL_MAILER: 'ses',
@@ -136,13 +135,11 @@ export function applyEmailEnv(mail: Email): EnvType {
   };
 }
 
-// TODO
 export function applyQueueEnv(queue: Queue): EnvType {
   const queueUrl: Output<string> = queue.url;
 
   return {
     SQS_QUEUE: queue.url,
-    // MAIL_FROM_ADDRESS: link.sender,
   };
 }
 
