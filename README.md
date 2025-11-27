@@ -303,6 +303,7 @@ npx sst-laravel ssh worker --stage production
 ### Roadmap
 
 * Support for [SST Secrets](https://sst.dev/docs/component/secret/);
+* Extend base Docker images;
 * Add support for Inertia SSR;
 * Add support for Octane with FrankedPHP;
 * Add support for Laravel Reverb;
