@@ -298,15 +298,27 @@ npx sst-laravel ssh {worker-name} --stage production
 npx sst-laravel ssh worker --stage production
 ```
 
-## Gotchas
+## Logs
+
+You can view the logs for your application using the `sst-laravel logs` command.
+
+```bash
+npx sst-laravel logs {service} --stage production
+npx sst-laravel logs web --stage production
+npx sst-laravel logs worker --stage production
+```
+
+This will show the logs for your application in real-time.
+
+**LOG_CHANNEL**
+
+To send logs to AWS CloudWatch, you need to set the `LOG_CHANNEL` environment variable to `stderr`. In case this variable is not set in your specified environment file, SST Laravel will automatically add it to the environment file with the value of `stderr`.
+
+## Troublshooting
 
 **APP_URL**
 
 In case your specified environment file does not contain the `APP_URL` variable, SST Laravel will automatically add it to the environment file with the value of the `web.domain` property.
-
-**Logging**
-
-To send logs to AWS CloudWatch, you need to set the `LOG_CHANNEL` environment variable to `stderr`. In case this variable is not set in your specified environment file, SST Laravel will automatically add it to the environment file with the value of `stderr`.
 
 **Load Balancer and trusted proxies**
 
