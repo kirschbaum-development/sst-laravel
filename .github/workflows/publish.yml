@@ -26,3 +26,5 @@ jobs:
       - run: npm install
       - run: npm run build
       - run: npm publish --access public
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
