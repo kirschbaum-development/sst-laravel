@@ -209,6 +209,7 @@ export interface LaravelArgs extends ClusterArgs {
 
 export class LaravelService extends Component {
   private readonly services: Record<string, sst.aws.Service>;
+  private readonly _messages: string[] = [];
 
   constructor(
     name: string,
@@ -234,6 +235,26 @@ export class LaravelService extends Component {
 
     if (!fs.existsSync(pluginBuildPath + '/deploy')) {
       fs.mkdirSync(pluginBuildPath + '/deploy', { recursive: true });
+    }
+
+    const envFilePath = path.resolve(pluginBuildPath, 'deploy', '.env');
+
+    const envFileHasVariable = (variableName: string): boolean => {
+      const content = fs.readFileSync(envFilePath, 'utf-8');
+      return content.split('\n').some(line => line.trim().startsWith(`${variableName}=`));
+    }
+
+    const envFileSetVariable = (variableName: string, value: string) => {
+      fs.appendFileSync(envFilePath, `\n${variableName}=${value}\n`);
+      this._messages.push(`Added ${variableName} to environment file: ${value}`);
+    }
+
+    const envFileSetVariableIfMissing = (variableName: string, value: string) => {
+      if (envFileHasVariable(variableName)) {
+        return;
+      }
+
+      envFileSetVariable(variableName, value);
     }
 
     prepareEnvironmentFile();
@@ -448,12 +469,6 @@ export class LaravelService extends Component {
     function getEnvironmentVariables() {
       const env = args.config?.environment?.vars || {};
 
-      if (args.web?.domain) {
-        if (typeof args.web.domain === 'string') {
-          (env as any)['APP_URL'] = `https://${args.web.domain}`;
-        }
-      }
-
       return env;
     }
 
@@ -487,9 +502,10 @@ export class LaravelService extends Component {
         ...customEnv,
       };
 
-      const envFile = path.resolve(pluginBuildPath, 'deploy', '.env');
+      fs.appendFileSync(envFilePath, '\n' + "# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---" + '\n');
 
-      fs.appendFileSync(envFile, '\n' + "# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---" + '\n');
+      addAppUrlIfMissing();
+      envFileSetVariableIfMissing('LOG_CHANNEL', 'stderr');
 
       all(Object.entries(resourcesEnvVars)).apply(entries => {
         const envContent = entries
@@ -497,7 +513,7 @@ export class LaravelService extends Component {
           .join('\n');
 
         if (envContent) {
-          fs.appendFileSync(envFile, '\n' + envContent);
+          fs.appendFileSync(envFilePath, '\n' + envContent);
         }
       });
     };
@@ -522,19 +538,42 @@ export class LaravelService extends Component {
         return;
       }
 
-      const envDir = path.resolve(pluginBuildPath, 'deploy');
-      const dst = path.resolve(envDir, '.env');
       const src = path.resolve(absSitePath, envFile);
 
       if (fs.existsSync(src)) {
-        fs.copyFileSync(src, dst);
-        fs.chmodSync(dst, 0o755);
+        fs.copyFileSync(src, envFilePath);
+        fs.chmodSync(envFilePath, 0o755);
       } else {
-        fs.writeFileSync(dst, '');
+        fs.writeFileSync(envFilePath, '');
       }
 
       if (args.config?.environment?.autoInject !== false) {
         applyLinkedResourcesToEnvironment();
+      }
+    }
+
+    function addAppUrlIfMissing() {
+      if (!args.web?.domain) {
+        return;
+      }
+
+      if (envFileHasVariable('APP_URL')) {
+        return;
+      }
+
+      let domainName: string | undefined;
+
+      if (typeof args.web.domain === 'string') {
+        domainName = args.web.domain;
+      } else if (typeof args.web.domain === 'object' && 'name' in args.web.domain) {
+        const name = (args.web.domain as { name: Input<string> }).name;
+        if (typeof name === 'string') {
+          domainName = name;
+        }
+      }
+
+      if (domainName) {
+        envFileSetVariable('APP_URL', `https://${domainName}`);
       }
     }
 
@@ -557,6 +596,8 @@ export class LaravelService extends Component {
       fs.writeFileSync(dst, "#!/bin/sh\nexit 0\n");
       fs.chmodSync(dst, 0o755);
     }
+
+    this.registerOutputs({ _hint: this.messages });
   };
 
   /**
@@ -567,6 +608,15 @@ export class LaravelService extends Component {
    */
   public get url() {
     return this.services['web'].url;
+  }
+
+  /**
+   * The messages from the service.
+   *
+   * This is useful for debugging and troubleshooting.
+   */
+  public get messages() {
+    return this._messages;
   }
 }
 
