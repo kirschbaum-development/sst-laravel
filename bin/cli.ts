@@ -6,6 +6,8 @@ import {
   IAMClient,
   CreateOpenIDConnectProviderCommand,
   ListOpenIDConnectProvidersCommand,
+  GetOpenIDConnectProviderCommand,
+  AddClientIDToOpenIDConnectProviderCommand,
   CreateRoleCommand,
   AttachRolePolicyCommand,
   GetRoleCommand
@@ -821,6 +823,7 @@ async function getAwsAccountId(iamClient: IAMClient): Promise<string> {
 }
 
 async function ensureGithubOidcProvider(iamClient: IAMClient, githubOidcUrl: string): Promise<string> {
+  const requiredAudience = 'sts.amazonaws.com';
   const listResponse = await iamClient.send(new ListOpenIDConnectProvidersCommand({}));
 
   const existingProvider = listResponse.OpenIDConnectProviderList?.find(
@@ -828,6 +831,21 @@ async function ensureGithubOidcProvider(iamClient: IAMClient, githubOidcUrl: str
   );
 
   if (existingProvider) {
+    const providerDetails = await iamClient.send(new GetOpenIDConnectProviderCommand({
+      OpenIDConnectProviderArn: existingProvider.Arn
+    }));
+
+    const hasRequiredAudience = providerDetails.ClientIDList?.includes(requiredAudience);
+
+    if (!hasRequiredAudience) {
+      console.log(`⚠️  OIDC provider exists but missing "${requiredAudience}" audience. Adding it...`);
+      await iamClient.send(new AddClientIDToOpenIDConnectProviderCommand({
+        OpenIDConnectProviderArn: existingProvider.Arn,
+        ClientID: requiredAudience
+      }));
+      console.log(`✅ Added "${requiredAudience}" audience to OIDC provider`);
+    }
+
     return existingProvider.Arn!;
   }
 
@@ -835,7 +853,7 @@ async function ensureGithubOidcProvider(iamClient: IAMClient, githubOidcUrl: str
 
   const createResponse = await iamClient.send(new CreateOpenIDConnectProviderCommand({
     Url: githubOidcUrl,
-    ClientIDList: ['sts.amazonaws.com'],
+    ClientIDList: [requiredAudience],
     ThumbprintList: [thumbprint]
   }));
 
