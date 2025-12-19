@@ -1,4 +1,4 @@
-ARG PHP_VERSION=8.3
+ARG PHP_VERSION=8.4
 FROM serversideup/php:${PHP_VERSION}-unit as base
 
 USER root
@@ -41,14 +41,13 @@ USER www-data
 
 FROM base as deploy
 
-ARG ENV_FILENAME
 ENV CONTAINER_TYPE=web
 
 # Enable OPCache
 ENV PHP_OPCACHE_ENABLE=1
 
 COPY --chown=www-data:www-data . /var/www/html
-COPY --chown=www-data:www-data $ENV_FILENAME /var/www/html/.env
+COPY --chown=www-data:www-data .sst/laravel/deploy/.env /var/www/html/.env
 
 # Copy deploy script generated into .sst/laravel by the build step
 COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh

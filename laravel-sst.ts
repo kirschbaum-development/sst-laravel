@@ -434,7 +434,6 @@ export class LaravelService extends Component {
           'PHP_OPCACHE_ENABLE': args.config?.opcache? '1' : '0',
           'AUTORUN_LARAVEL_MIGRATION': imageType === ImageType.Web ? 'true' : 'false',
           'CONTAINER_TYPE': imageType,
-          'ENV_FILENAME': args.config?.environment?.file ?? '.env',
           stage: "deploy",
           platform: "linux/amd64",
           ...extraArgs
@@ -490,6 +489,8 @@ export class LaravelService extends Component {
 
       const envFile = path.resolve(pluginBuildPath, 'deploy', '.env');
 
+      fs.appendFileSync(envFile, '\n' + "# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---" + '\n');
+
       all(Object.entries(resourcesEnvVars)).apply(entries => {
         const envContent = entries
           .map(([key, value]) => `${key}=${value}`)
@@ -532,7 +533,7 @@ export class LaravelService extends Component {
         fs.writeFileSync(dst, '');
       }
 
-      if (! args.config?.environment?.autoInject === false) {
+      if (args.config?.environment?.autoInject !== false) {
         applyLinkedResourcesToEnvironment();
       }
     }

@@ -1,4 +1,4 @@
-ARG PHP_VERSION=8.3
+ARG PHP_VERSION=8.4
 FROM serversideup/php:${PHP_VERSION}-cli AS phpcli
 
 ##########
@@ -68,6 +68,7 @@ FROM base AS deploy
 ENV CONTAINER_TYPE=cli
 
 COPY --chown=www-data:www-data . /var/www/html
+COPY --chown=www-data:www-data .sst/laravel/deploy/.env /var/www/html/.env
 
 # Fix S6 Overlay issues with Big Cloud PaaS (https://github.com/serversideup/docker-php/pull/376#issuecomment-2179262427)
 RUN chown -R www-data:www-data /run
