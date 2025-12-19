@@ -1,6 +1,6 @@
 {
   "name": "@kirschbaum-development/sst-laravel",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "type": "module",
   "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
   "main": "laravel-sst.ts",
@@ -50,6 +50,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-ecs": "^3.0.0",
+    "@aws-sdk/client-iam": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0",
     "@inquirer/prompts": "^7.0.0",
     "@pulumi/aws": "^7.8.0",
     "@pulumi/pulumi": "^3.203.0",

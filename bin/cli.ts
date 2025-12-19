@@ -2,8 +2,16 @@
 
 import { Command } from 'commander';
 import { ECSClient, ListTasksCommand, DescribeTasksCommand, ListClustersCommand, DescribeTaskDefinitionCommand, Task } from '@aws-sdk/client-ecs';
+import {
+  IAMClient,
+  CreateOpenIDConnectProviderCommand,
+  ListOpenIDConnectProvidersCommand,
+  CreateRoleCommand,
+  AttachRolePolicyCommand,
+  GetRoleCommand
+} from '@aws-sdk/client-iam';
 import { select } from '@inquirer/prompts';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -27,6 +35,13 @@ interface LogsOptions {
   region: string;
   follow: boolean;
   since?: string;
+}
+
+interface GithubIamOptions {
+  repo?: string;
+  branch: string;
+  region: string;
+  roleName: string;
 }
 
 function findSstConfig(): string | null {
@@ -93,6 +108,26 @@ function extractEnvironmentFile(configPath: string, stage: string): string | nul
   envFile = envFile.replace(/\$\{?\$app\.stage\}?/g, stage);
 
   return envFile;
+}
+
+function detectGitHubRepo(): string | null {
+  try {
+    const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
+
+    const sshMatch = remoteUrl.match(/git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/);
+    if (sshMatch) {
+      return `${sshMatch[1]}/${sshMatch[2].replace(/\.git$/, '')}`;
+    }
+
+    const httpsMatch = remoteUrl.match(/https:\/\/github\.com\/([^/]+)\/(.+?)(?:\.git)?$/);
+    if (httpsMatch) {
+      return `${httpsMatch[1]}/${httpsMatch[2].replace(/\.git$/, '')}`;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function validateDeployment(stage: string): void {
@@ -663,5 +698,159 @@ program
       process.exit(1);
     }
   });
+
+program
+  .command('github-iam')
+  .description('Create an IAM Role on AWS for GitHub Actions OIDC authentication for deployments')
+  .option('-r, --repo <repo>', 'GitHub repository in format owner/repo (auto-detected from git remote)')
+  .option('-b, --branch <branch>', 'Branch to allow deployments from (use * for all branches)', '*')
+  .option('--region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
+  .option('--role-name <name>', 'Name for the IAM role', 'github-actions-sst-deploy')
+  .action(async (options: GithubIamOptions) => {
+    try {
+      const { branch, region, roleName } = options;
+      let repo = options.repo;
+
+      if (!repo) {
+        const detectedRepo = detectGitHubRepo();
+        if (detectedRepo) {
+          repo = detectedRepo;
+          console.log(`📦 Auto-detected repository: ${repo}`);
+        } else {
+          console.error('Error: Could not auto-detect GitHub repository.');
+          console.error('Please use --repo flag to specify the repository in format owner/repo');
+          process.exit(1);
+        }
+      }
+
+      if (!repo.includes('/')) {
+        console.error('Error: Repository must be in format owner/repo');
+        process.exit(1);
+      }
+
+      const [owner, repoName] = repo.split('/');
+      const iamClient = new IAMClient({ region });
+
+      const githubOidcUrl = 'https://token.actions.githubusercontent.com';
+      const githubOidcArn = `arn:aws:iam::${await getAwsAccountId(iamClient)}:oidc-provider/token.actions.githubusercontent.com`;
+
+      console.log(`\n🔧 Setting up GitHub Actions OIDC for ${owner}/${repoName}...\n`);
+
+      const oidcProviderArn = await ensureGithubOidcProvider(iamClient, githubOidcUrl);
+      console.log(`✅ GitHub OIDC Provider: ${oidcProviderArn}`);
+
+      const trustPolicy = buildTrustPolicy(oidcProviderArn, owner, repoName, branch);
+
+      try {
+        const existingRole = await iamClient.send(new GetRoleCommand({ RoleName: roleName }));
+        console.log(`⚠️  Role "${roleName}" already exists with ARN: ${existingRole.Role?.Arn}`);
+        console.log('   If you need to update the trust policy, delete the role first and re-run this command.');
+      } catch (error: any) {
+        if (error.name === 'NoSuchEntityException') {
+          const createRoleResponse = await iamClient.send(new CreateRoleCommand({
+            RoleName: roleName,
+            AssumeRolePolicyDocument: JSON.stringify(trustPolicy),
+            Description: `GitHub Actions deployment role for ${owner}/${repoName}`
+          }));
+
+          console.log(`✅ Created IAM Role: ${createRoleResponse.Role?.Arn}`);
+
+          await iamClient.send(new AttachRolePolicyCommand({
+            RoleName: roleName,
+            PolicyArn: 'arn:aws:iam::aws:policy/AdministratorAccess'
+          }));
+
+          console.log('✅ Attached AdministratorAccess policy');
+        } else {
+          throw error;
+        }
+      }
+
+      console.log('\n📋 Add the following to your GitHub Actions workflow:\n');
+      console.log('```yaml');
+      console.log('permissions:');
+      console.log('  id-token: write');
+      console.log('  contents: read');
+      console.log('');
+      console.log('jobs:');
+      console.log('  deploy:');
+      console.log('    runs-on: ubuntu-latest');
+      console.log('    steps:');
+      console.log('      - uses: actions/checkout@v4');
+      console.log('');
+      console.log('      - name: Configure AWS Credentials');
+      console.log('        uses: aws-actions/configure-aws-credentials@v4');
+      console.log('        with:');
+      console.log(`          role-to-assume: arn:aws:iam::ACCOUNT_ID:role/${roleName}`);
+      console.log(`          aws-region: ${region}`);
+      console.log('');
+      console.log('      - name: Deploy with SST');
+      console.log('        run: npx sst deploy --stage production');
+      console.log('```\n');
+
+      console.log('💡 Replace ACCOUNT_ID with your AWS account ID in the workflow file.');
+      console.log(`💡 The role allows deployments from: ${branch === '*' ? 'all branches' : `branch "${branch}"`}`);
+
+    } catch (error) {
+      console.error('Error:', (error as Error).message);
+      process.exit(1);
+    }
+  });
+
+async function getAwsAccountId(iamClient: IAMClient): Promise<string> {
+  const { STSClient, GetCallerIdentityCommand } = await import('@aws-sdk/client-sts');
+  const stsClient = new STSClient({ region: iamClient.config.region });
+  const response = await stsClient.send(new GetCallerIdentityCommand({}));
+  return response.Account!;
+}
+
+async function ensureGithubOidcProvider(iamClient: IAMClient, githubOidcUrl: string): Promise<string> {
+  const listResponse = await iamClient.send(new ListOpenIDConnectProvidersCommand({}));
+
+  const existingProvider = listResponse.OpenIDConnectProviderList?.find(
+    provider => provider.Arn?.includes('token.actions.githubusercontent.com')
+  );
+
+  if (existingProvider) {
+    return existingProvider.Arn!;
+  }
+
+  const thumbprint = '6938fd4d98bab03faadb97b34396831e3780aea1';
+
+  const createResponse = await iamClient.send(new CreateOpenIDConnectProviderCommand({
+    Url: githubOidcUrl,
+    ClientIDList: ['sts.amazonaws.com'],
+    ThumbprintList: [thumbprint]
+  }));
+
+  return createResponse.OpenIDConnectProviderArn!;
+}
+
+function buildTrustPolicy(oidcProviderArn: string, owner: string, repo: string, branch: string): object {
+  const condition = branch === '*'
+    ? `repo:${owner}/${repo}:*`
+    : `repo:${owner}/${repo}:ref:refs/heads/${branch}`;
+
+  return {
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Allow',
+        Principal: {
+          Federated: oidcProviderArn
+        },
+        Action: 'sts:AssumeRoleWithWebIdentity',
+        Condition: {
+          StringEquals: {
+            'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com'
+          },
+          StringLike: {
+            'token.actions.githubusercontent.com:sub': condition
+          }
+        }
+      }
+    ]
+  };
+}
 
 program.parse();
