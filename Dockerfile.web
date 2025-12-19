@@ -1,5 +1,5 @@
 ARG PHP_VERSION=8.4
-FROM serversideup/php:${PHP_VERSION}-unit as base
+FROM serversideup/php:${PHP_VERSION}-fpm-nginx as base
 
 USER root
 
