@@ -314,7 +314,7 @@ This will show the logs for your application in real-time.
 
 To send logs to AWS CloudWatch, you need to set the `LOG_CHANNEL` environment variable to `stderr`. In case this variable is not set in your specified environment file, SST Laravel will automatically add it to the environment file with the value of `stderr`.
 
-## Troublshooting
+## Troubleshooting
 
 **APP_URL**
 
@@ -334,6 +334,15 @@ SST Laravel puts the container behind a load balancer, so you must configure you
         Request::HEADER_X_FORWARDED_AWS_ELB
     );
 })
+```
+
+**Failed to build sst.config.ts**
+
+In case you get the following error when running SST commands, run `npx sst-laravel install`. If this fails, temporarily rename the `sst.config.ts` file, and run `npx sst install`.
+
+```bash
+✕  Failed to build sst.config.ts
+   - node_modules/@kirschbaum-development/sst-laravel/laravel-sst.ts:6:26 Could not resolve "../../../.sst/platform/src/components/component.js"
 ```
 
 ***
