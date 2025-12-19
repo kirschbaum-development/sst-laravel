@@ -1,5 +1,35 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/**
+ * Find the package root directory by looking for package.json
+ * This works whether running from source (bin/utils/) or compiled (dist/bin/utils/)
+ */
+export function getPackageRoot(): string {
+  let dir = __dirname;
+
+  // Traverse up until we find package.json
+  while (dir !== path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    dir = path.dirname(dir);
+  }
+
+  throw new Error('Could not find package root (package.json not found)');
+}
+
+/**
+ * Get the path to a template file
+ */
+export function getTemplatePath(templateName: string): string {
+  const packageRoot = getPackageRoot();
+  return path.join(packageRoot, 'templates', templateName);
+}
 
 export function findSstConfig(): string | null {
   const cwd = process.cwd();

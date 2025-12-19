@@ -2,10 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { getTemplatePath } from '../utils/sst-config.js';
 
 export const initCommand = new Command('init')
   .description('Initialize SST and SST Laravel, creating a new sst.config.ts file to deploy your Laravel application')
@@ -53,7 +50,7 @@ export const initCommand = new Command('init')
         console.log('SST is already installed');
       }
 
-      const initTemplatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.init.template');
+      const initTemplatePath = getTemplatePath('sst.config.init.template');
 
       if (!fs.existsSync(initTemplatePath)) {
         console.error('Error: Init template file not found.');
@@ -101,7 +98,7 @@ export const initCommand = new Command('init')
         sstInstallProcess.on('error', reject);
       });
 
-      const runTemplatePath = path.join(__dirname, '..', '..', 'templates', 'sst.config.run.template');
+      const runTemplatePath = getTemplatePath('sst.config.run.template');
 
       if (!fs.existsSync(runTemplatePath)) {
         console.error('Error: Run template file not found.');
@@ -115,7 +112,7 @@ export const initCommand = new Command('init')
 
       fs.writeFileSync(targetPath, finalConfig, 'utf-8');
 
-      const deployTemplatePath = path.join(__dirname, '..', '..', 'templates', 'deploy.template');
+      const deployTemplatePath = getTemplatePath('deploy.template');
 
       if (fs.existsSync(deployTemplatePath)) {
         const infraDir = path.join(cwd, 'infra');
