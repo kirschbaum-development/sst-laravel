@@ -24,7 +24,8 @@
     ".dockerignore"
   ],
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "release": "./scripts/publish.sh"
   },
   "repository": {
     "type": "git",

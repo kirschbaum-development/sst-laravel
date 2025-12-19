@@ -41,7 +41,7 @@ interface GithubIamOptions {
   repo?: string;
   branch: string;
   region: string;
-  roleName: string;
+  roleName?: string;
 }
 
 function findSstConfig(): string | null {
@@ -58,6 +58,12 @@ function findSstConfig(): string | null {
   }
 
   return null;
+}
+
+function extractSstProjectName(configPath: string): string | null {
+  const content = fs.readFileSync(configPath, 'utf-8');
+  const match = content.match(/name\s*:\s*['"`]([^'"`]+)['"`]/);
+  return match ? match[1] : null;
 }
 
 function extractLaravelComponents(configPath: string): string[] {
@@ -705,11 +711,12 @@ program
   .option('-r, --repo <repo>', 'GitHub repository in format owner/repo (auto-detected from git remote)')
   .option('-b, --branch <branch>', 'Branch to allow deployments from (use * for all branches)', '*')
   .option('--region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
-  .option('--role-name <name>', 'Name for the IAM role', 'github-actions-sst-deploy')
+  .option('--role-name <name>', 'Name for the IAM role (defaults to github-actions-{project}-sst-deploy)')
   .action(async (options: GithubIamOptions) => {
     try {
-      const { branch, region, roleName } = options;
+      const { branch, region } = options;
       let repo = options.repo;
+      let roleName = options.roleName;
 
       if (!repo) {
         const detectedRepo = detectGitHubRepo();
@@ -726,6 +733,15 @@ program
       if (!repo.includes('/')) {
         console.error('Error: Repository must be in format owner/repo');
         process.exit(1);
+      }
+
+      if (!roleName) {
+        const configPath = findSstConfig();
+        const projectName = configPath ? extractSstProjectName(configPath) : null;
+        roleName = projectName
+          ? `github-actions-${projectName}-sst-deploy`
+          : 'github-actions-sst-deploy';
+        console.log(`🏷️  Using role name: ${roleName}`);
       }
 
       const [owner, repoName] = repo.split('/');
