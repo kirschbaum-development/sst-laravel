@@ -7,10 +7,11 @@ import * as pulumiAws from "@pulumi/aws";
 import { Queue } from "../../../../.sst/platform/src/components/aws/queue.js";
 import { Aurora } from "../../../../.sst/platform/src/components/aws/aurora.js";
 import { Bucket } from "../../../../.sst/platform/src/components/aws/bucket.js";
+import { Secret } from "../../../../.sst/platform/src/components/secret.js";
 
 type EnvType = Record<string, string | Output<string>>|Record<string, string | Output<string | undefined> | undefined>;
 type Database = Postgres | Mysql | Aurora | pulumiAws.rds.Instance;
-type LinkSupportedTypes = Database | Email | Queue | Redis | Bucket;
+type LinkSupportedTypes = Database | Email | Queue | Redis | Bucket | Secret;
 
 export type EnvCallback = (resource: any) => EnvType;
 export type EnvCallbacks = {
@@ -73,9 +74,14 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
         ...defaultEnv,
       };
     }
+
   });
 
   return environment;
+}
+
+export function extractSecrets(links: LinkSupportedTypes[]): Secret[] {
+  return links.filter((link): link is Secret => link instanceof Secret);
 }
 
 function applyDatabaseEnv(database: Database, callbacks?: EnvCallbacks): EnvType {

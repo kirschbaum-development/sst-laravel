@@ -137,6 +137,8 @@ There are multiple ways to configure environment variables. If you want SST Lara
 
 The below configuration would copy a file named `.env.$STAGE` (e.g. `.env.production`) into the deployment containers as your `.env` file.
 
+### Environment File
+
 ```js
 const app = new LaravelService('MyLaravelApp', {
   // ...
@@ -160,6 +162,21 @@ const app = new LaravelService('MyLaravelApp', {
   }
 });
 ```
+
+### SST Secrets
+
+You can also use SST Secrets to store your environment variables. This is a more secure way to store your environment variables.
+
+```js
+const APP_KEY = new sst.Secret("APP_KEY");
+const DB_PASSWORD = new sst.Secret("DB_PASSWORD");
+
+const app = new LaravelService('MyLaravelApp', {
+  link: [APP_KEY, DB_PASSWORD],
+});
+```
+
+This will automatically inject the environment variables into the `.env` file of your Laravel application. Read more about SST Secrets [here](https://sst.dev/docs/component/secret/).
 
 ### Resources
 
@@ -345,11 +362,20 @@ In case you get the following error when running SST commands, run `npx sst-lara
    - node_modules/@kirschbaum-development/sst-laravel/laravel-sst.ts:6:26 Could not resolve "../../../.sst/platform/src/components/component.js"
 ```
 
+**CD: AWS credentials are not configured**
+
+If you are getting the following error when deploying (usually via CI/CD), the issue is usually that you have a `.env` or `.env.{stage}` that contains the `AWS_ACCESS_KEY_ID` and 
+`AWS_SECRET_ACCESS_KEY` keys. They should be removed from the environment file and you should be relying on the IAM role to give your app permissions to access AWS resources (which is more secure anyway).
+
+```
+✕  AWS credentials are not configured. Try configuring your profile in `~/.aws/config` and setting the `AWS_PROFILE` environment variable or specifying `providers.aws.profile` in your sst.config.ts
+   aws: failed to refresh cached credentials, no EC2 IMDS role found, operation error ec2imds: GetMetadata, failed to get API token, operation error ec2imds: getToken, http response error StatusCode: 400, request to EC2 IMDS failed
+```
+
 ***
 
 ### Roadmap
 
-* Support for [SST Secrets](https://sst.dev/docs/component/secret/);
 * Extend base Docker images;
 * Add support for Inertia SSR;
 * Add support for Octane with FrankedPHP;

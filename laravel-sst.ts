@@ -9,7 +9,7 @@ import { Input } from "../../../.sst/platform/src/components/input.js";
 import { ClusterArgs } from "../../../.sst/platform/src/components/aws/cluster.js";
 import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.js";
 import { Dns } from "../../../.sst/platform/src/components/dns.js";
-import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks } from "./src/laravel-env";
+import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks, extractSecrets } from "./src/laravel-env";
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -515,6 +515,13 @@ export class LaravelService extends Component {
         if (envContent) {
           fs.appendFileSync(envFilePath, '\n' + envContent);
         }
+      });
+
+      const secrets = extractSecrets(resources);
+      secrets.forEach(secret => {
+        all([secret.name, secret.value]).apply(([name, value]) => {
+          fs.appendFileSync(envFilePath, `\n${name}=${value}`);
+        });
       });
     };
 
