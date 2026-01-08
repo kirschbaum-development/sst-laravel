@@ -10,6 +10,8 @@ import { sshCommand } from './commands/ssh.js';
 import { logsCommand } from './commands/logs.js';
 import { githubIamCommand } from './commands/github-iam.js';
 import { installCommand } from './commands/install.js';
+import { envPullCommand } from './commands/env-pull.js';
+import { envPushCommand } from './commands/env-push.js';
 import { getPackageRoot } from './utils/sst-config.js';
 
 const packageJsonPath = path.join(getPackageRoot(), 'package.json');
@@ -29,5 +31,7 @@ program.addCommand(sshCommand);
 program.addCommand(logsCommand);
 program.addCommand(githubIamCommand);
 program.addCommand(installCommand);
+program.addCommand(envPullCommand);
+program.addCommand(envPushCommand);
 
 program.parse();

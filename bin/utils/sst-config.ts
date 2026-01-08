@@ -111,8 +111,10 @@ export function validateDeployment(stage: string): void {
   }
 
   const envFile = extractEnvironmentFile(configPath, stage);
+  const secretsConfig = extractSecretsConfig(configPath);
 
-  if (envFile) {
+  // Only validate env file if secrets are not configured
+  if (envFile && !secretsConfig) {
     const cwd = process.cwd();
     const envFilePath = path.join(cwd, envFile);
 
@@ -120,4 +122,31 @@ export function validateDeployment(stage: string): void {
       throw new Error(`Environment file "${envFile}" not found. Please create the file or update your sst.config.ts configuration.`);
     }
   }
+}
+
+/**
+ * Extract LaravelEnv secrets configuration from SST config
+ * Returns the custom path if specified, or null if no LaravelEnv is used
+ */
+export function extractSecretsConfig(configPath: string): { path?: string } | null {
+  const content = fs.readFileSync(configPath, 'utf-8');
+
+  // Check if LaravelEnv is used
+  const laravelEnvMatch = content.match(/new\s+LaravelEnv\s*\(/);
+  if (!laravelEnvMatch) {
+    return null;
+  }
+
+  // Check if secrets is configured in environment
+  const secretsMatch = content.match(/secrets\s*:\s*(\w+)/);
+  if (!secretsMatch) {
+    return null;
+  }
+
+  // Try to extract custom path from LaravelEnv constructor
+  const pathMatch = content.match(/new\s+LaravelEnv\s*\([^)]*path\s*:\s*['"`]([^'"`]+)['"`]/);
+
+  return {
+    path: pathMatch ? pathMatch[1] : undefined,
+  };
 }

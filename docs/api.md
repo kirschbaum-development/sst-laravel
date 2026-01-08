@@ -1,6 +1,121 @@
 # Laravel Component API Reference
 
-## Constructor
+## LaravelEnv
+
+The `LaravelEnv` component manages environment variables for your Laravel application using AWS Secrets Manager. This provides a secure way to store and manage sensitive configuration values.
+
+### Large Environment Files
+
+Environment files that exceed AWS Secrets Manager's 64KB limit are automatically split into multiple chunks. This is handled transparently by the CLI commands - you don't need to do anything special.
+
+When pushing a large `.env` file:
+- The file is automatically split into multiple secrets (e.g., `/{app}/{stage}/env/1`, `/{app}/{stage}/env/2`, etc.)
+- A metadata secret at `/{app}/{stage}/env` tracks the chunk count
+- When pulling or deploying, all chunks are automatically merged back together
+
+### Constructor
+
+```typescript
+new LaravelEnv(name: string, args?: LaravelEnvArgs, opts?: ComponentResourceOptions)
+```
+
+### LaravelEnvArgs
+
+#### `path`
+- **Type:** `Input<string>`
+- **Default:** `/{app-name}/{stage}/env`
+- **Description:** The path in AWS Secrets Manager where environment variables will be stored.
+
+**Example:**
+```typescript
+const env = new LaravelEnv("Env", {
+  path: "/my-app/production/env"
+});
+```
+
+### Properties
+
+#### `path`
+- **Type:** `Output<string>`
+- **Description:** The path in AWS Secrets Manager where environment variables are stored.
+
+### CLI Commands
+
+The following CLI commands are available for managing environment variables:
+
+#### `env:push`
+
+Push environment variables from a local `.env` file to AWS Secrets Manager.
+
+```bash
+sst-laravel env:push [options]
+```
+
+**Options:**
+- `-s, --stage <stage>` - SST stage name
+- `-i, --input <file>` - Input file path (default: `.env`)
+- `-f, --force` - Push without confirmation
+
+**Example:**
+```bash
+# Push .env.production to the production stage
+sst-laravel env:push --stage production --input .env.production
+
+# Push .env to staging with confirmation
+sst-laravel env:push --stage staging
+```
+
+#### `env:pull`
+
+Pull environment variables from AWS Secrets Manager to a local `.env` file.
+
+```bash
+sst-laravel env:pull [options]
+```
+
+**Options:**
+- `-s, --stage <stage>` - SST stage name
+- `-o, --output <file>` - Output file path (default: `.env.{stage}`)
+- `-f, --force` - Overwrite existing file without confirmation
+
+**Example:**
+```bash
+# Pull from production to .env.production
+sst-laravel env:pull --stage production
+
+# Pull from staging to a custom file
+sst-laravel env:pull --stage staging --output .env.local
+```
+
+### Usage with LaravelService
+
+```typescript
+const env = new LaravelEnv("Env");
+
+new LaravelService("Laravel", {
+  vpc,
+  web: {
+    domain: "example.com"
+  },
+  config: {
+    environment: {
+      secrets: env
+    }
+  }
+});
+```
+
+When using `LaravelEnv`, deploy your application using the `sst-laravel deploy` command, which will automatically fetch secrets from AWS Secrets Manager before building the Docker image:
+
+```bash
+sst-laravel deploy --stage production
+```
+
+---
+
+## LaravelService
+
+### Constructor
 
 ```typescript
 new LaravelService(name: string, args: LaravelArgs, opts?: ComponentResourceOptions)
@@ -286,6 +401,25 @@ config: {
 }
 ```
 
+##### `config.environment.secrets`
+- **Type:** `LaravelEnv`
+- **Description:** Use a `LaravelEnv` component to manage environment variables in AWS Secrets Manager. When provided, secrets will be fetched from AWS Secrets Manager at build time using the `sst-laravel deploy` command.
+
+**Example:**
+```typescript
+const env = new LaravelEnv("Env");
+
+new LaravelService("Laravel", {
+  config: {
+    environment: {
+      secrets: env
+    }
+  }
+});
+```
+
+> **Note:** When using `secrets`, you should deploy using `sst-laravel deploy --stage <stage>` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
+
 #### `config.deployment`
 - **Type:** `object`
 - **Description:** Custom deployment configurations.
@@ -379,3 +513,85 @@ return {
   url: app.url
 };
 ```
+
+## Example with LaravelEnv (Secrets Manager)
+
+```typescript
+const vpc = new sst.aws.Vpc("MyVpc");
+const database = new sst.aws.Postgres("MyDatabase", { vpc });
+const redis = new sst.aws.Redis("MyRedis", { vpc });
+
+// Create environment secrets manager
+const env = new LaravelEnv("Env");
+
+const app = new LaravelService("MyApp", {
+  path: "./",
+  vpc,
+  
+  link: [database, redis],
+  
+  web: {
+    domain: "example.com",
+    scaling: {
+      min: 2,
+      max: 10
+    }
+  },
+  
+  workers: [
+    {
+      name: "queue-worker",
+      horizon: true,
+      scheduler: true
+    }
+  ],
+  
+  config: {
+    php: 8.4,
+    
+    environment: {
+      // Use secrets from AWS Secrets Manager
+      secrets: env,
+      // Auto-inject linked resource variables (database, redis)
+      autoInject: true,
+      // Additional runtime variables
+      vars: {
+        SESSION_DRIVER: 'redis',
+        QUEUE_CONNECTION: 'redis'
+      }
+    }
+  }
+});
+
+return {
+  url: app.url,
+  secretsPath: env.path
+};
+```
+
+### Workflow with LaravelEnv
+
+1. **Initial setup** - Push your `.env` file to AWS Secrets Manager:
+   ```bash
+   sst-laravel env:push --stage production --input .env.production
+   ```
+
+2. **Deploy** - Use the sst-laravel CLI to deploy (automatically fetches secrets):
+   ```bash
+   sst-laravel deploy --stage production
+   ```
+
+3. **Update secrets** - When you need to update environment variables:
+   ```bash
+   # Pull current secrets (creates .env.production by default)
+   sst-laravel env:pull --stage production
+   
+   # Edit the file
+   nano .env.production
+   
+   # Push updated secrets
+   sst-laravel env:push --stage production --input .env.production
+   
+   # Redeploy to apply changes
+   sst-laravel deploy --stage production
+   ```
