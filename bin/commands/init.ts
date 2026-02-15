@@ -1,8 +1,122 @@
 import { Command } from 'commander';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getTemplatePath } from '../utils/sst-config.js';
+import { fileURLToPath } from 'url';
+import { confirm } from '@inquirer/prompts';
+import { getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
+
+const SKILL_FILE_PATH = fileURLToPath(new URL('../../skills/laravel-initial-setup/SKILL.md', import.meta.url));
+
+const runProcess = (command: string, args: string[], cwd: string) => {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: 'inherit',
+      shell: true
+    });
+
+    child.on('exit', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`${command} ${args.join(' ')} exited with code ${code}`));
+      }
+    });
+
+    child.on('error', reject);
+  });
+};
+
+const detectLaravelBoostVersion = (cwd: string): string | null => {
+  try {
+    const output = execSync('composer show laravel/boost --no-ansi --no-interaction', {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe']
+    }).toString();
+
+    const versionMatch = output.match(/versions?\s*:\s*\*?\s*v?([0-9][^\s]*)/i);
+    if (!versionMatch) {
+      return null;
+    }
+
+    return versionMatch[1].replace(/^v/, '');
+  } catch (error) {
+    return null;
+  }
+};
+
+const isVersionAtLeast = (version: string, minimum: string) => {
+  const normalize = (input: string) => input.split('.').map((segment) => parseInt(segment, 10) || 0);
+  const versionParts = normalize(version);
+  const minParts = normalize(minimum);
+
+  for (let i = 0; i < Math.max(versionParts.length, minParts.length); i++) {
+    const current = versionParts[i] ?? 0;
+    const min = minParts[i] ?? 0;
+
+    if (current > min) return true;
+    if (current < min) return false;
+  }
+
+  return true;
+};
+
+const installSkillWithBoost = async (cwd: string) => {
+  const aiSkillsDir = path.join(cwd, '.ai', 'skills', 'sst-laravel-initial-setup');
+  fs.mkdirSync(aiSkillsDir, { recursive: true });
+
+  const targetPath = path.join(aiSkillsDir, 'SKILL.md');
+  fs.copyFileSync(SKILL_FILE_PATH, targetPath);
+
+  console.log(`Copied skill file to ${path.relative(cwd, targetPath)}`);
+  console.log('Running boost:update to refresh Laravel Boost skills...');
+  await runProcess('php', ['artisan', 'boost:update'], cwd);
+};
+
+const installSkillViaNpx = async (cwd: string) => {
+  console.log('Installing skill via `npx skills add`...');
+  await runProcess('npx', ['skills', 'add', SKILL_FILE_PATH], cwd);
+};
+
+const maybeInstallSkill = async (cwd: string) => {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    console.log('Skipping AI skill installation prompt (non-interactive terminal).');
+    return;
+  }
+
+  const shouldInstallSkill = await confirm({
+    message: 'Install the SST Laravel Initial Setup AI skill in this project?',
+    default: true
+  });
+
+  if (!shouldInstallSkill) {
+    console.log('Skipping AI skill installation. You can add it later from skills/laravel-initial-setup.');
+    return;
+  }
+
+  const boostVersion = detectLaravelBoostVersion(cwd);
+
+  if (boostVersion) {
+    console.log(`Detected laravel/boost version ${boostVersion}`);
+  } else {
+    console.log('laravel/boost package not detected or Composer unavailable.');
+  }
+
+  if (boostVersion && isVersionAtLeast(boostVersion, '2.0.0')) {
+    await installSkillWithBoost(cwd);
+  } else {
+    if (boostVersion) {
+      console.log('laravel/boost version is below 2.0. Falling back to npx skills.');
+    }
+    await installSkillViaNpx(cwd);
+  }
+
+  console.log('\n');
+  console.log('\n');
+  console.log('🤖 SST Laravel skill installed successfully');
+  console.log('Run "Please help me set up the deployment config of my application using SST Laravel" in your AI agent to get started');
+};
 
 export const initCommand = new Command('init')
   .description('Initialize SST and SST Laravel, creating a new sst.config.ts file to deploy your Laravel application')
@@ -83,7 +197,11 @@ export const initCommand = new Command('init')
       const sstInstallProcess = spawn('npx', ['sst', 'install'], {
         cwd,
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: {
+          ...process.env,
+          SST_LARAVEL_PACKAGE_ROOT: getPackageRoot(),
+        },
       });
 
       await new Promise<void>((resolve, reject) => {
@@ -127,9 +245,16 @@ export const initCommand = new Command('init')
         console.log('Created infra/deploy.sh script');
       }
 
+      try {
+        await maybeInstallSkill(cwd);
+      } catch (skillError) {
+        console.warn('Failed to install AI skill automatically:', (skillError as Error).message);
+        console.warn('You can manually add it later from skills/laravel-initial-setup.');
+      }
+
       console.log('\n');
       console.log('\n');
-      console.log('Successfully configured sst.config.ts with Laravel boilerplate');
+      console.log('✅ Successfully configured sst.config.ts with Laravel boilerplate');
       console.log('You can now customize the configuration for your own Laravel application.');
       console.log('\n');
       console.log('Your default configuration is set to look for a .env.{stage} file when deploying. You can customize this in the sst.config.ts file as needed.');

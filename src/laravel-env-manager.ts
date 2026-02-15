@@ -68,6 +68,11 @@ export interface LaravelEnvArgs {
 export class LaravelEnv extends Component {
   private readonly _path: Output<string>;
 
+  /**
+   * LaravelEnv is a component provided by the sst-laravel package 
+   * to manage environment variables for your Laravel application using AWS Secrets Manager, 
+   * making it simple to manage your environment variables in a remote way that also works well with CI/CD pipelines.
+   */
   constructor(
     name: string,
     args: LaravelEnvArgs = {},

@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { findSstConfig, getTemplatePath } from '../utils/sst-config.js';
+import { findSstConfig, getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
 
 export const installCommand = new Command('install')
   .description('Run SST install, handling existing .sst folder by temporarily renaming sst.config.ts')
@@ -40,7 +40,11 @@ export const installCommand = new Command('install')
       const installProcess = spawn('npx', ['sst', 'install'], {
         cwd,
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: {
+          ...process.env,
+          SST_LARAVEL_PACKAGE_ROOT: getPackageRoot(),
+        },
       });
 
       await new Promise<void>((resolve, reject) => {

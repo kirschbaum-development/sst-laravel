@@ -21,7 +21,8 @@
     "images",
     "Dockerfile.web",
     "Dockerfile.worker",
-    ".dockerignore"
+    ".dockerignore",
+    "skills"
   ],
   "scripts": {
     "build": "tsc",

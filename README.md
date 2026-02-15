@@ -38,6 +38,21 @@ To get started quickly, you can use the `init` command:
 npx sst-laravel init
 ```
 
+Running `init` now also prompts you to install the SST Laravel Initial Setup AI skill. Accepting the prompt will automatically detect whether `laravel/boost` ≥ 2.0 is available via Composer; if so, the skill is copied into `.ai/skills/sst-laravel-initial-setup/SKILL.md` and `php artisan boost:update` is executed. Otherwise, the command falls back to `npx skills add` with the bundled skill file.
+
+## AI Skill for Guided Setup
+
+Projects that rely on AI copilots (like OpenCode) can import the `skills/laravel-initial-setup/SKILL.md` file from this package. The skill walks an assistant through:
+
+- Auditing prerequisites (Node, AWS CLI, credentials, `sst-laravel` CLI)
+- Bootstrapping your repo by running `npx sst-laravel init` before any config changes
+- Choosing the right environment strategy (`LaravelEnv`, SST Secrets, or `.env` files)
+- Inspecting/creating VPC resources through the AWS CLI
+- Iteratively editing `sst.config.ts` until your Laravel service is deployable
+- Producing clear summaries after every step plus follow-up tasks and cautions
+
+Point your assistant at that file to get a prescriptive, secure onboarding workflow tailored for SST Laravel.
+
 ## Usage
 
 To start using, you only need to import the component in your `sst.config.ts` file:

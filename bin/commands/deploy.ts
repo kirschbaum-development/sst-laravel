@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { validateDeployment, findSstConfig, extractSstProjectName, extractSecretsConfig } from '../utils/sst-config.js';
+import { validateDeployment, findSstConfig, extractSstProjectName, extractSecretsConfig, getPackageRoot } from '../utils/sst-config.js';
 import { pullSecrets, getSecretPath, getSecretInfo, toEnvFileContent } from '../utils/secrets-manager.js';
 
 export const deployCommand = new Command('deploy')
@@ -61,7 +61,11 @@ export const deployCommand = new Command('deploy')
       const deployProcess = spawn('npx', ['sst', 'deploy', '--stage', options.stage], {
         cwd: process.cwd(),
         stdio: 'inherit',
-        shell: true
+        shell: true,
+        env: {
+          ...process.env,
+          SST_LARAVEL_PACKAGE_ROOT: getPackageRoot(),
+        },
       });
 
       await new Promise<void>((resolve, reject) => {

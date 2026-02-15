@@ -11,6 +11,7 @@ import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.j
 import { Dns } from "../../../.sst/platform/src/components/dns.js";
 import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks, extractSecrets } from "./src/laravel-env";
 import { LaravelEnv, LaravelEnvArgs } from "./src/laravel-env-manager";
+import { getPackagePath } from "./src/config";
 
 // Re-export LaravelEnv for external use
 export { LaravelEnv, LaravelEnvArgs };
@@ -246,7 +247,7 @@ export class LaravelService extends Component {
     args.config = args.config ?? {};
     const sitePath = args.path ?? '.';
     const absSitePath = path.resolve(sitePath.toString());
-    const nodeModulePath = path.resolve(__dirname, '../../node_modules/@kirschbaum-development/sst-laravel');
+    const nodeModulePath = getPackagePath();
 
     // Determine the path where our plugin will save build files.
     // SST sets __dirname to the .sst/platform directory.
