@@ -46,7 +46,7 @@ Projects that rely on AI copilots (like OpenCode) can import the `skills/laravel
 
 - Auditing prerequisites (Node, AWS CLI, credentials, `sst-laravel` CLI)
 - Bootstrapping your repo by running `npx sst-laravel init` before any config changes
-- Choosing the right environment strategy (`LaravelEnv`, SST Secrets, or `.env` files)
+- Choosing the right environment strategy (`RemoteEnvVault`, SST Secrets, or `.env` files)
 - Inspecting/creating VPC resources through the AWS CLI
 - Iteratively editing `sst.config.ts` until your Laravel service is deployable
 - Producing clear summaries after every step plus follow-up tasks and cautions
@@ -193,14 +193,14 @@ const app = new LaravelService('MyLaravelApp', {
 
 This will automatically inject the environment variables into the `.env` file of your Laravel application. Read more about SST Secrets [here](https://sst.dev/docs/component/secret/).
 
-### AWS Secrets Manager (LaravelEnv)
+### AWS Secrets Manager (RemoteEnvVault)
 
-For a more robust environment variable management solution similar to Laravel Vapor, you can use the `LaravelEnv` component. This stores your environment variables in AWS Secrets Manager and provides CLI commands to push and pull secrets.
+For a more robust environment variable management solution similar to Laravel Vapor, you can use the `RemoteEnvVault` component. This stores your environment variables in AWS Secrets Manager and provides CLI commands to push and pull secrets.
 
 ```js
-import { LaravelEnv, LaravelService } from "@kirschbaum-development/sst-laravel";
+import { RemoteEnvVault, LaravelService } from "@kirschbaum-development/sst-laravel";
 
-const env = new LaravelEnv("Env");
+const env = new RemoteEnvVault("Env");
 const app = new LaravelService('MyLaravelApp', {
   // ...
   config: {
@@ -247,7 +247,7 @@ npx sst-laravel env:pull --stage staging --output .env.local
 
 #### Deploying with Secrets
 
-When using `LaravelEnv`, deploy using the `sst-laravel deploy` command which automatically fetches secrets before building:
+When using `RemoteEnvVault`, deploy using the `sst-laravel deploy` command which automatically fetches secrets before building:
 
 ```bash
 npx sst-laravel deploy --stage production
@@ -272,7 +272,7 @@ npx sst-laravel deploy --stage production
 You can also use a custom path for the secrets:
 
 ```js
-const env = new LaravelEnv("Env", {
+const env = new RemoteEnvVault("Env", {
   path: "/custom/path/env"
 });
 ```
@@ -390,7 +390,7 @@ npx sst-laravel deploy --stage sandbox
 npx sst-laravel deploy --stage production
 ```
 
-> **Note:** If you're using `LaravelEnv` for secrets management, you should use `sst-laravel deploy` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
+> **Note:** If you're using `RemoteEnvVault` for secrets management, you should use `sst-laravel deploy` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
 
 ## Accessing Containers
 

@@ -1,10 +1,22 @@
-    const { LaravelService, LaravelEnv } = await import("@kirschbaum-development/sst-laravel");
+    const { LaravelService, RemoteEnvVault } = await import("@kirschbaum-development/sst-laravel");
     const vpc = new sst.aws.Vpc("MyVpc");
     // you can also use an existing VPC
     // const vpc = sst.aws.Vpc.get("DefaultVpc", "vpc-12345678901234567");
 
     const database = new sst.aws.Postgres('MyDB', { vpc });
-    const env = new LaravelEnv("Env");
+
+    /**
+     * With RemoteEnvVault, SST-Laravel will use the environment variables stored in the remote vault (AWS Secrets Manager)
+     * This makes it easy to manage env with teams, and especially makes it ready for CI/CD
+     * 
+     * To get started, create the environment file first, and push it to the remote vault. Examples:
+     * - `cp .env.example .env.dev`
+     * - `php artisan key:generate --env .env.dev`
+     * - `npx sst-laravel env:push --stage dev`
+     * 
+     * Replace `dev` with the stage you want to set up
+     */
+    const env = new RemoteEnvVault("Env");
 
     const app = new LaravelService("MyLaravelApp", {
       vpc,

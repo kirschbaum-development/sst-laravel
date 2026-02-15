@@ -125,14 +125,14 @@ export function validateDeployment(stage: string): void {
 }
 
 /**
- * Extract LaravelEnv secrets configuration from SST config
- * Returns the custom path if specified, or null if no LaravelEnv is used
+ * Extract RemoteEnvVault secrets configuration from SST config
+ * Returns the custom path if specified, or null if no RemoteEnvVault is used
  */
 export function extractSecretsConfig(configPath: string): { path?: string } | null {
   const content = fs.readFileSync(configPath, 'utf-8');
 
-  // Check if LaravelEnv is used
-  const laravelEnvMatch = content.match(/new\s+LaravelEnv\s*\(/);
+  // Check if RemoteEnvVault is used
+  const laravelEnvMatch = content.match(/new\s+RemoteEnvVault\s*\(/);
   if (!laravelEnvMatch) {
     return null;
   }
@@ -143,8 +143,8 @@ export function extractSecretsConfig(configPath: string): { path?: string } | nu
     return null;
   }
 
-  // Try to extract custom path from LaravelEnv constructor
-  const pathMatch = content.match(/new\s+LaravelEnv\s*\([^)]*path\s*:\s*['"`]([^'"`]+)['"`]/);
+  // Try to extract custom path from RemoteEnvVault constructor
+  const pathMatch = content.match(/new\s+RemoteEnvVault\s*\([^)]*path\s*:\s*['"`]([^'"`]+)['"`]/);
 
   return {
     path: pathMatch ? pathMatch[1] : undefined,

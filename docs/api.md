@@ -1,8 +1,8 @@
 # Laravel Component API Reference
 
-## LaravelEnv
+## RemoteEnvVault
 
-The `LaravelEnv` component manages environment variables for your Laravel application using AWS Secrets Manager. This provides a secure way to store and manage sensitive configuration values.
+The `RemoteEnvVault` component manages environment variables for your Laravel application using AWS Secrets Manager. This provides a secure way to store and manage sensitive configuration values.
 
 ### Large Environment Files
 
@@ -16,10 +16,10 @@ When pushing a large `.env` file:
 ### Constructor
 
 ```typescript
-new LaravelEnv(name: string, args?: LaravelEnvArgs, opts?: ComponentResourceOptions)
+new RemoteEnvVault(name: string, args?: RemoteEnvVaultArgs, opts?: ComponentResourceOptions)
 ```
 
-### LaravelEnvArgs
+### RemoteEnvVaultArgs
 
 #### `path`
 - **Type:** `Input<string>`
@@ -28,7 +28,7 @@ new LaravelEnv(name: string, args?: LaravelEnvArgs, opts?: ComponentResourceOpti
 
 **Example:**
 ```typescript
-const env = new LaravelEnv("Env", {
+const env = new RemoteEnvVault("Env", {
   path: "/my-app/production/env"
 });
 ```
@@ -90,7 +90,7 @@ sst-laravel env:pull --stage staging --output .env.local
 ### Usage with LaravelService
 
 ```typescript
-const env = new LaravelEnv("Env");
+const env = new RemoteEnvVault("Env");
 
 new LaravelService("Laravel", {
   vpc,
@@ -105,7 +105,7 @@ new LaravelService("Laravel", {
 });
 ```
 
-When using `LaravelEnv`, deploy your application using the `sst-laravel deploy` command, which will automatically fetch secrets from AWS Secrets Manager before building the Docker image:
+When using `RemoteEnvVault`, deploy your application using the `sst-laravel deploy` command, which will automatically fetch secrets from AWS Secrets Manager before building the Docker image:
 
 ```bash
 sst-laravel deploy --stage production
@@ -402,12 +402,12 @@ config: {
 ```
 
 ##### `config.environment.secrets`
-- **Type:** `LaravelEnv`
-- **Description:** Use a `LaravelEnv` component to manage environment variables in AWS Secrets Manager. When provided, secrets will be fetched from AWS Secrets Manager at build time using the `sst-laravel deploy` command.
+- **Type:** `RemoteEnvVault`
+- **Description:** Use a `RemoteEnvVault` component to manage environment variables in AWS Secrets Manager. When provided, secrets will be fetched from AWS Secrets Manager at build time using the `sst-laravel deploy` command.
 
 **Example:**
 ```typescript
-const env = new LaravelEnv("Env");
+const env = new RemoteEnvVault("Env");
 
 new LaravelService("Laravel", {
   config: {
@@ -514,7 +514,7 @@ return {
 };
 ```
 
-## Example with LaravelEnv (Secrets Manager)
+## Example with RemoteEnvVault (Secrets Manager)
 
 ```typescript
 const vpc = new sst.aws.Vpc("MyVpc");
@@ -522,7 +522,7 @@ const database = new sst.aws.Postgres("MyDatabase", { vpc });
 const redis = new sst.aws.Redis("MyRedis", { vpc });
 
 // Create environment secrets manager
-const env = new LaravelEnv("Env");
+const env = new RemoteEnvVault("Env");
 
 const app = new LaravelService("MyApp", {
   path: "./",
@@ -569,7 +569,7 @@ return {
 };
 ```
 
-### Workflow with LaravelEnv
+### Workflow with RemoteEnvVault
 
 1. **Initial setup** - Push your `.env` file to AWS Secrets Manager:
    ```bash

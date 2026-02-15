@@ -4,14 +4,14 @@ import { Component } from "../../../../.sst/platform/src/components/component.js
 import { ComponentResourceOptions, Output, output } from "@pulumi/pulumi";
 import { Input } from "../../../../.sst/platform/src/components/input.js";
 
-export interface LaravelEnvArgs {
+export interface RemoteEnvVaultArgs {
   /**
    * The path in AWS Secrets Manager where environment variables will be stored.
    * Defaults to `/{app-name}/{stage}/env`.
    *
    * @example
    * ```js
-   * new LaravelEnv("Env", {
+   * new RemoteEnvVault("Env", {
    *   path: "/my-app/production/env",
    * });
    * ```
@@ -20,7 +20,7 @@ export interface LaravelEnvArgs {
 }
 
 /**
- * The `LaravelEnv` component manages environment variables for your Laravel application
+ * The `RemoteEnvVault` component manages environment variables for your Laravel application
  * using AWS Secrets Manager.
  *
  * The secrets are managed via CLI commands:
@@ -33,7 +33,7 @@ export interface LaravelEnvArgs {
  * @example
  * ### Basic usage
  * ```js
- * const env = new LaravelEnv("Env");
+ * const env = new RemoteEnvVault("Env");
  *
  * new LaravelService("Laravel", {
  *   config: {
@@ -47,7 +47,7 @@ export interface LaravelEnvArgs {
  * @example
  * ### Custom path
  * ```js
- * const env = new LaravelEnv("Env", {
+ * const env = new RemoteEnvVault("Env", {
  *   path: "/custom/path/env",
  * });
  * ```
@@ -65,17 +65,17 @@ export interface LaravelEnvArgs {
  * sst-laravel deploy --stage production
  * ```
  */
-export class LaravelEnv extends Component {
+export class RemoteEnvVault extends Component {
   private readonly _path: Output<string>;
 
   /**
-   * LaravelEnv is a component provided by the sst-laravel package 
+   * RemoteEnvVault is a component provided by the sst-laravel package 
    * to manage environment variables for your Laravel application using AWS Secrets Manager, 
    * making it simple to manage your environment variables in a remote way that also works well with CI/CD pipelines.
    */
   constructor(
     name: string,
-    args: LaravelEnvArgs = {},
+    args: RemoteEnvVaultArgs = {},
     opts: ComponentResourceOptions = {},
   ) {
     super(__pulumiType, name, args, opts);
@@ -104,6 +104,6 @@ export class LaravelEnv extends Component {
   }
 }
 
-const __pulumiType = "sst:aws:LaravelEnv";
+const __pulumiType = "sst:aws:RemoteEnvVault";
 // @ts-expect-error
-LaravelEnv.__pulumiType = __pulumiType;
+RemoteEnvVault.__pulumiType = __pulumiType;

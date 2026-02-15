@@ -18,7 +18,7 @@ export const deployCommand = new Command('deploy')
         const secretsConfig = extractSecretsConfig(configPath);
 
         if (appName && secretsConfig) {
-          console.log('LaravelEnv detected, fetching secrets from AWS Secrets Manager...');
+          console.log('RemoteEnvVault detected, fetching secrets from AWS Secrets Manager...');
 
           // Determine the secret path
           const secretPath = secretsConfig.path || getSecretPath(appName, options.stage);

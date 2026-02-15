@@ -10,11 +10,11 @@ import { ClusterArgs } from "../../../.sst/platform/src/components/aws/cluster.j
 import { ServiceArgs } from "../../../.sst/platform/src/components/aws/service.js";
 import { Dns } from "../../../.sst/platform/src/components/dns.js";
 import { applyLinkedResourcesEnv, EnvCallback, EnvCallbacks, extractSecrets } from "./src/laravel-env";
-import { LaravelEnv, LaravelEnvArgs } from "./src/laravel-env-manager";
+import { RemoteEnvVault, RemoteEnvVaultArgs } from "./src/laravel-env-manager";
 import { getPackagePath } from "./src/config";
 
-// Re-export LaravelEnv for external use
-export { LaravelEnv, LaravelEnvArgs };
+// Re-export RemoteEnvVault for external use
+export { RemoteEnvVault, RemoteEnvVaultArgs };
 
 // duplicate from cluster.ts
 type Port = `${number}/${"http" | "https" | "tcp" | "udp" | "tcp_udp" | "tls"}`;
@@ -201,12 +201,12 @@ export interface LaravelArgs extends ClusterArgs {
        vars?: FunctionArgs["environment"],
 
        /**
-        * Use a `LaravelEnv` component to manage environment variables in AWS Secrets Manager.
+        * Use a `RemoteEnvVault` component to manage environment variables in AWS Secrets Manager.
         * When provided, secrets will be fetched from AWS Secrets Manager at build time.
         *
         * @example
         * ```js
-        * const env = new LaravelEnv("Env");
+        * const env = new RemoteEnvVault("Env");
         *
         * new LaravelService("Laravel", {
         *   config: {
@@ -217,7 +217,7 @@ export interface LaravelArgs extends ClusterArgs {
         * });
         * ```
         */
-       secrets?: LaravelEnv,
+       secrets?: RemoteEnvVault,
      };
 
     /**
@@ -311,6 +311,19 @@ export class LaravelService extends Component {
         dev: {
           command: `php ${sitePath}/artisan serve`,
         },
+
+        transform: {
+          taskDefinition: (args) => {
+            args.containerDefinitions = (args.containerDefinitions as $util.Output<string>).apply(a => {
+              return JSON.stringify([{
+                ...JSON.parse(a)[0],
+                linuxParameters: {
+                  initProcessEnabled: false,
+                }
+              }]);
+            })
+          }
+        }
       });
     }
 
@@ -578,7 +591,7 @@ export class LaravelService extends Component {
         } else {
           // Secrets not fetched yet - this happens during `sst dev` or direct `sst deploy`
           // Create an empty file and add a warning comment
-          fs.writeFileSync(envFilePath, '# WARNING: LaravelEnv secrets not loaded. Use `sst-laravel deploy` to fetch secrets.\n');
+          fs.writeFileSync(envFilePath, '# WARNING: RemoteEnvVault secrets not loaded. Use `sst-laravel deploy` to fetch secrets.\n');
 
           if (args.config?.environment?.autoInject !== false) {
             applyLinkedResourcesToEnvironment();
