@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
 import { findSstConfig, extractSstProjectName } from '../utils/sst-config.js';
-import { pullSecrets, getSecretPath, getSecretInfo, toEnvFileContent } from '../utils/secrets-manager.js';
+import { pullSecrets, getSecretPath, getSecretInfo, toEnvFileContent, listAvailableStages } from '../utils/secrets-manager.js';
 
 export const envPullCommand = new Command('env:pull')
   .description('Pull environment variables from AWS Secrets Manager')
@@ -29,7 +29,14 @@ export const envPullCommand = new Command('env:pull')
       // Determine stage
       let stage = options.stage;
       if (!stage) {
-        const availableStages = ['production', 'staging', 'development'];
+        const availableStages = await listAvailableStages(appName);
+
+        if (availableStages.length === 0) {
+          console.log('No stages found in AWS Secrets Manager for this app.');
+          console.log('Run this command again with the --stage <stage> flag to create the environment file.');
+          process.exit(1);
+        }
+
         stage = await select({
           message: 'Select the stage to pull from:',
           choices: availableStages.map(s => ({ name: s, value: s })),

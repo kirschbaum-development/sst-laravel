@@ -136,7 +136,7 @@ export const initCommand = new Command('init')
       console.log('\n');
       console.log('A deploy.sh script has been created with example deployment tasks (migrations, caching, etc.). Customize it as needed.');
       console.log('\n');
-      console.log('Run `npx sst deploy --stage {stage}` to deploy your application.');
+      console.log('Run `npx sst-laravel deploy --stage {stage}` to deploy your application.');
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
 import { findSstConfig, extractSstProjectName } from '../utils/sst-config.js';
-import { pushSecrets, getSecretInfo, getSecretPath, parseEnvFile, needsChunking } from '../utils/secrets-manager.js';
+import { pushSecrets, getSecretInfo, getSecretPath, parseEnvFile, needsChunking, listAvailableStages } from '../utils/secrets-manager.js';
 
 export const envPushCommand = new Command('env:push')
   .description('Push environment variables to AWS Secrets Manager')
@@ -29,7 +29,14 @@ export const envPushCommand = new Command('env:push')
       // Determine stage
       let stage = options.stage;
       if (!stage) {
-        const availableStages = ['production', 'staging', 'development'];
+        const availableStages = await listAvailableStages(appName);
+
+        if (availableStages.length === 0) {
+          console.log('No stages found in AWS Secrets Manager for this app.');
+          console.log('Run this command again with the --stage <stage> flag so the environment file can be created.');
+          process.exit(1);
+        }
+
         stage = await select({
           message: 'Select the stage to push to:',
           choices: availableStages.map(s => ({ name: s, value: s })),

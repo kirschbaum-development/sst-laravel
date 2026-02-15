@@ -186,7 +186,6 @@ For a more robust environment variable management solution similar to Laravel Va
 import { LaravelEnv, LaravelService } from "@kirschbaum-development/sst-laravel";
 
 const env = new LaravelEnv("Env");
-
 const app = new LaravelService('MyLaravelApp', {
   // ...
   config: {

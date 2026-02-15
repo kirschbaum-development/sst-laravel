@@ -34,6 +34,53 @@ export function getSecretPath(appName: string, stage: string): string {
 }
 
 /**
+ * List available stages for an app by inspecting Secrets Manager paths.
+ */
+export async function listAvailableStages(appName: string, region?: string): Promise<string[]> {
+  const client = new SecretsManagerClient({ region });
+  const stages = new Set<string>();
+  const prefix = `/${appName}/`;
+  const suffix = '/env';
+  let nextToken: string | undefined;
+
+  do {
+    const command = new ListSecretsCommand({
+      NextToken: nextToken,
+      Filters: [
+        {
+          Key: 'name',
+          Values: [prefix],
+        },
+      ],
+    });
+
+    const response = await client.send(command);
+
+    if (response.SecretList) {
+      for (const secret of response.SecretList) {
+        if (!secret.Name) {
+          continue;
+        }
+
+        if (!secret.Name.startsWith(prefix) || !secret.Name.endsWith(suffix)) {
+          continue;
+        }
+
+        const parts = secret.Name.split('/');
+        // Secrets are stored as /{app}/{stage}/env
+        if (parts.length >= 4 && parts[2]) {
+          stages.add(parts[2]);
+        }
+      }
+    }
+
+    nextToken = response.NextToken;
+  } while (nextToken);
+
+  return Array.from(stages).sort();
+}
+
+/**
  * Get the chunk path for a given secret path and chunk index.
  */
 function getChunkPath(basePath: string, chunkIndex: number): string {
