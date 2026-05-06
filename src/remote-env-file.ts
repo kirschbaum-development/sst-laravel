@@ -213,19 +213,38 @@ function buildEnvFileContent(
   ].filter(Boolean).join('\n\n');
 }
 
-function toEnvFileContent(vars: Record<string, string>): string {
+export function toEnvFileContent(vars: Record<string, string>): string {
   const sortedKeys = Object.keys(vars).sort();
 
   return sortedKeys
     .map((key) => {
       const value = vars[key];
+      const needsQuoting =
+        value.includes(' ') ||
+        value.includes('"') ||
+        value.includes("'") ||
+        value.includes('\n') ||
+        value.includes('$') ||
+        value.includes('\\') ||
+        value.includes('#');
 
-      if (value.includes(' ') || value.includes('"') || value.includes("'") || value.includes('\n')) {
-        const escaped = value.replace(/"/g, '\\"');
-        return `${key}="${escaped}"`;
+      if (!needsQuoting) {
+        return `${key}=${value}`;
       }
 
-      return `${key}=${value}`;
+      // Single quotes are phpdotenv "raw literal" mode — no $ expansion, no escapes.
+      // Use them whenever possible so randomly-generated secrets round-trip safely.
+      if (!value.includes("'") && !value.includes('\n')) {
+        return `${key}='${value}'`;
+      }
+
+      // Fall back to double quotes when the value itself contains a single quote
+      // or newline. Escape \, $, and " so phpdotenv reads the literal value.
+      const escaped = value
+        .replace(/\\/g, '\\\\')
+        .replace(/\$/g, '\\$')
+        .replace(/"/g, '\\"');
+      return `${key}="${escaped}"`;
     })
     .join('\n');
 }
