@@ -462,6 +462,26 @@ echo "🚀 Running Laravel Migrations..."
 php artisan migrate --force
 ```
 
+### Tuning PHP settings (memory limit, execution time, etc.)
+
+The containers are built on the [Serverside Up PHP images](https://serversideup.net/open-source/docker-php/), which configure PHP at boot from `PHP_*` environment variables. To tune per-request PHP limits — for example, raising the PHP `memory_limit` — set those variables through `config.environment.vars`:
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  config: {
+    environment: {
+      vars: {
+        PHP_MEMORY_LIMIT: '512M', // per-request PHP memory_limit (default 256M)
+      },
+    },
+  },
+});
+```
+
+These are injected as real container environment variables, so the serversideup entrypoint applies them to **all** containers (web, workers, and Reverb). Other commonly tuned values include `PHP_MAX_EXECUTION_TIME`, `PHP_POST_MAX_SIZE`, and `PHP_UPLOAD_MAX_FILE_SIZE`. See the [Serverside Up PHP docs](https://serversideup.net/open-source/docker-php/) for the full list of supported variables.
+
+> **Note:** The PHP `memory_limit` is a per-request cap _inside_ PHP — it is not the container's total memory. Don't set `PHP_MEMORY_LIMIT` higher than the task memory (`web.memory` / `workers[].memory`), or PHP can push the container into an out-of-memory kill. Raise the task memory alongside it when needed.
+
 ## Deploying
 
 To deploy your application, you can use the `sst-laravel deploy` command. You must be authenticated with AWS in your terminal session to deploy.

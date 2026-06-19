@@ -544,6 +544,23 @@ config: {
 }
 ```
 
+These are injected as real container environment variables on every service (web, workers, and Reverb). Because the containers are built on the [Serverside Up PHP images](https://serversideup.net/open-source/docker-php/), you can also use `vars` to tune PHP itself via the `PHP_*` variables the serversideup entrypoint reads at boot:
+
+```typescript
+config: {
+  environment: {
+    vars: {
+      PHP_MEMORY_LIMIT: '512M',       // per-request PHP memory_limit (default 256M)
+      PHP_MAX_EXECUTION_TIME: '60',
+      PHP_POST_MAX_SIZE: '50M',
+      PHP_UPLOAD_MAX_FILE_SIZE: '50M'
+    }
+  }
+}
+```
+
+> **Note:** `PHP_MEMORY_LIMIT` is a per-request cap inside PHP, not the container's total memory. Keep it below the task memory (`web.memory` / `workers[].memory`) to avoid out-of-memory kills, and raise the task memory alongside it when needed. See the [Serverside Up PHP docs](https://serversideup.net/open-source/docker-php/) for the full list of `PHP_*` variables.
+
 ##### `config.environment.secrets`
 - **Type:** `RemoteEnvVault`
 - **Description:** Use a `RemoteEnvVault` component to manage environment variables in AWS Secrets Manager. When provided, secrets will be fetched from AWS Secrets Manager at build time using the `sst-laravel deploy` command.
