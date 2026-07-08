@@ -5,6 +5,16 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Native ALB-hardening options on `web`, `reverb`, and load-balanced `workers[]`, replacing the hand-written `transform` callbacks previously needed for these (#7):
+  - `loadBalancerAccessLogs` ships the load balancer access logs to S3. The package can create and wire up a dedicated bucket (SSE-S3 encrypted, public access blocked, regional ELB log-delivery policy attached, optional `retentionDays` lifecycle rule), or deliver to an existing bucket you own.
+  - `sslPolicy` pins an SSL security policy (e.g. `ELBSecurityPolicy-TLS13-1-2-2021-06`) on the HTTPS/TLS listeners only, so plain HTTP listeners — which reject SSL policies — are left untouched.
+  - `ingressCidrs` restricts the load balancer security group ingress to a fixed IPv4/IPv6 CIDR allowlist, generating one TCP rule per listener port.
+- Package-generated transforms now compose with user-provided `transform` entries for the same resource (package first, then yours) instead of one clobbering the other.
+
 ## [0.3.8]
 
 ### Fixed

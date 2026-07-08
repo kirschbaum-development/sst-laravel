@@ -304,6 +304,45 @@ web: {
 }
 ```
 
+#### `web.sslPolicy`
+- **Type:** `Input<string>`
+- **Description:** SSL security policy applied to the HTTPS/TLS listeners of the load balancer, e.g. to enforce TLS 1.2+ instead of AWS's default policy (which still permits TLS 1.0/1.1). The policy is only applied to TLS-bearing listeners — plain HTTP listeners (which reject SSL policies) are left untouched, so you don't have to guard the listener protocol yourself.
+
+**Example:**
+```typescript
+web: {
+  sslPolicy: 'ELBSecurityPolicy-TLS13-1-2-2021-06',
+}
+```
+
+#### `web.ingressCidrs`
+- **Type:** `{ v4?: Input<string[]>, v6?: Input<string[]>, ports?: Input<number[]> }`
+- **Description:** Restrict the load balancer security group ingress to a fixed set of upstream CIDR blocks — for example the edge ranges of a WAF or CDN in front of the load balancer, so it cannot be bypassed by hitting the load balancer hostname directly. Replaces SST's default allow-all ingress with one TCP rule per listener port for the given ranges. `ports` defaults to the listen ports the package configures (`80`, plus `443` when a domain is set); set it explicitly when you provide a custom `loadBalancer` whose ports cannot be determined statically.
+
+**Example:**
+```typescript
+web: {
+  ingressCidrs: {
+    v4: ['173.245.48.0/20', '103.21.244.0/22'],
+    v6: ['2400:cb00::/32'],
+  },
+}
+```
+
+#### `web.loadBalancerAccessLogs`
+- **Type:** `boolean | { bucket?: Input<string>, prefix?: Input<string>, enabled?: Input<boolean>, retentionDays?: number }`
+- **Description:** Ship the load balancer access logs to an S3 bucket. When `true` (or when no `bucket` is given), the package creates a dedicated bucket — encrypted with SSE-S3 (ELB cannot deliver logs to KMS-encrypted buckets), with public access blocked, and with the regional ELB log-delivery bucket policy already attached. Pass `bucket` (a bucket name) to deliver to an existing bucket instead; in that case you own its delivery policy. `prefix` sets the S3 key prefix, `enabled: false` pre-provisions the wiring without shipping logs, and `retentionDays` adds an expiry lifecycle rule to the package-created bucket.
+
+**Example:**
+```typescript
+web: {
+  loadBalancerAccessLogs: {
+    prefix: 'alb',
+    retentionDays: 90,
+  },
+}
+```
+
 #### `web.executionRole`
 - **Type:** `ServiceArgs["executionRole"]`
 - **Description:** Execution role for the web service.
@@ -393,6 +432,9 @@ workers: [
 #### `workers[].permissions`
 - **Type:** `ServiceArgs["permissions"]`
 - **Description:** IAM permissions specific to this worker.
+
+#### `workers[].sslPolicy`, `workers[].ingressCidrs`, `workers[].loadBalancerAccessLogs`
+- **Description:** ALB-hardening options for load-balanced workers. Same behavior as [`web.sslPolicy`](#websslpolicy), [`web.ingressCidrs`](#webingresscidrs), and [`web.loadBalancerAccessLogs`](#webloadbalanceraccesslogs). They only take effect when the worker has a `loadBalancer` configured.
 
 ### `reverb`
 - **Type:** `boolean | LaravelReverbArgs`
@@ -490,6 +532,9 @@ REVERB_SCHEME=https
 #### `reverb.permissions`
 - **Type:** `ServiceArgs["permissions"]`
 - **Description:** IAM permissions specific to the Reverb service.
+
+#### `reverb.sslPolicy`, `reverb.ingressCidrs`, `reverb.loadBalancerAccessLogs`
+- **Description:** ALB-hardening options for the Reverb load balancer. Same behavior as [`web.sslPolicy`](#websslpolicy), [`web.ingressCidrs`](#webingresscidrs), and [`web.loadBalancerAccessLogs`](#webloadbalanceraccesslogs).
 
 ### `config`
 - **Type:** `object`

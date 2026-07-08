@@ -30,6 +30,15 @@ import { getSecretsFingerprint } from './src/secrets-manager';
 import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import { buildWebServerEnvironment } from './src/web-server';
 import { buildServiceArgs } from './src/service-args';
+import {
+    buildAccessLogsBucketPolicy,
+    buildIngressRules,
+    getStaticListenPorts,
+    normalizeAccessLogsPrefix,
+    resolveListenerSslPolicy,
+} from './src/alb-hardening';
+import { mergeServiceTransforms } from './src/transforms';
+import * as pulumiAws from '@pulumi/aws';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
@@ -84,6 +93,79 @@ export type LaravelDomain = Input<
       }
 >;
 
+/**
+ * The subset of the `sst.aws.Service` transform map that consumers can extend.
+ * `image` and `taskDefinition` are managed internally by the package.
+ */
+export type LaravelServiceTransform = Omit<
+    NonNullable<ServiceArgs['transform']>,
+    'image' | 'taskDefinition'
+>;
+
+export interface LaravelLoadBalancerAccessLogsArgs {
+    /**
+     * Name of an existing S3 bucket to deliver the access logs to. When
+     * omitted, the package creates a dedicated bucket for you — encrypted
+     * with SSE-S3 (ELB cannot deliver logs to KMS-encrypted buckets), with
+     * public access blocked, and with the regional ELB log-delivery policy
+     * already attached.
+     *
+     * When you bring your own bucket, you are responsible for its delivery
+     * bucket policy — the package does not attach one, so it never conflicts
+     * with a policy you already manage.
+     *
+     * @example
+     * ```js
+     * web: {
+     *   loadBalancerAccessLogs: {
+     *     bucket: myBucket.name,
+     *   },
+     * }
+     * ```
+     */
+    bucket?: Input<string>;
+
+    /**
+     * S3 key prefix the logs are delivered under. Leading and trailing
+     * slashes are stripped, since ELB rejects them.
+     */
+    prefix?: Input<string>;
+
+    /**
+     * Whether access logging is enabled on the load balancer. Set to `false`
+     * to pre-provision the bucket and wiring without shipping logs yet.
+     *
+     * @default `true`
+     */
+    enabled?: Input<boolean>;
+
+    /**
+     * Days to keep access logs before they expire, applied as a lifecycle
+     * rule. Only used when the package creates the bucket.
+     */
+    retentionDays?: number;
+}
+
+export interface LaravelIngressCidrsArgs {
+    /**
+     * IPv4 CIDR blocks allowed to reach the load balancer.
+     */
+    v4?: Input<string[]>;
+
+    /**
+     * IPv6 CIDR blocks allowed to reach the load balancer.
+     */
+    v6?: Input<string[]>;
+
+    /**
+     * Listener ports the ingress rules are generated for. Defaults to the
+     * listen ports of the load balancer the package configures (`80`, plus
+     * `443` when a domain is set). Set this explicitly when you provide a
+     * custom `loadBalancer` whose ports cannot be determined statically.
+     */
+    ports?: Input<number[]>;
+}
+
 export interface LaravelServiceArgs {
     architecture?: ServiceArgs['architecture'];
     cpu?: ServiceArgs['cpu'];
@@ -97,34 +179,90 @@ export interface LaravelServiceArgs {
     permissions?: ServiceArgs['permissions'];
 
     /**
-     * Transform the underlying ECS Service resources. Useful for hardening the
-     * ALB (e.g. restricting the load-balancer security group to a fixed set of
-     * upstream CIDRs) or adjusting other inner resources.
+     * SSL security policy applied to the HTTPS/TLS listeners of the load
+     * balancer, e.g. to enforce TLS 1.2+ instead of AWS's default policy
+     * (which still permits TLS 1.0/1.1). The package only applies the policy
+     * to TLS-bearing listeners — plain HTTP listeners (which reject SSL
+     * policies) are left untouched, so you don't have to guard the listener
+     * protocol yourself.
+     *
+     * @example
+     * ```js
+     * web: {
+     *   sslPolicy: 'ELBSecurityPolicy-TLS13-1-2-2021-06',
+     * }
+     * ```
+     */
+    sslPolicy?: Input<string>;
+
+    /**
+     * Restrict the load balancer security group ingress to a fixed set of
+     * upstream CIDR blocks — for example the edge ranges of a WAF or CDN in
+     * front of the load balancer, so it cannot be bypassed by hitting the
+     * load balancer hostname directly. Replaces SST's default allow-all
+     * ingress with one TCP rule per listener port for the given ranges.
+     *
+     * @example
+     * ```js
+     * web: {
+     *   ingressCidrs: {
+     *     v4: ['173.245.48.0/20', '103.21.244.0/22'],
+     *     v6: ['2400:cb00::/32'],
+     *   },
+     * }
+     * ```
+     */
+    ingressCidrs?: LaravelIngressCidrsArgs;
+
+    /**
+     * Ship the load balancer access logs to an S3 bucket. Set to `true` to
+     * let the package create and wire up a dedicated bucket, or pass an
+     * object to control the bucket, prefix, and retention.
+     *
+     * @example
+     * ```js
+     * web: {
+     *   loadBalancerAccessLogs: true,
+     * }
+     * ```
+     *
+     * @example
+     * ```js
+     * web: {
+     *   loadBalancerAccessLogs: {
+     *     prefix: 'alb',
+     *     retentionDays: 90,
+     *   },
+     * }
+     * ```
+     */
+    loadBalancerAccessLogs?: boolean | LaravelLoadBalancerAccessLogsArgs;
+
+    /**
+     * Transform the underlying ECS Service resources.
      *
      * `image` and `taskDefinition` are managed internally and cannot be
      * overridden here — they carry the env-file dependency wiring and the
      * `initProcessEnabled: false` setting required by this package.
      *
+     * Common ALB-hardening concerns have first-class options — see
+     * {@link LaravelServiceArgs.sslPolicy}, {@link LaravelServiceArgs.ingressCidrs},
+     * and {@link LaravelServiceArgs.loadBalancerAccessLogs} — and transforms
+     * provided here compose with them: the package-generated transform runs
+     * first, then yours.
+     *
      * @example
      * ```js
      * web: {
      *   transform: {
-     *     loadBalancerSecurityGroup: (sgArgs) => {
-     *       sgArgs.ingress = [{
-     *         protocol: "tcp",
-     *         fromPort: 443,
-     *         toPort: 443,
-     *         cidrBlocks: ["173.245.48.0/20", "103.21.244.0/22"],
-     *       }];
+     *     loadBalancer: (lbArgs) => {
+     *       lbArgs.idleTimeout = 120;
      *     },
      *   },
      * }
      * ```
      */
-    transform?: Omit<
-        NonNullable<ServiceArgs['transform']>,
-        'image' | 'taskDefinition'
-    >;
+    transform?: LaravelServiceTransform;
 }
 
 /**
@@ -486,6 +624,170 @@ export class LaravelService extends Component {
             return undefined;
         };
 
+        const prepareAccessLogsBucket = (
+            serviceName: string,
+            config: LaravelLoadBalancerAccessLogsArgs,
+        ): {
+            bucket: Input<string>;
+            dependsOn?: pulumiAws.s3.BucketPolicy[];
+        } => {
+            if (config.bucket) {
+                return { bucket: config.bucket };
+            }
+
+            const bucket = new pulumiAws.s3.Bucket(
+                `${serviceName}-AccessLogs`,
+                {},
+                { parent: this },
+            );
+
+            new pulumiAws.s3.BucketServerSideEncryptionConfiguration(
+                `${serviceName}-AccessLogsEncryption`,
+                {
+                    bucket: bucket.id,
+                    rules: [
+                        {
+                            applyServerSideEncryptionByDefault: {
+                                sseAlgorithm: 'AES256',
+                            },
+                        },
+                    ],
+                },
+                { parent: this },
+            );
+
+            new pulumiAws.s3.BucketPublicAccessBlock(
+                `${serviceName}-AccessLogsPublicAccessBlock`,
+                {
+                    bucket: bucket.id,
+                    blockPublicAcls: true,
+                    blockPublicPolicy: true,
+                    ignorePublicAcls: true,
+                    restrictPublicBuckets: true,
+                },
+                { parent: this },
+            );
+
+            const bucketPolicy = new pulumiAws.s3.BucketPolicy(
+                `${serviceName}-AccessLogsPolicy`,
+                {
+                    bucket: bucket.id,
+                    policy: all([
+                        bucket.arn,
+                        pulumiAws.getCallerIdentityOutput().accountId,
+                        pulumiAws.getRegionOutput().region,
+                        config.prefix,
+                    ]).apply(([bucketArn, accountId, region, prefix]) =>
+                        JSON.stringify(
+                            buildAccessLogsBucketPolicy({
+                                bucketArn,
+                                accountId,
+                                region,
+                                prefix,
+                            }),
+                        ),
+                    ),
+                },
+                { parent: this },
+            );
+
+            if (config.retentionDays) {
+                new pulumiAws.s3.BucketLifecycleConfiguration(
+                    `${serviceName}-AccessLogsLifecycle`,
+                    {
+                        bucket: bucket.id,
+                        rules: [
+                            {
+                                id: 'expire-access-logs',
+                                status: 'Enabled',
+                                filter: {},
+                                expiration: { days: config.retentionDays },
+                            },
+                        ],
+                    },
+                    { parent: this },
+                );
+            }
+
+            return { bucket: bucket.bucket, dependsOn: [bucketPolicy] };
+        };
+
+        /**
+         * Builds the package-generated transform entries for the first-class
+         * ALB-hardening options (`sslPolicy`, `ingressCidrs`,
+         * `loadBalancerAccessLogs`). Returns an empty map when the service has
+         * no load balancer, so no orphan resources are created.
+         */
+        const buildAlbHardeningTransform = (
+            serviceConfig: LaravelServiceArgs,
+            serviceName: string,
+            loadBalancer: unknown,
+        ): LaravelServiceTransform => {
+            const hardening: LaravelServiceTransform = {};
+
+            if (!loadBalancer) {
+                return hardening;
+            }
+
+            if (serviceConfig.sslPolicy) {
+                const sslPolicy = serviceConfig.sslPolicy;
+
+                hardening.listener = (listenerArgs) => {
+                    listenerArgs.sslPolicy = all([
+                        listenerArgs.protocol,
+                        sslPolicy,
+                    ]).apply(([protocol, policy]) =>
+                        resolveListenerSslPolicy(protocol, policy),
+                    ) as Output<string>;
+                };
+            }
+
+            if (serviceConfig.ingressCidrs) {
+                const cidrs = serviceConfig.ingressCidrs;
+                const fallbackPorts = getStaticListenPorts(loadBalancer) ?? [
+                    80, 443,
+                ];
+
+                hardening.loadBalancerSecurityGroup = (sgArgs) => {
+                    sgArgs.ingress = all([
+                        cidrs.v4,
+                        cidrs.v6,
+                        cidrs.ports,
+                    ]).apply(([v4, v6, ports]) =>
+                        buildIngressRules(ports ?? fallbackPorts, { v4, v6 }),
+                    );
+                };
+            }
+
+            const accessLogsConfig =
+                serviceConfig.loadBalancerAccessLogs === true
+                    ? {}
+                    : serviceConfig.loadBalancerAccessLogs || undefined;
+
+            if (accessLogsConfig) {
+                const { bucket, dependsOn } = prepareAccessLogsBucket(
+                    serviceName,
+                    accessLogsConfig,
+                );
+
+                hardening.loadBalancer = (lbArgs, opts) => {
+                    lbArgs.accessLogs = {
+                        bucket,
+                        prefix: output(accessLogsConfig.prefix).apply(
+                            (prefix) => normalizeAccessLogsPrefix(prefix),
+                        ) as Output<string>,
+                        enabled: accessLogsConfig.enabled ?? true,
+                    };
+
+                    if (dependsOn) {
+                        opts.dependsOn = dependsOn;
+                    }
+                };
+            }
+
+            return hardening;
+        };
+
         const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
             vpc: normalizeClusterVpc(args.vpc),
         });
@@ -497,6 +799,24 @@ export class LaravelService extends Component {
                     accessLogs: args.web?.accessLogs,
                 }),
             };
+
+            const loadBalancer =
+                args.web && args.web.loadBalancer
+                    ? args.web.loadBalancer
+                    : {
+                          domain: args.web?.domain,
+                          ports: buildDefaultPublicPorts({
+                              hasDomain: Boolean(args.web?.domain),
+                              httpsRedirect: args.web?.httpsRedirect ?? true,
+                          }),
+                          ...(args.web?.healthCheck
+                              ? {
+                                    health: {
+                                        '8080/http': args.web.healthCheck,
+                                    },
+                                }
+                              : {}),
+                      };
 
             this.services['web'] = new sst.aws.Service(
                 `${name}-Web`,
@@ -513,31 +833,21 @@ export class LaravelService extends Component {
                     environment: envVariables,
                     scaling: args.web?.scaling,
 
-                    loadBalancer:
-                        args.web && args.web.loadBalancer
-                            ? args.web.loadBalancer
-                            : {
-                                  domain: args.web?.domain,
-                                  ports: buildDefaultPublicPorts({
-                                      hasDomain: Boolean(args.web?.domain),
-                                      httpsRedirect:
-                                          args.web?.httpsRedirect ?? true,
-                                  }),
-                                  ...(args.web?.healthCheck
-                                      ? {
-                                            health: {
-                                                '8080/http': args.web.healthCheck,
-                                            },
-                                        }
-                                      : {}),
-                              },
+                    loadBalancer,
 
                     dev: {
                         command: `php ${sitePath}/artisan serve`,
                     },
 
                     transform: {
-                        ...(args.web?.transform ?? {}),
+                        ...mergeServiceTransforms(
+                            buildAlbHardeningTransform(
+                                args.web ?? {},
+                                `${name}-Web`,
+                                loadBalancer,
+                            ),
+                            args.web?.transform,
+                        ),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (
@@ -656,7 +966,14 @@ export class LaravelService extends Component {
                     },
 
                     transform: {
-                        ...(workerConfig.transform ?? {}),
+                        ...mergeServiceTransforms(
+                            buildAlbHardeningTransform(
+                                workerConfig,
+                                serviceName,
+                                workerConfig.loadBalancer,
+                            ),
+                            workerConfig.transform,
+                        ),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (

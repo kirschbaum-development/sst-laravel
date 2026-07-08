@@ -132,6 +132,63 @@ const app = new LaravelService('MyLaravelApp', {
 
 This points the serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`. Error logs and the Laravel application logs are unaffected. Only the web container runs nginx, so this has no effect on workers or the Reverb service.
 
+#### Load balancer hardening
+
+Three common ALB-hardening concerns are available as first-class options, so you don't have to hand-write `transform` callbacks for them. They are available on `web`, `reverb`, and any load-balanced worker.
+
+**ALB access logs to S3** — ship the load balancer access logs to an S3 bucket:
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    loadBalancerAccessLogs: true,
+  },
+});
+```
+
+With `true` (or when no `bucket` is given), SST Laravel creates a dedicated bucket for you: encrypted with SSE-S3 (ELB cannot deliver logs to KMS-encrypted buckets), public access blocked, and the regional ELB log-delivery bucket policy already attached. You can also control the details, or point at an existing bucket:
+
+```js
+web: {
+  loadBalancerAccessLogs: {
+    prefix: 'alb',        // S3 key prefix for the delivered logs
+    retentionDays: 90,    // lifecycle rule on the package-created bucket
+    enabled: true,        // set false to pre-provision without shipping logs
+  },
+},
+```
+
+```js
+web: {
+  loadBalancerAccessLogs: {
+    bucket: myBucket.name, // existing bucket; you own its delivery policy
+  },
+},
+```
+
+**Listener SSL policy** — pin a modern TLS policy instead of AWS's default (which still permits TLS 1.0/1.1). The policy is applied only to the HTTPS/TLS listeners; plain HTTP listeners (which reject SSL policies) are left untouched, so you don't have to guard the listener protocol yourself:
+
+```js
+web: {
+  sslPolicy: 'ELBSecurityPolicy-TLS13-1-2-2021-06',
+},
+```
+
+**Ingress CIDR allowlist** — restrict the load balancer security group to a fixed set of upstream ranges (e.g. Cloudflare's edge CIDRs), so a WAF or CDN in front of the ALB can't be bypassed by hitting the ALB hostname directly. One TCP ingress rule is generated per listener port (80, plus 443 when a domain is set) for the given ranges:
+
+```js
+web: {
+  ingressCidrs: {
+    v4: ['173.245.48.0/20', '103.21.244.0/22'],
+    v6: ['2400:cb00::/32'],
+  },
+},
+```
+
+If you provide a custom `web.loadBalancer` with non-standard ports, set `ingressCidrs.ports` explicitly.
+
+These options compose with `transform` — the package-generated transform runs first, then yours, so an existing `transform.listener` or `transform.loadBalancerSecurityGroup` still applies on top.
+
 ### Reverb
 
 You can deploy a dedicated Laravel Reverb service for WebSocket traffic. Reverb runs as a worker-style container using `php artisan reverb:start`, but SST Laravel also attaches a load balancer so you can give it its own public domain.
