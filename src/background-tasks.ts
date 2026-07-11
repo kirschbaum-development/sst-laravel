@@ -47,12 +47,15 @@ export function buildBackgroundTasks(
  * Writes the s6-overlay service tree for the given tasks into a build
  * directory that is later copied into the Docker image. Always creates the
  * `user/contents.d` tree so the Docker COPY step never fails, even when no
- * tasks are configured.
+ * tasks are configured. The build directory is wiped before regenerating so
+ * tasks removed since the previous run don't linger.
  */
 export function writeS6TaskFiles(
   tasks: Record<string, BackgroundTask>,
   buildPath: string,
 ): void {
+  fs.rmSync(buildPath, { recursive: true, force: true });
+
   const s6RcDPath = path.resolve(buildPath, 'etc/s6-overlay/s6-rc.d');
   const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
 

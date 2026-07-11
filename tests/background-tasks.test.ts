@@ -141,4 +141,26 @@ describe('writeS6TaskFiles', () => {
     expect(fs.statSync(path.join(taskDir, 'script')).mode & 0o100).toBeTruthy();
     expect(fs.statSync(path.join(taskDir, 'run')).mode & 0o100).toBeTruthy();
   });
+
+  it('removes stale tasks from a previous run', () => {
+    writeS6TaskFiles(
+      { 'laravel-horizon': { command: 'php artisan horizon' } },
+      buildPath,
+    );
+    writeS6TaskFiles(
+      { 'laravel-scheduler': { command: 'php artisan schedule:work' } },
+      buildPath,
+    );
+
+    const s6RcDPath = path.join(buildPath, 'etc/s6-overlay/s6-rc.d');
+
+    expect(fs.existsSync(path.join(s6RcDPath, 'laravel-horizon'))).toBe(false);
+    expect(
+      fs.existsSync(path.join(s6RcDPath, 'user/contents.d/laravel-horizon')),
+    ).toBe(false);
+    expect(fs.existsSync(path.join(s6RcDPath, 'laravel-scheduler'))).toBe(true);
+    expect(
+      fs.existsSync(path.join(s6RcDPath, 'user/contents.d/laravel-scheduler')),
+    ).toBe(true);
+  });
 });
