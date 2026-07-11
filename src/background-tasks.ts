@@ -42,3 +42,41 @@ export function buildBackgroundTasks(
 
   return tasks;
 }
+
+/**
+ * Writes the s6-overlay service tree for the given tasks into a build
+ * directory that is later copied into the Docker image. Always creates the
+ * `user/contents.d` tree so the Docker COPY step never fails, even when no
+ * tasks are configured.
+ */
+export function writeS6TaskFiles(
+  tasks: Record<string, BackgroundTask>,
+  buildPath: string,
+): void {
+  const s6RcDPath = path.resolve(buildPath, 'etc/s6-overlay/s6-rc.d');
+  const s6UserContentsPath = path.resolve(s6RcDPath, 'user/contents.d');
+
+  fs.mkdirSync(s6UserContentsPath, { recursive: true });
+
+  Object.entries(tasks).forEach(([taskName, config]) => {
+    const tasksDir = path.resolve(s6RcDPath, taskName);
+    fs.mkdirSync(tasksDir, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(tasksDir, 'script'),
+      `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`,
+      { mode: 0o777 },
+    );
+    fs.writeFileSync(
+      path.join(tasksDir, 'run'),
+      `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${taskName}/script`,
+      { mode: 0o777 },
+    );
+    fs.writeFileSync(path.join(tasksDir, 'type'), 'longrun');
+    fs.writeFileSync(
+      path.join(tasksDir, 'dependencies'),
+      (config.dependencies || []).join('\n'),
+    );
+    fs.writeFileSync(path.join(s6UserContentsPath, taskName), '');
+  });
+}
