@@ -331,7 +331,7 @@ web: {
 
 #### `web.loadBalancerAccessLogs`
 - **Type:** `boolean | { bucket?: Input<string>, prefix?: Input<string>, enabled?: Input<boolean>, retentionDays?: number }`
-- **Description:** Ship the load balancer access logs to an S3 bucket. When `true` (or when no `bucket` is given), the package creates a dedicated bucket — encrypted with SSE-S3 (ELB cannot deliver logs to KMS-encrypted buckets), with public access blocked, and with the regional ELB log-delivery bucket policy already attached. Pass `bucket` (a bucket name) to deliver to an existing bucket instead; in that case you own its delivery policy. `prefix` sets the S3 key prefix, `enabled: false` pre-provisions the wiring without shipping logs, and `retentionDays` adds an expiry lifecycle rule to the package-created bucket.
+- **Description:** Ship the load balancer access logs to an S3 bucket. When `true` (or when no `bucket` is given), the package creates a dedicated bucket — encrypted with SSE-S3 (ELB cannot deliver logs to KMS-encrypted buckets), with public access blocked, and with the regional ELB log-delivery bucket policy already attached. Pass `bucket` (a bucket name) to deliver to an existing bucket instead; in that case you own its delivery policy. `prefix` sets the S3 key prefix and must not contain the reserved `AWSLogs` path segment, `enabled: false` pre-provisions the wiring without shipping logs, and `retentionDays` adds an expiry lifecycle rule to the package-created bucket.
 
 **Example:**
 ```typescript

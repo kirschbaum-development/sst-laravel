@@ -127,7 +127,8 @@ export interface LaravelLoadBalancerAccessLogsArgs {
 
     /**
      * S3 key prefix the logs are delivered under. Leading and trailing
-     * slashes are stripped, since ELB rejects them.
+     * slashes are stripped, since ELB rejects them. The prefix must not
+     * include the reserved `AWSLogs` path segment.
      */
     prefix?: Input<string>;
 
@@ -637,7 +638,7 @@ export class LaravelService extends Component {
 
             const bucket = new pulumiAws.s3.Bucket(
                 `${serviceName}-AccessLogs`,
-                {},
+                { forceDestroy: true },
                 { parent: this },
             );
 
@@ -674,8 +675,14 @@ export class LaravelService extends Component {
                     bucket: bucket.id,
                     policy: all([
                         bucket.arn,
-                        pulumiAws.getCallerIdentityOutput().accountId,
-                        pulumiAws.getRegionOutput().region,
+                        pulumiAws.getCallerIdentityOutput(
+                            {},
+                            { parent: this },
+                        ).accountId,
+                        pulumiAws.getRegionOutput(
+                            {},
+                            { parent: this },
+                        ).region,
                         config.prefix,
                     ]).apply(([bucketArn, accountId, region, prefix]) =>
                         JSON.stringify(

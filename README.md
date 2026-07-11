@@ -151,7 +151,7 @@ With `true` (or when no `bucket` is given), SST Laravel creates a dedicated buck
 ```js
 web: {
   loadBalancerAccessLogs: {
-    prefix: 'alb',        // S3 key prefix for the delivered logs
+    prefix: 'alb',        // S3 key prefix; must not contain "AWSLogs"
     retentionDays: 90,    // lifecycle rule on the package-created bucket
     enabled: true,        // set false to pre-provision without shipping logs
   },

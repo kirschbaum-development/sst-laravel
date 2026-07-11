@@ -192,12 +192,18 @@ export function getElbAccessLogsAccountArn(
 /**
  * Normalizes an access-logs S3 prefix by stripping leading/trailing slashes,
  * since ELB rejects prefixes that start or end with a slash. Returns
- * `undefined` for empty prefixes.
+ * `undefined` for empty prefixes and rejects the reserved `AWSLogs` segment.
  */
 export function normalizeAccessLogsPrefix(
   prefix: string | undefined,
 ): string | undefined {
   const trimmed = prefix?.replace(/^\/+|\/+$/g, '');
+
+  if (trimmed?.includes('AWSLogs')) {
+    throw new Error(
+      '"loadBalancerAccessLogs.prefix" must not include "AWSLogs".',
+    );
+  }
 
   return trimmed || undefined;
 }

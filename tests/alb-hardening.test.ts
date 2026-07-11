@@ -183,6 +183,12 @@ describe('normalizeAccessLogsPrefix', () => {
     expect(normalizeAccessLogsPrefix('')).toBeUndefined();
     expect(normalizeAccessLogsPrefix('/')).toBeUndefined();
   });
+
+  it('rejects the reserved AWSLogs path segment', () => {
+    expect(() => normalizeAccessLogsPrefix('alb/AWSLogs')).toThrow(
+      /must not include "AWSLogs"/,
+    );
+  });
 });
 
 describe('buildAccessLogsBucketPolicy', () => {
