@@ -304,6 +304,33 @@ web: {
 }
 ```
 
+#### `web.horizon`
+- **Type:** `Input<boolean>`
+- **Default:** `false`
+- **Description:** Run Laravel Horizon (`php artisan horizon`) as a supervised background process inside the web container, alongside nginx and PHP-FPM. If the process crashes, s6 restarts it in place without interrupting HTTP traffic.
+
+#### `web.scheduler`
+- **Type:** `Input<boolean>`
+- **Default:** `false`
+- **Description:** Run the Laravel scheduler (`php artisan schedule:work`) as a supervised background process inside the web container. If the web service scales beyond one container, every replica runs the scheduler — use `onOneServer()` with a shared cache store on your scheduled jobs.
+
+#### `web.tasks`
+- **Type:** `Input<{ [key: string]: Input<{ command: Input<string>; dependencies?: Input<string[]> }> }>`
+- **Description:** Custom long-running commands supervised inside the web container, keyed by task name.
+
+**Example:**
+```typescript
+web: {
+  horizon: true,
+  scheduler: true,
+  tasks: {
+    pulse: {
+      command: "php artisan pulse:work"
+    }
+  }
+}
+```
+
 #### `web.executionRole`
 - **Type:** `ServiceArgs["executionRole"]`
 - **Description:** Execution role for the web service.
