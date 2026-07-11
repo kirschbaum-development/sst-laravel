@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Stale s6 task definitions are now removed from the build directory before regeneration, so disabling `horizon`/`scheduler` or renaming a task no longer leaves the old process running (applies to web, workers, and Reverb).
+- Task and worker names are now validated (single safe path segment, not one of the reserved s6 service names `user`/`nginx`/`php-fpm`), preventing generated files from escaping the build directory and from overwriting the stock s6 services in the container image.
 
 ## [0.3.8]
 

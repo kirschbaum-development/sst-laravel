@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  assertSafeS6ServiceName,
   buildBackgroundTasks,
   writeS6TaskFiles,
 } from '../src/background-tasks';
@@ -52,6 +53,37 @@ describe('buildBackgroundTasks', () => {
       {},
     );
   });
+});
+
+describe('assertSafeS6ServiceName', () => {
+  it.each(['pulse', 'laravel-horizon', 'my_task.v2', 'worker-1'])(
+    'accepts typical names: %s',
+    (name) => {
+      expect(() => assertSafeS6ServiceName(name)).not.toThrow();
+    },
+  );
+
+  it.each(['foo/bar', '..', '../escape', 'foo/../../bar', '/etc'])(
+    'throws on names with path separators: %s',
+    (name) => {
+      expect(() => assertSafeS6ServiceName(name)).toThrow();
+    },
+  );
+
+  it('throws on names starting with "."', () => {
+    expect(() => assertSafeS6ServiceName('.hidden')).toThrow();
+  });
+
+  it('throws on empty string', () => {
+    expect(() => assertSafeS6ServiceName('')).toThrow();
+  });
+
+  it.each(['user', 'nginx', 'php-fpm'])(
+    'throws on reserved names: %s',
+    (name) => {
+      expect(() => assertSafeS6ServiceName(name)).toThrow();
+    },
+  );
 });
 
 describe('writeS6TaskFiles', () => {
@@ -162,5 +194,25 @@ describe('writeS6TaskFiles', () => {
     expect(
       fs.existsSync(path.join(s6RcDPath, 'user/contents.d/laravel-scheduler')),
     ).toBe(true);
+  });
+
+  it('rejects unsafe task names before deleting anything', () => {
+    writeS6TaskFiles({ keep: { command: 'echo ok' } }, buildPath);
+
+    expect(() =>
+      writeS6TaskFiles({ '../escape': { command: 'x' } }, buildPath),
+    ).toThrow();
+
+    expect(
+      fs.existsSync(
+        path.join(buildPath, 'etc/s6-overlay/s6-rc.d/keep'),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects reserved task names', () => {
+    expect(() =>
+      writeS6TaskFiles({ nginx: { command: 'x' } }, buildPath),
+    ).toThrow(/reserved/);
   });
 });

@@ -31,6 +31,7 @@ import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import { buildWebServerEnvironment } from './src/web-server';
 import { buildServiceArgs } from './src/service-args';
 import {
+    assertSafeS6ServiceName,
     buildBackgroundTasks,
     writeS6TaskFiles,
 } from './src/background-tasks';
@@ -701,6 +702,7 @@ export class LaravelService extends Component {
         function addWorkerServices() {
             args.workers?.forEach((workerConfig, index) => {
                 const workerName = workerConfig.name || `worker-${index + 1}`;
+                assertSafeS6ServiceName(workerName as string);
                 const absWorkerBuildPath = path.resolve(
                     pluginBuildPath,
                     `worker-${workerName}`,

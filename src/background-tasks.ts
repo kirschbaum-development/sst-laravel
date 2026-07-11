@@ -21,6 +21,29 @@ export interface BackgroundTasksConfig {
   tasks?: unknown;
 }
 
+const RESERVED_TASK_NAMES = ['user', 'nginx', 'php-fpm'];
+
+const SAFE_TASK_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+
+/**
+ * Ensures a task or worker name is a single safe path segment, so generated
+ * s6 files stay inside the build directory and cannot collide with the stock
+ * s6 services shipped in the base images.
+ */
+export function assertSafeS6ServiceName(name: string): void {
+  if (!SAFE_TASK_NAME.test(name) || name.includes('..')) {
+    throw new Error(
+      `Invalid background task name "${name}": names must contain only letters, numbers, ".", "_" or "-", and must not start with "." or contain path separators.`,
+    );
+  }
+
+  if (RESERVED_TASK_NAMES.includes(name)) {
+    throw new Error(
+      `Invalid background task name "${name}": this name is reserved by the s6 services built into the container image.`,
+    );
+  }
+}
+
 /**
  * Merges the custom `tasks` map with the `horizon`/`scheduler` defaults. The
  * defaults win over same-named custom tasks.
@@ -54,6 +77,8 @@ export function writeS6TaskFiles(
   tasks: Record<string, BackgroundTask>,
   buildPath: string,
 ): void {
+  Object.keys(tasks).forEach(assertSafeS6ServiceName);
+
   fs.rmSync(buildPath, { recursive: true, force: true });
 
   const s6RcDPath = path.resolve(buildPath, 'etc/s6-overlay/s6-rc.d');
