@@ -30,6 +30,10 @@ import { getSecretsFingerprint } from './src/secrets-manager';
 import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import { buildWebServerEnvironment } from './src/web-server';
 import { buildServiceArgs } from './src/service-args';
+import {
+    buildBackgroundTasks,
+    writeS6TaskFiles,
+} from './src/background-tasks';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
@@ -168,7 +172,52 @@ export interface LaravelHealthCheck {
     successCodes?: Input<string>;
 }
 
-export interface LaravelWebArgs extends LaravelServiceArgs {
+/**
+ * Background processes supervised by s6-overlay inside the container.
+ *
+ * On `workers[]`, these run as the container's main workload; if Horizon or
+ * the scheduler dies, the container halts and ECS replaces it.
+ *
+ * On `web`, these run alongside nginx/php-fpm. A crashed process is restarted
+ * in place by s6 so HTTP traffic is never interrupted. Note that when the web
+ * service scales beyond one container, every replica runs these processes —
+ * Horizon tolerates this (shared queue), but scheduled jobs should use
+ * `onOneServer()` backed by a shared cache store.
+ */
+export interface LaravelBackgroundTasksArgs {
+    /**
+     * Run Laravel Horizon (`php artisan horizon`).
+     */
+    horizon?: Input<boolean>;
+
+    /**
+     * Run the Laravel scheduler (`php artisan schedule:work`).
+     */
+    scheduler?: Input<boolean>;
+
+    /**
+     * Custom long-running commands, keyed by task name.
+     *
+     * @example
+     * ```js
+     * tasks: {
+     *   pulse: {
+     *     command: 'php artisan pulse:work',
+     *   },
+     * }
+     * ```
+     */
+    tasks?: Input<{
+        [key: string]: Input<{
+            command: Input<string>;
+            dependencies?: Input<string[]>;
+        }>;
+    }>;
+}
+
+export interface LaravelWebArgs
+    extends LaravelServiceArgs,
+        LaravelBackgroundTasksArgs {
     /**
      * Custom domain for the web layer. (if you don't provide a domain name, you will be able to use the load balancer domain for testing (http only))
      */
@@ -267,27 +316,10 @@ export interface LaravelReverbArgs extends LaravelServiceArgs {
     command?: string;
 }
 
-export interface LaravelWorkerConfig extends LaravelServiceArgs {
+export interface LaravelWorkerConfig
+    extends LaravelServiceArgs,
+        LaravelBackgroundTasksArgs {
     name?: Input<string>;
-    /**
-     * Running horizon?
-     */
-    horizon?: Input<boolean>;
-
-    /**
-     * Running scheduler?
-     */
-    scheduler?: Input<boolean>;
-
-    /**
-     * Multiple tasks can be run in the worker.
-     */
-    tasks?: Input<{
-        [key: string]: Input<{
-            command: Input<string>;
-            dependencies?: Input<string[]>;
-        }>;
-    }>;
 }
 
 export interface LaravelArgs extends ClusterArgs {
@@ -491,6 +523,9 @@ export class LaravelService extends Component {
         });
 
         const addWebService = () => {
+            const webBuildPath = path.resolve(pluginBuildPath, 'web');
+            writeS6TaskFiles(buildBackgroundTasks(args.web ?? {}), webBuildPath);
+
             const envVariables = {
                 ...getEnvironmentVariables(),
                 ...buildWebServerEnvironment({
@@ -509,7 +544,9 @@ export class LaravelService extends Component {
                     /**
                      * Image passed or use our default provided image.
                      */
-                    image: getImage(ImageType.Web),
+                    image: getImage(ImageType.Web, {
+                        CUSTOM_CONF_PATH: webBuildPath.replace(absSitePath, ''),
+                    }),
                     environment: envVariables,
                     scaling: args.web?.scaling,
 
@@ -563,65 +600,6 @@ export class LaravelService extends Component {
             );
         };
 
-        function createWorkerTasks(
-            workerConfig: LaravelWorkerConfig,
-            workerBuildPath: string,
-        ) {
-            const s6RcDPath = path.resolve(
-                workerBuildPath,
-                'etc/s6-overlay/s6-rc.d',
-            );
-            const s6UserContentsPath = path.resolve(
-                s6RcDPath,
-                'user/contents.d',
-            );
-
-            fs.mkdirSync(s6UserContentsPath, { recursive: true });
-
-            const tasks: Record<
-                string,
-                { command: string; dependencies?: string[] }
-            > = {
-                ...((workerConfig.tasks as any) ?? {}),
-            };
-
-            if (workerConfig.horizon) {
-                tasks['laravel-horizon'] = {
-                    command: 'php artisan horizon',
-                };
-            }
-
-            if (workerConfig.scheduler) {
-                tasks['laravel-scheduler'] = {
-                    command: 'php artisan schedule:work',
-                };
-            }
-
-            Object.entries(tasks).forEach(([taskName, config]) => {
-                const tasksDir = path.resolve(s6RcDPath, `${taskName}`);
-                fs.mkdirSync(tasksDir, { recursive: true });
-
-                const scriptSrcPath = path.join(tasksDir, 'script');
-
-                fs.writeFileSync(
-                    scriptSrcPath,
-                    `#!/command/with-contenv bash\ncd /var/www/html\n${config.command}`,
-                    { mode: 0o777 },
-                );
-                fs.writeFileSync(
-                    path.join(tasksDir, 'run'),
-                    `#!/command/execlineb -P\n/etc/s6-overlay/s6-rc.d/${taskName}/script`,
-                    { mode: 0o777 },
-                );
-                fs.writeFileSync(path.join(tasksDir, 'type'), 'longrun');
-                fs.writeFileSync(
-                    path.join(tasksDir, 'dependencies'),
-                    (config.dependencies || []).join('\n'),
-                );
-                fs.writeFileSync(path.join(s6UserContentsPath, taskName), '');
-            });
-        }
-
         const createWorkerService = (
             workerConfig: LaravelWorkerConfig,
             serviceName: string,
@@ -629,7 +607,7 @@ export class LaravelService extends Component {
             serviceKey = serviceName,
             devCommand = `php ${sitePath}/artisan horizon`,
         ) => {
-            createWorkerTasks(workerConfig, workerBuildPath);
+            writeS6TaskFiles(buildBackgroundTasks(workerConfig), workerBuildPath);
 
             const imgBuildArgs = {
                 CONF_PATH: path
