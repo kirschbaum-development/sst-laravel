@@ -228,6 +228,31 @@ const app = new LaravelService('MyLaravelApp', {
 
 Check all the `workers` options [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md#workers).
 
+### Running background processes in the web container
+
+For smaller applications, you can run Horizon, the scheduler, or any custom long-running command inside the web container instead of paying for a dedicated worker service. The `web` block accepts the same `horizon`, `scheduler`, and `tasks` options as `workers[]`:
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    domain: 'app.example.com',
+    horizon: true,
+    scheduler: true,
+    tasks: {
+      pulse: {
+        command: 'php artisan pulse:work',
+      },
+    },
+  },
+});
+```
+
+A few things to keep in mind:
+
+- Background processes share the web container's CPU and memory with nginx and PHP-FPM. If they need dedicated resources, use a `workers` entry instead.
+- Unlike workers — where a dead Horizon/scheduler process halts the container so ECS replaces it — background processes in the web container are restarted in place by s6, so a crash never interrupts HTTP traffic.
+- If the web service scales beyond one container, every replica runs these processes. Horizon handles this fine (shared queue), but scheduled jobs should use `onOneServer()` backed by a shared cache store to avoid running more than once.
+
 ## Environment Variables
 
 There are multiple ways to configure environment variables. If you want SST Laravel to copy an environment file, you can configure the `config.environment.file` entry.
