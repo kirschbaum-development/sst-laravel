@@ -26,9 +26,9 @@ const RESERVED_TASK_NAMES = ['user', 'nginx', 'php-fpm'];
 const SAFE_TASK_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 
 /**
- * Ensures a task or worker name is a single safe path segment, so generated
- * s6 files stay inside the build directory and cannot collide with the stock
- * s6 services shipped in the base images.
+ * Ensures a task name is a single safe path segment, so generated s6 files
+ * stay inside the build directory and cannot collide with the stock s6
+ * services shipped in the base images.
  */
 export function assertSafeS6ServiceName(name: string): void {
   if (!SAFE_TASK_NAME.test(name) || name.includes('..')) {
@@ -40,6 +40,19 @@ export function assertSafeS6ServiceName(name: string): void {
   if (RESERVED_TASK_NAMES.includes(name)) {
     throw new Error(
       `Invalid background task name "${name}": this name is reserved by the s6 services built into the container image.`,
+    );
+  }
+}
+
+/**
+ * Ensures a worker name is a single safe path segment. Worker names only
+ * shape the `worker-<name>` build directory, so unlike task names they may
+ * use any characters except path separators.
+ */
+export function assertSafeWorkerName(name: string): void {
+  if (!name || name === '.' || name === '..' || /[/\\]/.test(name)) {
+    throw new Error(
+      `Invalid worker name "${name}": names must be a single path segment without "/" or "\\".`,
     );
   }
 }

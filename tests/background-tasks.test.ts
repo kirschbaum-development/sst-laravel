@@ -4,6 +4,7 @@ import * as path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   assertSafeS6ServiceName,
+  assertSafeWorkerName,
   buildBackgroundTasks,
   writeS6TaskFiles,
 } from '../src/background-tasks';
@@ -84,6 +85,26 @@ describe('assertSafeS6ServiceName', () => {
       expect(() => assertSafeS6ServiceName(name)).toThrow();
     },
   );
+});
+
+describe('assertSafeWorkerName', () => {
+  it.each(['nginx', 'foo..bar', 'my worker', 'worker-1'])(
+    'accepts single-segment names: %s',
+    (name) => {
+      expect(() => assertSafeWorkerName(name)).not.toThrow();
+    },
+  );
+
+  it.each(['a/b', 'a\\b', '..', '.'])(
+    'throws on non-segment names: %s',
+    (name) => {
+      expect(() => assertSafeWorkerName(name)).toThrow();
+    },
+  );
+
+  it('throws on empty string', () => {
+    expect(() => assertSafeWorkerName('')).toThrow();
+  });
 });
 
 describe('writeS6TaskFiles', () => {
