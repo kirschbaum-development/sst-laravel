@@ -31,6 +31,14 @@ export type CloudflareRegion =
   | 'OC'
   | 'AFR';
 
+export const CLOUDFLARE_D1_BINDING = 'LARAVEL_D1';
+export const CLOUDFLARE_D1_HOST = 'sst-laravel-d1.internal';
+export const CLOUDFLARE_D1_INTERNAL_SECRET = 'sst-laravel-internal';
+
+export interface CloudflareD1Link {
+  databaseId: Input<string>;
+}
+
 export interface LaravelCloudflareArgs {
   /** Cloudflare account to deploy into. Wrangler's configured account is used when omitted. */
   accountId?: Input<string>;
@@ -73,6 +81,7 @@ export interface CloudflareDeploymentInputs {
   healthPath: Input<string>;
   environment?: Input<Record<string, Input<string>>>;
   environmentFile?: Input<string | undefined>;
+  d1DatabaseId?: Input<string | undefined>;
   regions?: Input<Input<CloudflareRegion>[]>;
   jurisdiction?: Input<'eu' | 'fedramp'>;
   contextFingerprint: Input<string>;
@@ -98,6 +107,7 @@ export interface ResolvedCloudflareDeploymentInputs {
   healthPath: string;
   environment?: Record<string, string>;
   environmentFile?: string;
+  d1DatabaseId?: string;
   regions?: CloudflareRegion[];
   jurisdiction?: 'eu' | 'fedramp';
   contextFingerprint: string;
@@ -232,6 +242,14 @@ export function buildCloudflareWranglerConfig(
         },
       ],
     },
+    d1_databases: inputs.d1DatabaseId
+      ? [
+          {
+            binding: CLOUDFLARE_D1_BINDING,
+            database_id: inputs.d1DatabaseId,
+          },
+        ]
+      : undefined,
     migrations: [
       {
         tag: 'v1',
@@ -242,6 +260,112 @@ export function buildCloudflareWranglerConfig(
       ? [{ pattern: inputs.domain, custom_domain: true }]
       : undefined,
   });
+}
+
+/**
+ * Resolve the single SST Cloudflare D1 resource supported by the Laravel
+ * Container prototype. SST exposes provider-native bindings through the
+ * resource's getSSTLink() definition.
+ */
+export function resolveCloudflareD1Link(
+  links: unknown[] | undefined,
+): CloudflareD1Link | undefined {
+  if (!links?.length) {
+    return undefined;
+  }
+
+  const databaseIds = links.flatMap((link) => {
+    const resource = unwrapLinkResource(link);
+
+    if (!resource || typeof resource.getSSTLink !== 'function') {
+      throw unsupportedCloudflareLinkError();
+    }
+
+    const definition = resource.getSSTLink();
+    const bindings = Array.isArray(definition?.include)
+      ? definition.include.filter(
+          (item: unknown): item is CloudflareD1BindingDescriptor =>
+            isCloudflareD1Binding(item),
+        )
+      : [];
+
+    if (bindings.length !== 1) {
+      throw unsupportedCloudflareLinkError();
+    }
+
+    return bindings.map((binding) => binding.properties.id);
+  });
+
+  if (databaseIds.length !== 1) {
+    throw new Error(
+      'provider: "cloudflare" currently supports linking exactly one sst.cloudflare.D1 database.',
+    );
+  }
+
+  return { databaseId: databaseIds[0] };
+}
+
+export function buildCloudflareD1Environment(databaseId: string) {
+  return {
+    DB_CONNECTION: 'd1',
+    CF_D1_DRIVER: 'worker',
+    CF_D1_DATABASE_ID: databaseId,
+    CF_D1_WORKER_URL: `http://${CLOUDFLARE_D1_HOST}`,
+    CF_D1_WORKER_SECRET: CLOUDFLARE_D1_INTERNAL_SECRET,
+    CF_D1_SESSION_ENABLED: 'true',
+    CF_D1_SESSION_MODE: 'first-primary',
+    CACHE_STORE: 'database',
+    CACHE_DRIVER: 'database',
+    DB_CACHE_CONNECTION: 'd1',
+    DB_CACHE_LOCK_CONNECTION: 'd1',
+  };
+}
+
+type CloudflareD1BindingDescriptor = {
+  type: 'cloudflare.binding';
+  binding: 'd1DatabaseBindings';
+  properties: { id: Input<string> };
+};
+
+function isCloudflareD1Binding(
+  value: unknown,
+): value is CloudflareD1BindingDescriptor {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const binding = value as Partial<CloudflareD1BindingDescriptor>;
+
+  return (
+    binding.type === 'cloudflare.binding' &&
+    binding.binding === 'd1DatabaseBindings' &&
+    !!binding.properties &&
+    'id' in binding.properties
+  );
+}
+
+function unwrapLinkResource(value: unknown): {
+  getSSTLink?: () => { include?: unknown[] };
+} | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  if ('resource' in value) {
+    const resource = (value as { resource?: unknown }).resource;
+
+    return resource && typeof resource === 'object'
+      ? (resource as { getSSTLink?: () => { include?: unknown[] } })
+      : undefined;
+  }
+
+  return value as { getSSTLink?: () => { include?: unknown[] } };
+}
+
+function unsupportedCloudflareLinkError() {
+  return new Error(
+    'provider: "cloudflare" currently supports link only for an sst.cloudflare.D1 database.',
+  );
 }
 
 export function resolveCloudflareInstanceType(options: {

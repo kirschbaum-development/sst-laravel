@@ -1,8 +1,19 @@
-import { Container, getRandom } from '@cloudflare/containers';
+import {
+  Container,
+  ContainerProxy,
+  getRandom,
+} from '@cloudflare/containers';
 import { env } from 'cloudflare:workers';
+import {
+  D1DatabaseLike,
+  handleD1ProxyRequest,
+} from './d1-proxy';
+
+export { ContainerProxy };
 
 type LaravelWorkerEnv = {
   LARAVEL_WEB: DurableObjectNamespace;
+  LARAVEL_D1?: D1DatabaseLike;
   SST_LARAVEL_CONTAINER_ENV_KEYS: string;
   SST_LARAVEL_HEALTH_PATH: string;
   SST_LARAVEL_HTTPS_REDIRECT: string;
@@ -14,6 +25,17 @@ type LaravelWorkerEnv = {
 const bindings = env as LaravelWorkerEnv;
 
 export class LaravelWebContainer extends Container {
+  static outboundByHost = {
+    'sst-laravel-d1.internal': (
+      request: Request,
+      workerEnv: unknown,
+    ) =>
+      handleD1ProxyRequest(
+        request,
+        (workerEnv as LaravelWorkerEnv).LARAVEL_D1,
+      ),
+  };
+
   defaultPort = 8080;
   sleepAfter = bindings.SST_LARAVEL_SLEEP_AFTER;
   envVars = buildContainerEnvironment(bindings);

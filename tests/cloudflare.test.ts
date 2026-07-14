@@ -4,9 +4,11 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   ResolvedCloudflareDeploymentInputs,
+  buildCloudflareD1Environment,
   buildCloudflareWranglerConfig,
   fingerprintBuildContext,
   normalizeCloudflareWorkerName,
+  resolveCloudflareD1Link,
   resolveCloudflareInstanceType,
 } from '../src/cloudflare';
 
@@ -85,6 +87,70 @@ describe('buildCloudflareWranglerConfig', () => {
     expect(() =>
       buildCloudflareWranglerConfig(deploymentInputs({ maxInstances: 0 })),
     ).toThrow(/positive integer/);
+  });
+
+  it('adds the linked D1 database as a Worker binding', () => {
+    const config = buildCloudflareWranglerConfig(
+      deploymentInputs({ d1DatabaseId: 'database-id' }),
+    ) as any;
+
+    expect(config.d1_databases).toEqual([
+      { binding: 'LARAVEL_D1', database_id: 'database-id' },
+    ]);
+  });
+});
+
+describe('resolveCloudflareD1Link', () => {
+  const d1 = (databaseId: string) => ({
+    getSSTLink: () => ({
+      properties: { databaseId },
+      include: [
+        {
+          type: 'cloudflare.binding',
+          binding: 'd1DatabaseBindings',
+          properties: { id: databaseId },
+        },
+      ],
+    }),
+  });
+
+  it('extracts the database ID from an SST Cloudflare D1 link', () => {
+    expect(resolveCloudflareD1Link([d1('database-id')])).toEqual({
+      databaseId: 'database-id',
+    });
+  });
+
+  it('supports the resource and environment callback link form', () => {
+    expect(
+      resolveCloudflareD1Link([
+        { resource: d1('database-id'), environment: () => ({}) },
+      ]),
+    ).toEqual({ databaseId: 'database-id' });
+  });
+
+  it('rejects non-D1 and multiple links', () => {
+    expect(() =>
+      resolveCloudflareD1Link([{ getSSTLink: () => ({ include: [] }) }]),
+    ).toThrow(/supports link only/);
+    expect(() =>
+      resolveCloudflareD1Link([d1('first'), d1('second')]),
+    ).toThrow(/exactly one/);
+  });
+});
+
+describe('buildCloudflareD1Environment', () => {
+  it('configures the Laravel D1 driver and database cache store', () => {
+    expect(buildCloudflareD1Environment('database-id')).toEqual(
+      expect.objectContaining({
+        DB_CONNECTION: 'd1',
+        CF_D1_DRIVER: 'worker',
+        CF_D1_DATABASE_ID: 'database-id',
+        CF_D1_WORKER_URL: 'http://sst-laravel-d1.internal',
+        CACHE_STORE: 'database',
+        CACHE_DRIVER: 'database',
+        DB_CACHE_CONNECTION: 'd1',
+      }),
+    );
   });
 });
 

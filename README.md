@@ -78,8 +78,11 @@ credentials. Wrangler reads `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID`, or uses an existing `wrangler login` session.
 
 ```ts
+const database = new sst.cloudflare.D1('Database');
+
 const app = new LaravelService('MyLaravelApp', {
   provider: 'cloudflare',
+  link: [database],
 
   web: {
     domain: 'app.example.com',
@@ -123,8 +126,40 @@ return {
 it is not copied into the Docker image. Values in `environment.vars` are plain
 Worker variables and are forwarded to the container at runtime.
 
+#### D1 database and cache
+
+Install the [Cloudflare D1 database driver for Laravel](https://github.com/TanDuy03/cloudflare-d1-database)
+in the Laravel application before linking an `sst.cloudflare.D1` database:
+
+```bash
+composer require ntanduy/cloudflare-d1-database
+```
+
+The Cloudflare provider supports one linked D1 database. It binds D1 to the
+generated Worker and exposes the driver's Worker protocol to the container on
+a private outbound hostname. No D1 API token or separate proxy Worker is
+required at runtime. Unless `config.environment.autoInject` is disabled, the
+component configures `DB_CONNECTION=d1`, the D1 Worker driver, D1 sessions, and
+Laravel's built-in `database` cache store. Explicit values in
+`config.environment.vars` or the configured environment file take precedence.
+
+The application must include Laravel's standard cache table migration. Newer
+Laravel applications include it by default; otherwise generate it with:
+
+```bash
+php artisan make:cache-table
+```
+
+Run the application migrations against D1 before serving production traffic.
+The current web-only prototype does not provide a one-off command container,
+so migrations should run from CI or a development machine using the D1
+driver's REST mode and scoped Cloudflare credentials. Once migrated, normal
+database-cache operations such as `get`, `put`, `remember`, and `forget` use
+D1. Laravel's database cache store does not support cache tags, and the D1
+driver does not provide transactional rollback semantics.
+
 The prototype currently supports only `web`. It rejects `workers`, `reverb`,
-`vpc`, `link`, AWS permissions and roles, load-balancer configuration, ECS
+`vpc`, non-D1 links, AWS permissions and roles, load-balancer configuration, ECS
 transforms, background tasks in the web container, `RemoteEnvVault`, and
 deployment scripts. For scaling, `max` controls both the Container application
 limit and the fixed stateless instance pool. Cloudflare does not currently have

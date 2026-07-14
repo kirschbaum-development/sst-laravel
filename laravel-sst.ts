@@ -36,9 +36,11 @@ import {
     writeS6TaskFiles,
 } from './src/background-tasks';
 import {
+    buildCloudflareD1Environment,
     CloudflareLaravelDeployment,
     fingerprintBuildContext,
     normalizeCloudflareWorkerName,
+    resolveCloudflareD1Link,
     resolveCloudflareInstanceType,
     resolveWranglerCli,
 } from './src/cloudflare';
@@ -356,6 +358,13 @@ export interface LaravelArgs extends ClusterArgs {
 
     // dev?: false | DevArgs["dev"];
     path?: Input<string>;
+
+    /**
+     * Resources linked to the Laravel service. With the Cloudflare provider,
+     * one `sst.cloudflare.D1` database is supported. It is exposed to Laravel
+     * through the `ntanduy/cloudflare-d1-database` Worker driver, and Laravel's
+     * database cache store is configured to use it by default.
+     */
     link?: Array<
         | any
         | {
@@ -507,6 +516,7 @@ export class LaravelService extends Component {
         }
 
         if (args.provider === 'cloudflare') {
+            const d1Link = resolveCloudflareD1Link(args.link);
             validateCloudflarePrototypeArgs(args);
 
             const web = args.web!;
@@ -541,10 +551,15 @@ export class LaravelService extends Component {
             const healthPath = output(web.healthCheck).apply(
                 (healthCheck) => healthCheck?.path?.toString() ?? '',
             );
-            const environment = all([
-                args.config?.environment?.vars,
-                domain,
-            ]).apply(([vars, domainName]) => ({
+            const linkedEnvironment = resolveCloudflareLinkEnvironment(
+                args.link,
+            );
+            const environment = all({
+                vars: args.config?.environment?.vars ?? {},
+                domainName: domain,
+                linkEnvironment: linkedEnvironment,
+                databaseId: d1Link?.databaseId,
+            }).apply(({ vars, domainName, linkEnvironment, databaseId }) => ({
                 ...(args.config?.environment?.autoInject === false
                     ? {}
                     : {
@@ -552,8 +567,14 @@ export class LaravelService extends Component {
                               ? { APP_URL: `https://${domainName}` }
                               : {}),
                           LOG_CHANNEL: 'stderr',
+                          ...(databaseId
+                              ? buildCloudflareD1Environment(
+                                    databaseId.toString(),
+                                )
+                              : {}),
                       }),
-                ...(vars ?? {}),
+                ...linkEnvironment,
+                ...vars,
                 ...buildWebServerEnvironment({
                     accessLogs: web.accessLogs,
                 }),
@@ -596,6 +617,7 @@ export class LaravelService extends Component {
                     healthPath,
                     environment,
                     environmentFile,
+                    d1DatabaseId: d1Link?.databaseId,
                     regions: args.cloudflare?.regions,
                     jurisdiction: args.cloudflare?.jurisdiction,
                     contextFingerprint: fingerprintBuildContext(absSitePath),
@@ -1301,6 +1323,42 @@ export class LaravelService extends Component {
     }
 }
 
+function resolveCloudflareLinkEnvironment(
+    links: LaravelArgs['link'],
+): Record<string, string | Output<string | undefined> | undefined> {
+    const environment: Record<
+        string,
+        string | Output<string | undefined> | undefined
+    > = {};
+
+    for (const link of links ?? []) {
+        if (!link || typeof link !== 'object' || !('resource' in link)) {
+            continue;
+        }
+
+        const callback = (
+            link as {
+                resource: unknown;
+                environment?: EnvCallback;
+                envCallback?: EnvCallback;
+            }
+        ).environment ??
+            (
+                link as {
+                    resource: unknown;
+                    environment?: EnvCallback;
+                    envCallback?: EnvCallback;
+                }
+            ).envCallback;
+
+        if (callback) {
+            Object.assign(environment, callback(link.resource));
+        }
+    }
+
+    return environment;
+}
+
 function validateCloudflarePrototypeArgs(args: LaravelArgs) {
     const unsupported: string[] = [];
     const web = args.web;
@@ -1314,7 +1372,6 @@ function validateCloudflarePrototypeArgs(args: LaravelArgs) {
     if (args.workers?.length) unsupported.push('workers');
     if (args.reverb) unsupported.push('reverb');
     if (args.vpc) unsupported.push('vpc');
-    if (args.link?.length) unsupported.push('link');
     if (args.permissions?.length) unsupported.push('permissions');
     if (args.config?.environment?.secrets) {
         unsupported.push('config.environment.secrets');
