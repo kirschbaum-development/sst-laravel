@@ -24,6 +24,9 @@
     "CHANGELOG.md",
     "Dockerfile.web",
     "Dockerfile.worker",
+    "Dockerfile.cloudflare",
+    "Dockerfile.cloudflare.dockerignore",
+    "cloudflare",
     ".dockerignore",
     "skills"
   ],
@@ -55,6 +58,7 @@
     "sst-laravel": "dist/bin/cli.js"
   },
   "dependencies": {
+    "@cloudflare/containers": "^0.3.7",
     "@aws-sdk/client-ecs": "^3.0.0",
     "@aws-sdk/client-iam": "^3.0.0",
     "@aws-sdk/client-secrets-manager": "^3.0.0",
@@ -63,7 +67,8 @@
     "@pulumi/aws": "^7.8.0",
     "@pulumi/pulumi": "^3.203.0",
     "commander": "^12.0.0",
-    "sst": "^3.17.25"
+    "sst": "^3.17.25",
+    "wrangler": "^4.110.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

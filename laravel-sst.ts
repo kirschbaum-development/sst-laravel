@@ -35,9 +35,22 @@ import {
     buildBackgroundTasks,
     writeS6TaskFiles,
 } from './src/background-tasks';
+import {
+    CloudflareLaravelDeployment,
+    fingerprintBuildContext,
+    normalizeCloudflareWorkerName,
+    resolveCloudflareInstanceType,
+    resolveWranglerCli,
+} from './src/cloudflare';
+import type { LaravelCloudflareArgs } from './src/cloudflare';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
+export type {
+    CloudflareInstanceType,
+    CloudflareRegion,
+    LaravelCloudflareArgs,
+} from './src/cloudflare';
 
 enum ImageType {
     Web = 'web',
@@ -324,6 +337,23 @@ export interface LaravelWorkerConfig
 }
 
 export interface LaravelArgs extends ClusterArgs {
+    /**
+     * Infrastructure provider used to run Laravel.
+     *
+     * The Cloudflare provider is currently a web-only prototype backed by
+     * Cloudflare Containers and Wrangler. AWS remains the default so existing
+     * applications do not need to change their configuration.
+     *
+     * @default `"aws"`
+     */
+    provider?: 'aws' | 'cloudflare';
+
+    /**
+     * Cloudflare Containers settings. Only used when `provider` is
+     * `"cloudflare"`.
+     */
+    cloudflare?: LaravelCloudflareArgs;
+
     // dev?: false | DevArgs["dev"];
     path?: Input<string>;
     link?: Array<
@@ -447,6 +477,7 @@ export interface LaravelArgs extends ClusterArgs {
 export class LaravelService extends Component {
     private readonly services: Record<string, sst.aws.Service>;
     private readonly _messages: string[] = [];
+    private cloudflareDeployment?: CloudflareLaravelDeployment;
 
     constructor(
         name: string,
@@ -473,6 +504,116 @@ export class LaravelService extends Component {
 
         if (!fs.existsSync(pluginBuildPath + '/deploy')) {
             fs.mkdirSync(pluginBuildPath + '/deploy', { recursive: true });
+        }
+
+        if (args.provider === 'cloudflare') {
+            validateCloudflarePrototypeArgs(args);
+
+            const web = args.web!;
+            const cloudflareBuildPath = path.resolve(
+                pluginBuildPath,
+                'cloudflare',
+                normalizeCloudflareWorkerName(name),
+            );
+            const domain = output(web.domain).apply((value) =>
+                normalizeCloudflareDomain(value),
+            );
+            const workerName = output(
+                args.cloudflare?.workerName ??
+                    `${$app.name}-${$app.stage}-${name}`,
+            ).apply(normalizeCloudflareWorkerName);
+            const maxInstances = output(web.scaling).apply(
+                (scaling) => scaling?.max ?? 1,
+            );
+            const instanceType = all([
+                args.cloudflare?.instanceType,
+                web.cpu,
+                web.memory,
+                web.storage,
+            ]).apply(([configured, cpu, memory, storage]) =>
+                resolveCloudflareInstanceType({
+                    instanceType: configured,
+                    cpu,
+                    memory,
+                    storage,
+                }),
+            );
+            const healthPath = output(web.healthCheck).apply(
+                (healthCheck) => healthCheck?.path?.toString() ?? '',
+            );
+            const environment = all([
+                args.config?.environment?.vars,
+                domain,
+            ]).apply(([vars, domainName]) => ({
+                ...(args.config?.environment?.autoInject === false
+                    ? {}
+                    : {
+                          ...(domainName
+                              ? { APP_URL: `https://${domainName}` }
+                              : {}),
+                          LOG_CHANNEL: 'stderr',
+                      }),
+                ...(vars ?? {}),
+                ...buildWebServerEnvironment({
+                    accessLogs: web.accessLogs,
+                }),
+            }));
+            const environmentFile = output(
+                args.config?.environment?.file,
+            ).apply((file) =>
+                file ? path.resolve(absSitePath, file.toString()) : undefined,
+            );
+
+            this.cloudflareDeployment = new CloudflareLaravelDeployment(
+                `${name}-Cloudflare`,
+                {
+                    workerName,
+                    accountId: args.cloudflare?.accountId,
+                    buildPath: cloudflareBuildPath,
+                    sitePath: absSitePath,
+                    workerEntrypoint: path.resolve(
+                        nodeModulePath,
+                        'cloudflare/worker.ts',
+                    ),
+                    dockerfile: path.resolve(
+                        nodeModulePath,
+                        'Dockerfile.cloudflare',
+                    ),
+                    wranglerCli: resolveWranglerCli(nodeModulePath),
+                    compatibilityDate:
+                        args.cloudflare?.compatibilityDate ?? '2026-07-14',
+                    phpVersion: output(args.config?.php ?? 8.4).apply((value) =>
+                        value.toString(),
+                    ),
+                    opcache: output(args.config?.opcache).apply(
+                        (value) => value !== false,
+                    ),
+                    instanceType,
+                    maxInstances,
+                    sleepAfter: args.cloudflare?.sleepAfter ?? '10m',
+                    domain,
+                    httpsRedirect: web.httpsRedirect ?? true,
+                    healthPath,
+                    environment,
+                    environmentFile,
+                    regions: args.cloudflare?.regions,
+                    jurisdiction: args.cloudflare?.jurisdiction,
+                    contextFingerprint: fingerprintBuildContext(absSitePath),
+                    url: domain.apply((value) =>
+                        value ? `https://${value}` : undefined,
+                    ),
+                },
+                { parent: this },
+            );
+
+            this._messages.push(
+                'Cloudflare Containers support is experimental and currently deploys only the web service.',
+            );
+            this.registerOutputs({
+                url: this.cloudflareDeployment.url,
+                _hint: this.messages,
+            });
+            return;
         }
 
         const envFilePath = path.resolve(pluginBuildPath, 'deploy', '.env');
@@ -1137,7 +1278,7 @@ export class LaravelService extends Component {
      * Otherwise, it's the auto-generated load balancer URL.
      */
     public get url() {
-        return this.services['web'].url;
+        return this.cloudflareDeployment?.url ?? this.services['web']?.url;
     }
 
     /**
@@ -1147,7 +1288,7 @@ export class LaravelService extends Component {
      * Otherwise, it's the auto-generated load balancer URL.
      */
     public get reverbUrl() {
-        return this.services['reverb'].url;
+        return this.services['reverb']?.url;
     }
 
     /**
@@ -1158,6 +1299,121 @@ export class LaravelService extends Component {
     public get messages() {
         return this._messages;
     }
+}
+
+function validateCloudflarePrototypeArgs(args: LaravelArgs) {
+    const unsupported: string[] = [];
+    const web = args.web;
+
+    if (!web) {
+        throw new Error(
+            'provider: "cloudflare" currently requires the web option.',
+        );
+    }
+
+    if (args.workers?.length) unsupported.push('workers');
+    if (args.reverb) unsupported.push('reverb');
+    if (args.vpc) unsupported.push('vpc');
+    if (args.link?.length) unsupported.push('link');
+    if (args.permissions?.length) unsupported.push('permissions');
+    if (args.config?.environment?.secrets) {
+        unsupported.push('config.environment.secrets');
+    }
+    if (args.config?.deployment?.script) {
+        unsupported.push('config.deployment.script');
+    }
+    if (web.loadBalancer) unsupported.push('web.loadBalancer');
+    if (web.logging) unsupported.push('web.logging');
+    if (web.health) unsupported.push('web.health');
+    if (web.executionRole) unsupported.push('web.executionRole');
+    if (web.permissions) unsupported.push('web.permissions');
+    if (web.transform) unsupported.push('web.transform');
+    if (web.horizon) unsupported.push('web.horizon');
+    if (web.scheduler) unsupported.push('web.scheduler');
+    if (web.tasks && Object.keys(web.tasks as object).length) {
+        unsupported.push('web.tasks');
+    }
+    if (web.architecture && web.architecture !== 'x86_64') {
+        unsupported.push('web.architecture');
+    }
+
+    if (web.healthCheck && typeof web.healthCheck === 'object') {
+        const { path: _path, ...unsupportedHealthOptions } =
+            web.healthCheck as LaravelHealthCheck;
+
+        if (
+            Object.values(unsupportedHealthOptions).some(
+                (value) => value !== undefined,
+            )
+        ) {
+            unsupported.push(
+                'web.healthCheck options other than web.healthCheck.path',
+            );
+        }
+    }
+
+    if (web.scaling && typeof web.scaling === 'object') {
+        const scaling = web.scaling as Record<string, unknown>;
+
+        if ('min' in scaling && scaling.min !== undefined && scaling.min !== 0) {
+            unsupported.push('web.scaling.min values other than 0');
+        }
+
+        for (const key of [
+            'cpuUtilization',
+            'memoryUtilization',
+            'requestCount',
+            'scaleInCooldown',
+            'scaleOutCooldown',
+        ] as const) {
+            if (key in scaling && scaling[key] !== undefined) {
+                unsupported.push(`web.scaling.${key}`);
+            }
+        }
+    }
+
+    if (web.domain && typeof web.domain === 'object') {
+        const domain = web.domain as { cert?: unknown; dns?: unknown };
+
+        if (domain.cert) unsupported.push('web.domain.cert');
+        if (domain.dns) unsupported.push('web.domain.dns');
+    }
+
+    if (unsupported.length) {
+        throw new Error(
+            `provider: "cloudflare" does not support these options yet: ${unsupported.join(', ')}.`,
+        );
+    }
+}
+
+function normalizeCloudflareDomain(value: unknown): string | undefined {
+    if (!value) {
+        return undefined;
+    }
+
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    if (typeof value === 'object' && 'name' in value) {
+        const domain = value as {
+            name: unknown;
+            cert?: unknown;
+            dns?: unknown;
+        };
+
+        if (domain.cert || domain.dns) {
+            throw new Error(
+                'Cloudflare domains currently accept only a name. Remove web.domain.cert and web.domain.dns.',
+            );
+        }
+
+        if (typeof domain.name === 'string') {
+            return domain.name;
+        }
+    }
+
+    throw new Error('Invalid web.domain for provider: "cloudflare".');
 }
 
 const __pulumiType = 'sst:aws:LaravelService';

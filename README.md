@@ -2,7 +2,9 @@
 
 ![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/deploy.png)
 
-SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
+SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy containerized Laravel applications, with all the power of SST.
+
+AWS Fargate is the default and production-ready provider. Experimental support for running the web application in [Cloudflare Containers](https://developers.cloudflare.com/containers/) is also available.
 
 SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
 
@@ -64,6 +66,74 @@ import { LaravelService } from "@kirschbaum-development/sst-laravel";
 And now you can start using the `Laravel` SST component. All the configuration options are Typescript files with documentation, so
 
 To check the full list of options. check [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md). 
+
+### Cloudflare Containers prototype
+
+Set `provider: 'cloudflare'` to deploy the Laravel web application as a
+Cloudflare Container fronted by a Worker. Omitting `provider` continues to use
+AWS, so existing configurations do not need to change.
+
+Cloudflare Containers require a Workers Paid plan, Docker, and Wrangler
+credentials. Wrangler reads `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`, or uses an existing `wrangler login` session.
+
+```ts
+const app = new LaravelService('MyLaravelApp', {
+  provider: 'cloudflare',
+
+  web: {
+    domain: 'app.example.com',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
+    storage: '4 GB',
+    scaling: {
+      min: 0,
+      max: 3,
+    },
+    healthCheck: {
+      path: '/up',
+    },
+  },
+
+  cloudflare: {
+    sleepAfter: '10m',
+    regions: ['SAM'],
+  },
+
+  config: {
+    php: 8.4,
+    opcache: true,
+    environment: {
+      file: `.env.${$app.stage}`,
+      vars: {
+        SESSION_DRIVER: 'redis',
+        CACHE_STORE: 'redis',
+        QUEUE_CONNECTION: 'redis',
+      },
+    },
+  },
+});
+
+return {
+  url: app.url,
+};
+```
+
+`config.environment.file` is uploaded using Wrangler's secrets-file support;
+it is not copied into the Docker image. Values in `environment.vars` are plain
+Worker variables and are forwarded to the container at runtime.
+
+The prototype currently supports only `web`. It rejects `workers`, `reverb`,
+`vpc`, `link`, AWS permissions and roles, load-balancer configuration, ECS
+transforms, background tasks in the web container, `RemoteEnvVault`, and
+deployment scripts. For scaling, `max` controls both the Container application
+limit and the fixed stateless instance pool. Cloudflare does not currently have
+ECS-style utilization autoscaling, so only `min: 0` is accepted.
+
+Container storage is ephemeral. Use an external database, Redis-compatible
+service, and S3/R2-compatible object storage for Laravel state. Those services
+must currently be reachable from the public internet; this prototype does not
+connect Containers to resources inside an AWS VPC.
 
 ### Web (HTTP)
 

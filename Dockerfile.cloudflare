@@ -1,0 +1,22 @@
+ARG PHP_VERSION=8.4
+FROM serversideup/php:${PHP_VERSION}-fpm-nginx
+
+USER root
+
+LABEL authors="Kirschbaum"
+LABEL maintainer="Kirschbaum"
+
+ENV AUTORUN_ENABLED=false
+ENV CONTAINER_TYPE=web
+
+ARG PHP_OPCACHE_ENABLE=1
+ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && install-php-extensions gd intl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --chown=www-data:www-data . /var/www/html
+
+USER www-data
