@@ -1,12 +1,10 @@
 .build
 node_modules
 package-lock.json
-!demos/*/package-lock.json
 dist
 sst.config.ts
-!demos/*/sst.config.ts
 .sst
 vendor
 composer.lock
-!demos/*/composer.lock
 .agents
+/demos/
