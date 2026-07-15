@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Linking for one `sst.cloudflare.D1` database through the REST-based
   `erimeilis/laravel-cloudflare-d1` driver, including defaults for Laravel's
   built-in database cache store.
+- Linking for one `sst.cloudflare.Bucket` through R2's S3-compatible API,
+  including Laravel filesystem defaults while keeping R2 credentials in the
+  runtime secrets file.
 
 ### Security
 

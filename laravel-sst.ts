@@ -37,10 +37,11 @@ import {
 } from './src/background-tasks';
 import {
     buildCloudflareD1Environment,
+    buildCloudflareR2Environment,
     CloudflareLaravelDeployment,
     fingerprintBuildContext,
     normalizeCloudflareWorkerName,
-    resolveCloudflareD1Link,
+    resolveCloudflareLinks,
     resolveCloudflareInstanceType,
     resolveWranglerCli,
 } from './src/cloudflare';
@@ -361,9 +362,9 @@ export interface LaravelArgs extends ClusterArgs {
 
     /**
      * Resources linked to the Laravel service. With the Cloudflare provider,
-     * one `sst.cloudflare.D1` database is supported. Its database ID is exposed
-     * to `erimeilis/laravel-cloudflare-d1`, and Laravel's database cache store
-     * is configured to use it by default.
+     * one `sst.cloudflare.D1` database and one `sst.cloudflare.Bucket` are
+     * supported. D1 is exposed through `erimeilis/laravel-cloudflare-d1`; R2
+     * is exposed through Laravel's S3-compatible filesystem driver.
      */
     link?: Array<
         | any
@@ -516,8 +517,18 @@ export class LaravelService extends Component {
         }
 
         if (args.provider === 'cloudflare') {
-            const d1Link = resolveCloudflareD1Link(args.link);
+            const cloudflareLinks = resolveCloudflareLinks(args.link);
             validateCloudflarePrototypeArgs(args);
+
+            if (
+                cloudflareLinks.r2 &&
+                args.config?.environment?.autoInject !== false &&
+                args.cloudflare?.accountId === undefined
+            ) {
+                throw new Error(
+                    'cloudflare.accountId is required when linking an sst.cloudflare.Bucket with automatic environment injection.',
+                );
+            }
 
             const web = args.web!;
             const cloudflareBuildPath = path.resolve(
@@ -558,7 +569,8 @@ export class LaravelService extends Component {
                 vars: args.config?.environment?.vars ?? {},
                 domainName: domain,
                 linkEnvironment: linkedEnvironment,
-                databaseId: d1Link?.databaseId,
+                databaseId: cloudflareLinks.d1?.databaseId,
+                bucketName: cloudflareLinks.r2?.bucketName,
                 accountId: args.cloudflare?.accountId,
             }).apply(
                 ({
@@ -566,6 +578,7 @@ export class LaravelService extends Component {
                     domainName,
                     linkEnvironment,
                     databaseId,
+                    bucketName,
                     accountId,
                 }) => ({
                     ...(args.config?.environment?.autoInject === false
@@ -579,6 +592,12 @@ export class LaravelService extends Component {
                                   ? buildCloudflareD1Environment(
                                         databaseId.toString(),
                                         accountId?.toString(),
+                                    )
+                                  : {}),
+                              ...(bucketName
+                                  ? buildCloudflareR2Environment(
+                                        bucketName.toString(),
+                                        accountId?.toString() ?? '',
                                     )
                                   : {}),
                           }),

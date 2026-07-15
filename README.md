@@ -79,10 +79,11 @@ credentials. Wrangler reads `CLOUDFLARE_API_TOKEN` and
 
 ```ts
 const database = new sst.cloudflare.D1('Database');
+const storage = new sst.cloudflare.Bucket('Storage');
 
 const app = new LaravelService('MyLaravelApp', {
   provider: 'cloudflare',
-  link: [database],
+  link: [database, storage],
 
   web: {
     domain: 'app.example.com',
@@ -126,7 +127,7 @@ return {
 it is not copied into the Docker image. Values in `environment.vars` are plain
 Worker variables and are forwarded to the container at runtime.
 
-#### D1 database and cache
+#### D1 database, cache, and R2 object storage
 
 Install the [Cloudflare D1 database driver for Laravel](https://github.com/erimeilis/laravel-cloudflare-d1)
 in the Laravel application before linking an `sst.cloudflare.D1` database:
@@ -185,16 +186,45 @@ store does not support cache tags. The driver's buffered transaction model is
 not compatible with cache increments, decrements, or atomic locks; use a
 Redis-compatible cache when those operations are required.
 
+The Cloudflare provider also supports one linked `sst.cloudflare.Bucket`.
+Laravel accesses the R2 bucket through its standard S3-compatible filesystem,
+so install the Flysystem S3 adapter in the Laravel application:
+
+```bash
+composer require league/flysystem-aws-s3-v3 "^3.0" --with-all-dependencies
+```
+
+With automatic environment injection enabled, the component selects the `s3`
+filesystem disk and configures `AWS_BUCKET`, `AWS_DEFAULT_REGION=auto`, and the
+account-scoped `AWS_ENDPOINT`. `cloudflare.accountId` is required to construct
+that endpoint. The generated Worker does not receive an R2 binding and no
+object-storage proxy runs inside it.
+
+Generate an R2 API token with Object Read & Write access scoped to the linked
+bucket, then add its S3 credentials to the runtime environment file:
+
+```dotenv
+AWS_ACCESS_KEY_ID=your-r2-access-key-id
+AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
+```
+
+Laravel's existing `s3` disk configuration then works with `Storage::put()`,
+`get()`, `delete()`, streams, and temporary URLs. Set `AWS_URL` explicitly when
+using an R2 public bucket or custom domain. For an EU or FedRAMP jurisdictional
+bucket, override `AWS_ENDPOINT` with the corresponding jurisdiction-specific
+R2 endpoint in `config.environment.vars` or the runtime environment file.
+
 The prototype currently supports only `web`. It rejects `workers`, `reverb`,
-`vpc`, non-D1 links, AWS permissions and roles, load-balancer configuration, ECS
-transforms, background tasks in the web container, `RemoteEnvVault`, and
-deployment scripts. For scaling, `max` controls both the Container application
-limit and the fixed stateless instance pool. Cloudflare does not currently have
-ECS-style utilization autoscaling, so only `min: 0` is accepted.
+`vpc`, links other than D1 and R2, AWS permissions and roles, load-balancer
+configuration, ECS transforms, background tasks in the web container,
+`RemoteEnvVault`, and deployment scripts. For scaling, `max` controls both the
+Container application limit and the fixed stateless instance pool. Cloudflare
+does not currently have ECS-style utilization autoscaling, so only `min: 0` is
+accepted.
 
 Container storage is ephemeral. Use an external database, Redis-compatible
-service, and S3/R2-compatible object storage for Laravel state. Those services
-must currently be reachable from the public internet; this prototype does not
+service, and the linked R2 bucket for Laravel state. External services must
+currently be reachable from the public internet; this prototype does not
 connect Containers to resources inside an AWS VPC.
 
 ### Web (HTTP)

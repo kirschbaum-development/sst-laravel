@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ResolvedCloudflareDeploymentInputs,
   buildCloudflareD1Environment,
+  buildCloudflareR2Environment,
   buildCloudflareWranglerConfig,
   fingerprintBuildContext,
   normalizeCloudflareWorkerName,
-  resolveCloudflareD1Link,
+  resolveCloudflareLinks,
   resolveCloudflareInstanceType,
 } from '../src/cloudflare';
 
@@ -89,16 +90,17 @@ describe('buildCloudflareWranglerConfig', () => {
     ).toThrow(/positive integer/);
   });
 
-  it('does not add a Worker binding for REST-based D1 access', () => {
+  it('does not add Worker bindings for REST-based D1 or R2 access', () => {
     const config = buildCloudflareWranglerConfig(
       deploymentInputs(),
     ) as any;
 
     expect(config).not.toHaveProperty('d1_databases');
+    expect(config).not.toHaveProperty('r2_buckets');
   });
 });
 
-describe('resolveCloudflareD1Link', () => {
+describe('resolveCloudflareLinks', () => {
   const d1 = (databaseId: string) => ({
     getSSTLink: () => ({
       properties: { databaseId },
@@ -111,28 +113,60 @@ describe('resolveCloudflareD1Link', () => {
       ],
     }),
   });
+  const r2 = (bucketName: string) => ({
+    getSSTLink: () => ({
+      properties: { name: bucketName },
+      include: [
+        {
+          type: 'cloudflare.binding',
+          binding: 'r2BucketBindings',
+          properties: { bucketName },
+        },
+      ],
+    }),
+  });
 
-  it('extracts the database ID from an SST Cloudflare D1 link', () => {
-    expect(resolveCloudflareD1Link([d1('database-id')])).toEqual({
-      databaseId: 'database-id',
+  it('extracts D1 and R2 properties from SST Cloudflare links', () => {
+    expect(
+      resolveCloudflareLinks([
+        d1('database-id'),
+        r2('bucket-name'),
+      ]),
+    ).toEqual({
+      d1: { databaseId: 'database-id' },
+      r2: { bucketName: 'bucket-name' },
     });
   });
 
   it('supports the resource and environment callback link form', () => {
     expect(
-      resolveCloudflareD1Link([
+      resolveCloudflareLinks([
         { resource: d1('database-id'), environment: () => ({}) },
       ]),
-    ).toEqual({ databaseId: 'database-id' });
+    ).toEqual({
+      d1: { databaseId: 'database-id' },
+      r2: undefined,
+    });
   });
 
-  it('rejects non-D1 and multiple links', () => {
+  it('allows either supported resource to be linked independently', () => {
+    expect(resolveCloudflareLinks([r2('bucket-name')])).toEqual({
+      d1: undefined,
+      r2: { bucketName: 'bucket-name' },
+    });
+    expect(resolveCloudflareLinks(undefined)).toEqual({});
+  });
+
+  it('rejects unsupported and duplicate resource types', () => {
     expect(() =>
-      resolveCloudflareD1Link([{ getSSTLink: () => ({ include: [] }) }]),
+      resolveCloudflareLinks([{ getSSTLink: () => ({ include: [] }) }]),
     ).toThrow(/supports link only/);
     expect(() =>
-      resolveCloudflareD1Link([d1('first'), d1('second')]),
-    ).toThrow(/exactly one/);
+      resolveCloudflareLinks([d1('first'), d1('second')]),
+    ).toThrow(/at most one.*D1/);
+    expect(() =>
+      resolveCloudflareLinks([r2('first'), r2('second')]),
+    ).toThrow(/at most one.*Bucket/);
   });
 });
 
@@ -155,6 +189,27 @@ describe('buildCloudflareD1Environment', () => {
     expect(buildCloudflareD1Environment('database-id')).not.toHaveProperty(
       'CLOUDFLARE_ACCOUNT_ID',
     );
+  });
+});
+
+describe('buildCloudflareR2Environment', () => {
+  it('configures Laravel S3 storage against the linked R2 bucket', () => {
+    expect(
+      buildCloudflareR2Environment('bucket-name', 'account-id'),
+    ).toEqual({
+      FILESYSTEM_DISK: 's3',
+      AWS_BUCKET: 'bucket-name',
+      AWS_DEFAULT_REGION: 'auto',
+      AWS_ENDPOINT:
+        'https://account-id.r2.cloudflarestorage.com',
+      AWS_USE_PATH_STYLE_ENDPOINT: 'false',
+    });
+  });
+
+  it('requires an account ID to construct the R2 endpoint', () => {
+    expect(() =>
+      buildCloudflareR2Environment('bucket-name', ''),
+    ).toThrow(/cloudflare.accountId is required/);
   });
 });
 
