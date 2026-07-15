@@ -5,11 +5,12 @@ This demo deploys a Laravel 13 application with the experimental Cloudflare prov
 By default, SST creates and links:
 
 - a Cloudflare D1 database through `erimeilis/laravel-cloudflare-d1`;
-- the standard Laravel database cache store backed by D1.
+- the standard Laravel database cache store backed by D1;
+- Laravel authentication with users and sessions stored in D1.
 
 R2 remains available as an opt-in integration through Laravel's S3 filesystem driver. The demo uses local SST state so an account can deploy the Container and D1 before enabling R2.
 
-The `/up` route is used for container health checks. After running the database migrations, `/cloudflare` performs a live database query and a temporary cache write. When R2 is enabled, it also performs a temporary R2 write/read/delete operation.
+The `/up` route is used for container health checks. After running the database migrations, use `/register`, `/login`, and `/dashboard` to exercise user and session persistence. The `/cloudflare` route performs a live database query and a temporary cache write. When R2 is enabled, it also performs a temporary R2 write/read/delete operation.
 
 ## Prerequisites
 
@@ -54,7 +55,7 @@ AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
 ```
 
-Generate the application key with `php artisan key:generate --show`. The D1 token needs permission to query the created database. If you enable R2, generate the R2 Access Key ID and Secret Access Key from an R2 API token with Object Read & Write access.
+Generate the application key with `php artisan key:generate --show`. The D1 token needs the account-level `D1 Edit` permission because registration, sessions, and cache entries all write to the database. If you enable R2, generate the R2 Access Key ID and Secret Access Key from an R2 API token with Object Read & Write access.
 
 The D1 account/database IDs and, when enabled, the R2 bucket/endpoint/region are injected automatically from the linked SST resources. Do not add them to `.env.cloudflare`.
 
@@ -70,7 +71,7 @@ To also provision and link R2 after enabling it for your Cloudflare account:
 SST_LARAVEL_ENABLE_R2=true npm run deploy -- --stage dev
 ```
 
-The first deployment prints `url` and `databaseId`; R2-enabled deployments also print `bucketName`. The health endpoint can boot before migrations because sessions use encrypted cookies.
+The first deployment prints `url` and `databaseId`; R2-enabled deployments also print `bucketName`. Apply migrations before testing browser routes because Laravel uses the D1-backed database session driver.
 
 Apply Laravel's migrations to D1 using the printed database ID:
 
