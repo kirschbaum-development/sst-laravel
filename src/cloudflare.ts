@@ -486,11 +486,28 @@ export function normalizeCloudflareWorkerName(value: string): string {
   return normalized || 'sst-laravel';
 }
 
-export function fingerprintBuildContext(root: string): string {
+export function fingerprintBuildContext(
+  root: string,
+  dependencies: string[] = [],
+): string {
   const hash = crypto.createHash('sha256');
   const ignoredDirectories = new Set(['.git', '.sst', 'node_modules']);
+  const resolvedRoot = path.resolve(root);
 
-  visit(root);
+  visit(resolvedRoot);
+
+  const resolvedDependencies = dependencies
+    .map((file) => path.resolve(file))
+    .sort();
+
+  for (const dependency of resolvedDependencies) {
+    if (!fs.existsSync(dependency)) {
+      throw new Error(`Build dependency not found at ${dependency}.`);
+    }
+
+    hash.update(path.basename(dependency));
+    hash.update(fs.readFileSync(dependency));
+  }
 
   return hash.digest('hex');
 
@@ -505,7 +522,7 @@ export function fingerprintBuildContext(root: string): string {
       }
 
       const absolute = path.join(directory, entry.name);
-      const relative = path.relative(root, absolute);
+      const relative = path.relative(resolvedRoot, absolute);
 
       hash.update(relative);
 

@@ -247,6 +247,29 @@ describe('fingerprintBuildContext', () => {
     expect(second).not.toBe(first);
     expect(fingerprintBuildContext(directory)).toBe(second);
   });
+
+  it('changes when a package build dependency changes', () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'sst-laravel-cloudflare-'),
+    );
+    const dependencyDirectory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'sst-laravel-package-'),
+    );
+    directories.push(directory, dependencyDirectory);
+    const dependency = path.join(
+      dependencyDirectory,
+      'Dockerfile.cloudflare',
+    );
+    fs.writeFileSync(path.join(directory, 'artisan'), 'application');
+    fs.writeFileSync(dependency, 'first');
+
+    const first = fingerprintBuildContext(directory, [dependency]);
+    fs.writeFileSync(dependency, 'second');
+
+    expect(fingerprintBuildContext(directory, [dependency])).not.toBe(
+      first,
+    );
+  });
 });
 
 function deploymentInputs(

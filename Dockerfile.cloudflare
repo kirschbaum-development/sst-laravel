@@ -20,3 +20,8 @@ RUN apt-get update \
 COPY --chown=www-data:www-data . /var/www/html
 
 USER www-data
+
+# Cloudflare Containers do not currently expose the listener started by the
+# image's default s6/nginx init process. Run Laravel directly so the Worker can
+# reliably detect and forward traffic to port 8080.
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]

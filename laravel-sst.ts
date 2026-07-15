@@ -613,6 +613,14 @@ export class LaravelService extends Component {
             ).apply((file) =>
                 file ? path.resolve(absSitePath, file.toString()) : undefined,
             );
+            const workerEntrypoint = path.resolve(
+                nodeModulePath,
+                'cloudflare/worker.ts',
+            );
+            const dockerfile = path.resolve(
+                nodeModulePath,
+                'Dockerfile.cloudflare',
+            );
 
             this.cloudflareDeployment = new CloudflareLaravelDeployment(
                 `${name}-Cloudflare`,
@@ -621,14 +629,8 @@ export class LaravelService extends Component {
                     accountId: args.cloudflare?.accountId,
                     buildPath: cloudflareBuildPath,
                     sitePath: absSitePath,
-                    workerEntrypoint: path.resolve(
-                        nodeModulePath,
-                        'cloudflare/worker.ts',
-                    ),
-                    dockerfile: path.resolve(
-                        nodeModulePath,
-                        'Dockerfile.cloudflare',
-                    ),
+                    workerEntrypoint,
+                    dockerfile,
                     wranglerCli: resolveWranglerCli(nodeModulePath),
                     compatibilityDate:
                         args.cloudflare?.compatibilityDate ?? '2026-07-14',
@@ -648,7 +650,10 @@ export class LaravelService extends Component {
                     environmentFile,
                     regions: args.cloudflare?.regions,
                     jurisdiction: args.cloudflare?.jurisdiction,
-                    contextFingerprint: fingerprintBuildContext(absSitePath),
+                    contextFingerprint: fingerprintBuildContext(absSitePath, [
+                        workerEntrypoint,
+                        dockerfile,
+                    ]),
                     url: domain.apply((value) =>
                         value ? `https://${value}` : undefined,
                     ),
