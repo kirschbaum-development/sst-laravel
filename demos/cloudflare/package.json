@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "sst:install": "sst install",
+    "sst:install": "sst install --config sst.bootstrap.config.ts",
     "sst:diff": "sst diff",
     "deploy": "sst deploy",
     "remove": "sst remove"

@@ -4,7 +4,7 @@ export default $config({
   app(input) {
     return {
       name: 'sst-laravel-cloudflare-demo',
-      home: 'cloudflare',
+      home: 'local',
       providers: {
         cloudflare: '6.13.0',
       },
@@ -13,8 +13,9 @@ export default $config({
     };
   },
   async run() {
-    const packageName = '@kirschbaum-development/sst-laravel';
-    const { LaravelService } = await import(packageName);
+    const { LaravelService } = await import(
+      '@kirschbaum-development/sst-laravel'
+    );
     const accountId = process.env.CLOUDFLARE_DEFAULT_ACCOUNT_ID;
 
     if (!accountId) {
@@ -22,11 +23,19 @@ export default $config({
     }
 
     const database = new sst.cloudflare.D1('Database');
-    const bucket = new sst.cloudflare.Bucket('Storage');
+    const links: any[] = [database];
+    const bucket = process.env.SST_LARAVEL_ENABLE_R2 === 'true'
+      ? new sst.cloudflare.Bucket('Storage')
+      : undefined;
+
+    if (bucket) {
+      links.push(bucket);
+    }
+
     const laravel = new LaravelService('Laravel', {
       provider: 'cloudflare',
       path: '.',
-      link: [database, bucket],
+      link: links,
       cloudflare: {
         accountId,
         sleepAfter: '10m',
@@ -63,7 +72,7 @@ export default $config({
     return {
       url: laravel.url,
       databaseId: database.databaseId,
-      bucketName: bucket.name,
+      ...(bucket ? { bucketName: bucket.name } : {}),
     };
   },
 });
