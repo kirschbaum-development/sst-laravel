@@ -99,6 +99,7 @@ const app = new LaravelService('MyLaravelApp', {
   },
 
   cloudflare: {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
     sleepAfter: '10m',
     regions: ['SAM'],
   },
@@ -109,9 +110,8 @@ const app = new LaravelService('MyLaravelApp', {
     environment: {
       file: `.env.${$app.stage}`,
       vars: {
-        SESSION_DRIVER: 'redis',
-        CACHE_STORE: 'redis',
-        QUEUE_CONNECTION: 'redis',
+        SESSION_DRIVER: 'cookie',
+        QUEUE_CONNECTION: 'sync',
       },
     },
   },
@@ -128,20 +128,46 @@ Worker variables and are forwarded to the container at runtime.
 
 #### D1 database and cache
 
-Install the [Cloudflare D1 database driver for Laravel](https://github.com/TanDuy03/cloudflare-d1-database)
+Install the [Cloudflare D1 database driver for Laravel](https://github.com/erimeilis/laravel-cloudflare-d1)
 in the Laravel application before linking an `sst.cloudflare.D1` database:
 
 ```bash
-composer require ntanduy/cloudflare-d1-database
+composer require erimeilis/laravel-cloudflare-d1
 ```
 
-The Cloudflare provider supports one linked D1 database. It binds D1 to the
-generated Worker and exposes the driver's Worker protocol to the container on
-a private outbound hostname. No D1 API token or separate proxy Worker is
-required at runtime. Unless `config.environment.autoInject` is disabled, the
-component configures `DB_CONNECTION=d1`, the D1 Worker driver, D1 sessions, and
-Laravel's built-in `database` cache store. Explicit values in
-`config.environment.vars` or the configured environment file take precedence.
+The driver supports Laravel 11 through 13 and talks directly to Cloudflare's
+D1 REST API, so the generated Worker does not contain a D1 binding or database
+proxy. Add the connection to the Laravel application's `config/database.php`:
+
+```php
+'d1' => [
+    'driver' => 'd1',
+    'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+    'database_id' => env('CLOUDFLARE_D1_DATABASE_ID'),
+    'api_token' => env('CLOUDFLARE_D1_API_TOKEN'),
+    'prefix' => '',
+    'prefix_indexes' => true,
+],
+```
+
+The Cloudflare provider supports one linked D1 database. Unless
+`config.environment.autoInject` is disabled, the component configures
+`DB_CONNECTION=d1`, injects the linked database ID, forwards
+`cloudflare.accountId` as `CLOUDFLARE_ACCOUNT_ID`, and selects Laravel's
+built-in `database` cache store. Explicit values in `config.environment.vars`
+or the configured environment file take precedence.
+
+The REST driver also requires `CLOUDFLARE_D1_API_TOKEN`. Put a scoped token in
+the environment file so Wrangler uploads it as a Worker secret and forwards it
+to the container without storing it in the image or as a plain Worker variable:
+
+```dotenv
+CLOUDFLARE_D1_API_TOKEN=your-scoped-d1-token
+```
+
+If `cloudflare.accountId` is omitted, put `CLOUDFLARE_ACCOUNT_ID` in that file
+as well. Deployment credentials and application D1 credentials may use
+different tokens.
 
 The application must include Laravel's standard cache table migration. Newer
 Laravel applications include it by default; otherwise generate it with:
@@ -152,11 +178,12 @@ php artisan make:cache-table
 
 Run the application migrations against D1 before serving production traffic.
 The current web-only prototype does not provide a one-off command container,
-so migrations should run from CI or a development machine using the D1
-driver's REST mode and scoped Cloudflare credentials. Once migrated, normal
-database-cache operations such as `get`, `put`, `remember`, and `forget` use
-D1. Laravel's database cache store does not support cache tags, and the D1
-driver does not provide transactional rollback semantics.
+so migrations should run from CI or a development machine with scoped
+Cloudflare credentials. Once migrated, basic database-cache operations such as
+`get`, `put`, `remember`, `add`, and `forget` use D1. Laravel's database cache
+store does not support cache tags. The driver's buffered transaction model is
+not compatible with cache increments, decrements, or atomic locks; use a
+Redis-compatible cache when those operations are required.
 
 The prototype currently supports only `web`. It rejects `workers`, `reverb`,
 `vpc`, non-D1 links, AWS permissions and roles, load-balancer configuration, ECS

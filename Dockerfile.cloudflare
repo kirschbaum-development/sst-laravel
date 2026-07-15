@@ -14,7 +14,7 @@ ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
 RUN apt-get update \
     && apt-get upgrade -y \
-    && install-php-extensions gd intl pdo_sqlite \
+    && install-php-extensions gd intl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=www-data:www-data . /var/www/html

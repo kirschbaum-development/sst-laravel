@@ -31,16 +31,12 @@ export type CloudflareRegion =
   | 'OC'
   | 'AFR';
 
-export const CLOUDFLARE_D1_BINDING = 'LARAVEL_D1';
-export const CLOUDFLARE_D1_HOST = 'sst-laravel-d1.internal';
-export const CLOUDFLARE_D1_INTERNAL_SECRET = 'sst-laravel-internal';
-
 export interface CloudflareD1Link {
   databaseId: Input<string>;
 }
 
 export interface LaravelCloudflareArgs {
-  /** Cloudflare account to deploy into. Wrangler's configured account is used when omitted. */
+  /** Cloudflare account to deploy into and expose to a linked D1 REST driver. Wrangler's configured account is used for deployment when omitted. */
   accountId?: Input<string>;
 
   /** Override the instance type inferred from web.cpu, web.memory, and web.storage. */
@@ -81,7 +77,6 @@ export interface CloudflareDeploymentInputs {
   healthPath: Input<string>;
   environment?: Input<Record<string, Input<string>>>;
   environmentFile?: Input<string | undefined>;
-  d1DatabaseId?: Input<string | undefined>;
   regions?: Input<Input<CloudflareRegion>[]>;
   jurisdiction?: Input<'eu' | 'fedramp'>;
   contextFingerprint: Input<string>;
@@ -107,7 +102,6 @@ export interface ResolvedCloudflareDeploymentInputs {
   healthPath: string;
   environment?: Record<string, string>;
   environmentFile?: string;
-  d1DatabaseId?: string;
   regions?: CloudflareRegion[];
   jurisdiction?: 'eu' | 'fedramp';
   contextFingerprint: string;
@@ -242,14 +236,6 @@ export function buildCloudflareWranglerConfig(
         },
       ],
     },
-    d1_databases: inputs.d1DatabaseId
-      ? [
-          {
-            binding: CLOUDFLARE_D1_BINDING,
-            database_id: inputs.d1DatabaseId,
-          },
-        ]
-      : undefined,
     migrations: [
       {
         tag: 'v1',
@@ -305,15 +291,14 @@ export function resolveCloudflareD1Link(
   return { databaseId: databaseIds[0] };
 }
 
-export function buildCloudflareD1Environment(databaseId: string) {
+export function buildCloudflareD1Environment(
+  databaseId: string,
+  accountId?: string,
+) {
   return {
     DB_CONNECTION: 'd1',
-    CF_D1_DRIVER: 'worker',
-    CF_D1_DATABASE_ID: databaseId,
-    CF_D1_WORKER_URL: `http://${CLOUDFLARE_D1_HOST}`,
-    CF_D1_WORKER_SECRET: CLOUDFLARE_D1_INTERNAL_SECRET,
-    CF_D1_SESSION_ENABLED: 'true',
-    CF_D1_SESSION_MODE: 'first-primary',
+    ...(accountId ? { CLOUDFLARE_ACCOUNT_ID: accountId } : {}),
+    CLOUDFLARE_D1_DATABASE_ID: databaseId,
     CACHE_STORE: 'database',
     CACHE_DRIVER: 'database',
     DB_CACHE_CONNECTION: 'd1',

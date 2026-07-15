@@ -361,9 +361,9 @@ export interface LaravelArgs extends ClusterArgs {
 
     /**
      * Resources linked to the Laravel service. With the Cloudflare provider,
-     * one `sst.cloudflare.D1` database is supported. It is exposed to Laravel
-     * through the `ntanduy/cloudflare-d1-database` Worker driver, and Laravel's
-     * database cache store is configured to use it by default.
+     * one `sst.cloudflare.D1` database is supported. Its database ID is exposed
+     * to `erimeilis/laravel-cloudflare-d1`, and Laravel's database cache store
+     * is configured to use it by default.
      */
     link?: Array<
         | any
@@ -559,26 +559,36 @@ export class LaravelService extends Component {
                 domainName: domain,
                 linkEnvironment: linkedEnvironment,
                 databaseId: d1Link?.databaseId,
-            }).apply(({ vars, domainName, linkEnvironment, databaseId }) => ({
-                ...(args.config?.environment?.autoInject === false
-                    ? {}
-                    : {
-                          ...(domainName
-                              ? { APP_URL: `https://${domainName}` }
-                              : {}),
-                          LOG_CHANNEL: 'stderr',
-                          ...(databaseId
-                              ? buildCloudflareD1Environment(
-                                    databaseId.toString(),
-                                )
-                              : {}),
-                      }),
-                ...linkEnvironment,
-                ...vars,
-                ...buildWebServerEnvironment({
-                    accessLogs: web.accessLogs,
+                accountId: args.cloudflare?.accountId,
+            }).apply(
+                ({
+                    vars,
+                    domainName,
+                    linkEnvironment,
+                    databaseId,
+                    accountId,
+                }) => ({
+                    ...(args.config?.environment?.autoInject === false
+                        ? {}
+                        : {
+                              ...(domainName
+                                  ? { APP_URL: `https://${domainName}` }
+                                  : {}),
+                              LOG_CHANNEL: 'stderr',
+                              ...(databaseId
+                                  ? buildCloudflareD1Environment(
+                                        databaseId.toString(),
+                                        accountId?.toString(),
+                                    )
+                                  : {}),
+                          }),
+                    ...linkEnvironment,
+                    ...vars,
+                    ...buildWebServerEnvironment({
+                        accessLogs: web.accessLogs,
+                    }),
                 }),
-            }));
+            );
             const environmentFile = output(
                 args.config?.environment?.file,
             ).apply((file) =>
@@ -617,7 +627,6 @@ export class LaravelService extends Component {
                     healthPath,
                     environment,
                     environmentFile,
-                    d1DatabaseId: d1Link?.databaseId,
                     regions: args.cloudflare?.regions,
                     jurisdiction: args.cloudflare?.jurisdiction,
                     contextFingerprint: fingerprintBuildContext(absSitePath),

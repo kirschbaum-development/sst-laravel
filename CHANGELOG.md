@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cloudflare runtime environment injection, `.env` deployment through Worker
   secrets, custom domains, startup health checks, instance-size inference,
   scale-to-zero, region constraints, and Worker/container observability.
-- Linking for one `sst.cloudflare.D1` database through a private Container
-  outbound handler compatible with `ntanduy/cloudflare-d1-database`, including
-  defaults for Laravel's built-in database cache store.
+- Linking for one `sst.cloudflare.D1` database through the REST-based
+  `erimeilis/laravel-cloudflare-d1` driver, including defaults for Laravel's
+  built-in database cache store.
 
 ### Security
 

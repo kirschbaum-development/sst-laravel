@@ -89,14 +89,12 @@ describe('buildCloudflareWranglerConfig', () => {
     ).toThrow(/positive integer/);
   });
 
-  it('adds the linked D1 database as a Worker binding', () => {
+  it('does not add a Worker binding for REST-based D1 access', () => {
     const config = buildCloudflareWranglerConfig(
-      deploymentInputs({ d1DatabaseId: 'database-id' }),
+      deploymentInputs(),
     ) as any;
 
-    expect(config.d1_databases).toEqual([
-      { binding: 'LARAVEL_D1', database_id: 'database-id' },
-    ]);
+    expect(config).not.toHaveProperty('d1_databases');
   });
 });
 
@@ -139,17 +137,23 @@ describe('resolveCloudflareD1Link', () => {
 });
 
 describe('buildCloudflareD1Environment', () => {
-  it('configures the Laravel D1 driver and database cache store', () => {
-    expect(buildCloudflareD1Environment('database-id')).toEqual(
-      expect.objectContaining({
-        DB_CONNECTION: 'd1',
-        CF_D1_DRIVER: 'worker',
-        CF_D1_DATABASE_ID: 'database-id',
-        CF_D1_WORKER_URL: 'http://sst-laravel-d1.internal',
-        CACHE_STORE: 'database',
-        CACHE_DRIVER: 'database',
-        DB_CACHE_CONNECTION: 'd1',
-      }),
+  it('configures the REST D1 driver and database cache store', () => {
+    expect(
+      buildCloudflareD1Environment('database-id', 'account-id'),
+    ).toEqual({
+      DB_CONNECTION: 'd1',
+      CLOUDFLARE_ACCOUNT_ID: 'account-id',
+      CLOUDFLARE_D1_DATABASE_ID: 'database-id',
+      CACHE_STORE: 'database',
+      CACHE_DRIVER: 'database',
+      DB_CACHE_CONNECTION: 'd1',
+      DB_CACHE_LOCK_CONNECTION: 'd1',
+    });
+  });
+
+  it('allows the account ID to come from the runtime environment', () => {
+    expect(buildCloudflareD1Environment('database-id')).not.toHaveProperty(
+      'CLOUDFLARE_ACCOUNT_ID',
     );
   });
 });
