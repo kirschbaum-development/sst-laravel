@@ -2,12 +2,12 @@ import { Command } from 'commander';
 import { spawn, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { fileURLToPath } from 'url';
 import { confirm } from '@inquirer/prompts';
 import { getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
 import { resolveBin } from '../utils/process.js';
 
-const SKILL_FILE_PATH = fileURLToPath(new URL('../../skills/laravel-initial-setup/SKILL.md', import.meta.url));
+const SKILL_DIRECTORY_PATH = path.join(getPackageRoot(), 'resources', 'boost', 'skills', 'sst-laravel');
+const SKILL_FILE_PATH = path.join(SKILL_DIRECTORY_PATH, 'SKILL.md');
 
 const runProcess = (command: string, args: string[], cwd: string) => {
   return new Promise<void>((resolve, reject) => {
@@ -63,7 +63,7 @@ const isVersionAtLeast = (version: string, minimum: string) => {
 };
 
 const installSkillWithBoost = async (cwd: string) => {
-  const aiSkillsDir = path.join(cwd, '.ai', 'skills', 'sst-laravel-initial-setup');
+  const aiSkillsDir = path.join(cwd, '.ai', 'skills', 'sst-laravel');
   fs.mkdirSync(aiSkillsDir, { recursive: true });
 
   const targetPath = path.join(aiSkillsDir, 'SKILL.md');
@@ -76,7 +76,7 @@ const installSkillWithBoost = async (cwd: string) => {
 
 const installSkillViaNpx = async (cwd: string) => {
   console.log('Installing skill via `npx skills add`...');
-  await runProcess('npx', ['skills', 'add', SKILL_FILE_PATH], cwd);
+  await runProcess('npx', ['skills', 'add', SKILL_DIRECTORY_PATH], cwd);
 };
 
 const maybeInstallSkill = async (cwd: string) => {
@@ -86,12 +86,12 @@ const maybeInstallSkill = async (cwd: string) => {
   }
 
   const shouldInstallSkill = await confirm({
-    message: 'Install the SST Laravel Initial Setup AI skill in this project?',
+    message: 'Install the SST Laravel deployment skill in this project?',
     default: true
   });
 
   if (!shouldInstallSkill) {
-    console.log('Skipping AI skill installation. You can add it later from skills/laravel-initial-setup.');
+    console.log('Skipping AI skill installation. You can add it later from resources/boost/skills/sst-laravel.');
     return;
   }
 
@@ -115,7 +115,7 @@ const maybeInstallSkill = async (cwd: string) => {
   console.log('\n');
   console.log('\n');
   console.log('🤖 SST Laravel skill installed successfully');
-  console.log('Run "Please help me set up the deployment config of my application using SST Laravel" in your AI agent to get started');
+  console.log('Run "Use the sst-laravel skill to set up and deploy this application. Continue until the /up endpoint is healthy." in your AI agent to get started');
 };
 
 export const initCommand = new Command('init')
@@ -247,7 +247,7 @@ export const initCommand = new Command('init')
         await maybeInstallSkill(cwd);
       } catch (skillError) {
         console.warn('Failed to install AI skill automatically:', (skillError as Error).message);
-        console.warn('You can manually add it later from skills/laravel-initial-setup.');
+        console.warn('You can manually add it later from resources/boost/skills/sst-laravel.');
       }
 
       console.log('\n');

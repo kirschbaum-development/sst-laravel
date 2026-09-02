@@ -30,28 +30,25 @@ Pull in the package using npm:
 npm install @kirschbaum-development/sst-laravel --save
 ```
 
+## Deploy with an AI agent
+
+Give your coding agent this prompt:
+
+```text
+Read node_modules/@kirschbaum-development/sst-laravel/resources/boost/skills/sst-laravel/SKILL.md. Use it to set up and deploy this application. Continue until /up is healthy.
+```
+
+The skill inspects the Laravel application, checks AWS access, prepares the smallest valid configuration, deploys it, and verifies the live health endpoint. It does not print secret values.
+
 ## Quick start
 
-To get started quickly, you can use the `init` command:
+To get started without an agent, use the `init` command:
 
 ```bash
 npx sst-laravel init
 ```
 
-Running `init` now also prompts you to install the SST Laravel Initial Setup AI skill. Accepting the prompt will automatically detect whether `laravel/boost` ≥ 2.0 is available via Composer; if so, the skill is copied into `.ai/skills/sst-laravel-initial-setup/SKILL.md` and `php artisan boost:update` is executed. Otherwise, the command falls back to `npx skills add` with the bundled skill file.
-
-## AI Skill for Guided Setup
-
-Projects that rely on AI copilots (like OpenCode) can import the `skills/laravel-initial-setup/SKILL.md` file from this package. The skill walks an assistant through:
-
-- Auditing prerequisites (Node, AWS CLI, credentials, `sst-laravel` CLI)
-- Bootstrapping your repo by running `npx sst-laravel init` before any config changes
-- Choosing the right environment strategy (`RemoteEnvVault`, SST Secrets, or `.env` files)
-- Inspecting/creating VPC resources through the AWS CLI
-- Iteratively editing `sst.config.ts` until your Laravel service is deployable
-- Producing clear summaries after every step plus follow-up tasks and cautions
-
-Point your assistant at that file to get a prescriptive, secure onboarding workflow tailored for SST Laravel.
+The command also offers to install the bundled `sst-laravel` skill for later agent sessions. It uses Laravel Boost when available. Otherwise, it uses the open `skills` installer.
 
 ## Usage
 
