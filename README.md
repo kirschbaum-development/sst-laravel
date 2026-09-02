@@ -32,10 +32,10 @@ npm install @kirschbaum-development/sst-laravel --save
 
 ## Deploy with an AI agent
 
-Give your coding agent this prompt:
+You can let your coding agent handle the full setup. Start in your Laravel application and give the agent this prompt before you install the package:
 
 ```text
-Read node_modules/@kirschbaum-development/sst-laravel/resources/boost/skills/sst-laravel/SKILL.md. Use it to set up and deploy this application. Continue until /up is healthy.
+Install @kirschbaum-development/sst-laravel in this Laravel application. Then read node_modules/@kirschbaum-development/sst-laravel/resources/boost/skills/sst-laravel/SKILL.md and follow it to set up and deploy the application. Continue until /up is healthy.
 ```
 
 The skill inspects the Laravel application, checks AWS access, prepares the smallest valid configuration, deploys it, and verifies the live health endpoint. It does not print secret values.

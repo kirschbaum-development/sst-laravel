@@ -7,6 +7,26 @@ description: Set up, deploy, verify, and troubleshoot Laravel applications on AW
 
 Take the current Laravel application from inspection to a working deployment. Do not stop after writing `sst.config.ts`. Continue through deployment and HTTP verification unless access or a required user decision blocks the work.
 
+## Start with optional onboarding
+
+Do not start with a request for permission to create files or deploy. When the user asks for the full setup and deployment, first ask:
+
+> Before I start, would you like a short overview of what SST Laravel deploys, its benefits, costs, and trade-offs, or should I begin the setup now?
+
+Offer two clear choices: `Show overview` and `Start setup`.
+
+If the user requests the overview, explain these points in plain language:
+
+- SST Laravel packages the application in Docker containers and runs them on AWS Fargate in the user's AWS account.
+- SST manages the infrastructure as code. A normal web deployment uses ECS, a load balancer, and CloudWatch logs.
+- The package supports web services, workers, scheduled tasks, Horizon, Reverb, deployment stages, and scaling.
+- Benefits include infrastructure ownership, repeatable deployments, container isolation, scaling, and zero-downtime service updates.
+- Trade-offs include AWS and IAM complexity, Docker build time, and ongoing charges for Fargate, the load balancer, and any managed resources.
+
+Keep the overview short. Do not turn it into AWS training. After the overview, continue with the application inspection unless the user asks you to stop.
+
+If the user selects `Start setup`, continue immediately. The initial request already authorizes expected project files and a normal, non-destructive deployment to the agreed stage. Do not ask for the same permission again. Still explain the planned AWS identity, region, stage, resources, and important costs before deployment. Follow the safety rules below for production, destructive actions, and unexpected costly resources.
+
 ## Use the installed package as the source of truth
 
 Read the documentation for the installed package version before you change the application:
