@@ -7,3 +7,4 @@ sst.config.ts
 vendor
 composer.lock
 .agents
+/demos/

@@ -2,7 +2,9 @@
 
 ![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/deploy.png)
 
-SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
+SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy containerized Laravel applications, with all the power of SST.
+
+AWS Fargate is the default and production-ready provider. Experimental support for running the web application in [Cloudflare Containers](https://developers.cloudflare.com/containers/) is also available.
 
 SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
 
@@ -61,6 +63,166 @@ import { LaravelService } from "@kirschbaum-development/sst-laravel";
 And now you can start using the `Laravel` SST component. All the configuration options are Typescript files with documentation, so
 
 To check the full list of options. check [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md). 
+
+### Cloudflare Containers prototype
+
+Set `provider: 'cloudflare'` to deploy the Laravel web application as a
+Cloudflare Container fronted by a Worker. Omitting `provider` continues to use
+AWS, so existing configurations do not need to change.
+
+Cloudflare Containers require a Workers Paid plan, Docker, and Wrangler
+credentials. Wrangler reads `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`, or uses an existing `wrangler login` session.
+
+```ts
+const database = new sst.cloudflare.D1('Database');
+const storage = new sst.cloudflare.Bucket('Storage');
+
+const app = new LaravelService('MyLaravelApp', {
+  provider: 'cloudflare',
+  link: [database, storage],
+
+  web: {
+    domain: 'app.example.com',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
+    storage: '4 GB',
+    scaling: {
+      min: 0,
+      max: 3,
+    },
+    healthCheck: {
+      path: '/up',
+    },
+  },
+
+  cloudflare: {
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+    sleepAfter: '10m',
+    regions: ['SAM'],
+  },
+
+  config: {
+    php: 8.4,
+    opcache: true,
+    environment: {
+      file: `.env.${$app.stage}`,
+      vars: {
+        SESSION_DRIVER: 'cookie',
+        QUEUE_CONNECTION: 'sync',
+      },
+    },
+  },
+});
+
+return {
+  url: app.url,
+};
+```
+
+`config.environment.file` is uploaded using Wrangler's secrets-file support;
+it is not copied into the Docker image. Values in `environment.vars` are plain
+Worker variables and are forwarded to the container at runtime.
+
+#### D1 database, cache, and R2 object storage
+
+Install the [Cloudflare D1 database driver for Laravel](https://github.com/erimeilis/laravel-cloudflare-d1)
+in the Laravel application before linking an `sst.cloudflare.D1` database:
+
+```bash
+composer require erimeilis/laravel-cloudflare-d1
+```
+
+The driver supports Laravel 11 through 13 and talks directly to Cloudflare's
+D1 REST API, so the generated Worker does not contain a D1 binding or database
+proxy. Add the connection to the Laravel application's `config/database.php`:
+
+```php
+'d1' => [
+    'driver' => 'd1',
+    'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+    'database_id' => env('CLOUDFLARE_D1_DATABASE_ID'),
+    'api_token' => env('CLOUDFLARE_D1_API_TOKEN'),
+    'prefix' => '',
+    'prefix_indexes' => true,
+],
+```
+
+The Cloudflare provider supports one linked D1 database. Unless
+`config.environment.autoInject` is disabled, the component configures
+`DB_CONNECTION=d1`, injects the linked database ID, forwards
+`cloudflare.accountId` as `CLOUDFLARE_ACCOUNT_ID`, and selects Laravel's
+built-in `database` cache store. Explicit values in `config.environment.vars`
+or the configured environment file take precedence.
+
+The REST driver also requires `CLOUDFLARE_D1_API_TOKEN`. Put a scoped token in
+the environment file so Wrangler uploads it as a Worker secret and forwards it
+to the container without storing it in the image or as a plain Worker variable:
+
+```dotenv
+CLOUDFLARE_D1_API_TOKEN=your-scoped-d1-token
+```
+
+If `cloudflare.accountId` is omitted, put `CLOUDFLARE_ACCOUNT_ID` in that file
+as well. Deployment credentials and application D1 credentials may use
+different tokens.
+
+The application must include Laravel's standard cache table migration. Newer
+Laravel applications include it by default; otherwise generate it with:
+
+```bash
+php artisan make:cache-table
+```
+
+Run the application migrations against D1 before serving production traffic.
+The current web-only prototype does not provide a one-off command container,
+so migrations should run from CI or a development machine with scoped
+Cloudflare credentials. Once migrated, basic database-cache operations such as
+`get`, `put`, `remember`, `add`, and `forget` use D1. Laravel's database cache
+store does not support cache tags. The driver's buffered transaction model is
+not compatible with cache increments, decrements, or atomic locks; use a
+Redis-compatible cache when those operations are required.
+
+The Cloudflare provider also supports one linked `sst.cloudflare.Bucket`.
+Laravel accesses the R2 bucket through its standard S3-compatible filesystem,
+so install the Flysystem S3 adapter in the Laravel application:
+
+```bash
+composer require league/flysystem-aws-s3-v3 "^3.0" --with-all-dependencies
+```
+
+With automatic environment injection enabled, the component selects the `s3`
+filesystem disk and configures `AWS_BUCKET`, `AWS_DEFAULT_REGION=auto`, and the
+account-scoped `AWS_ENDPOINT`. `cloudflare.accountId` is required to construct
+that endpoint. The generated Worker does not receive an R2 binding and no
+object-storage proxy runs inside it.
+
+Generate an R2 API token with Object Read & Write access scoped to the linked
+bucket, then add its S3 credentials to the runtime environment file:
+
+```dotenv
+AWS_ACCESS_KEY_ID=your-r2-access-key-id
+AWS_SECRET_ACCESS_KEY=your-r2-secret-access-key
+```
+
+Laravel's existing `s3` disk configuration then works with `Storage::put()`,
+`get()`, `delete()`, streams, and temporary URLs. Set `AWS_URL` explicitly when
+using an R2 public bucket or custom domain. For an EU or FedRAMP jurisdictional
+bucket, override `AWS_ENDPOINT` with the corresponding jurisdiction-specific
+R2 endpoint in `config.environment.vars` or the runtime environment file.
+
+The prototype currently supports only `web`. It rejects `workers`, `reverb`,
+`vpc`, links other than D1 and R2, AWS permissions and roles, load-balancer
+configuration, ECS transforms, background tasks in the web container,
+`RemoteEnvVault`, and deployment scripts. For scaling, `max` controls both the
+Container application limit and the fixed stateless instance pool. Cloudflare
+does not currently have ECS-style utilization autoscaling, so only `min: 0` is
+accepted.
+
+Container storage is ephemeral. Use an external database, Redis-compatible
+service, and the linked R2 bucket for Laravel state. External services must
+currently be reachable from the public internet; this prototype does not
+connect Containers to resources inside an AWS VPC.
 
 ### Web (HTTP)
 

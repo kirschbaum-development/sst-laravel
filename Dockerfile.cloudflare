@@ -1,0 +1,27 @@
+ARG PHP_VERSION=8.4
+FROM serversideup/php:${PHP_VERSION}-fpm-nginx
+
+USER root
+
+LABEL authors="Kirschbaum"
+LABEL maintainer="Kirschbaum"
+
+ENV AUTORUN_ENABLED=false
+ENV CONTAINER_TYPE=web
+
+ARG PHP_OPCACHE_ENABLE=1
+ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && install-php-extensions gd intl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --chown=www-data:www-data . /var/www/html
+
+USER www-data
+
+# Cloudflare Containers do not currently expose the listener started by the
+# image's default s6/nginx init process. Run Laravel directly so the Worker can
+# reliably detect and forward traffic to port 8080.
+CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8080"]

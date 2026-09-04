@@ -5,6 +5,28 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Experimental `provider: "cloudflare"` support for deploying the Laravel web
+  application to Cloudflare Containers through Wrangler while retaining AWS as
+  the default provider.
+- Cloudflare runtime environment injection, `.env` deployment through Worker
+  secrets, custom domains, startup health checks, instance-size inference,
+  scale-to-zero, region constraints, and Worker/container observability.
+- Linking for one `sst.cloudflare.D1` database through the REST-based
+  `erimeilis/laravel-cloudflare-d1` driver, including defaults for Laravel's
+  built-in database cache store.
+- Linking for one `sst.cloudflare.Bucket` through R2's S3-compatible API,
+  including Laravel filesystem defaults while keeping R2 credentials in the
+  runtime secrets file.
+
+### Security
+
+- Cloudflare images use a Dockerfile-specific ignore file so local `.env` files
+  are never included by the image build context.
+
 ## [0.3.9]
 
 ### Added
