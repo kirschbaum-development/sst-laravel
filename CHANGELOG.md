@@ -5,6 +5,32 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `size` option (`small` | `medium` | `large`) on `web`, `workers[]`, and `reverb` mapping to valid Fargate cpu/memory pairs. Explicit `cpu`/`memory` still win over `size`.
+- `advanced` block on `web`, `workers[]`, and `reverb` as the escape hatch for SST experts (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`).
+- `envFrom` as the preferred name for the per-link environment callback (`environment` still works).
+- `sst-laravel doctor` command: one readiness check for tools, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
+- `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary.
+- `docs/llms.txt`: short agent quick reference (minimal config, common recipes, failure checklist).
+
+### Changed
+
+- `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$6/month) is documented as the cheapest NAT when private resources need internet.
+- SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set.
+- Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
+- README agent prompt is self-contained (no `node_modules` reading) and the skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
+
+### Fixed
+
+- `app.url` and `app.reverbUrl` return `undefined` instead of throwing when the `web`/`reverb` service is not configured.
+- `config.php` type corrected from `Input<Number>` to `Input<number>`.
+- Aurora database detection no longer reads the async `port` into a sync variable (always `undefined`); it uses the engine name when available and an async port check otherwise.
+- Updating `.dockerignore` for the Docker build is now reported via the component messages.
+- Corrected `sst deploy` to `sst-laravel deploy` in `RemoteEnvVault` docs and the `init` success message.
+
 ## [0.3.9]
 
 ### Added

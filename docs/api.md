@@ -87,6 +87,29 @@ sst-laravel env:pull --stage production
 sst-laravel env:pull --stage staging --output .env.local
 ```
 
+#### `doctor`
+
+Check that the machine and Laravel app are ready to deploy. Covers tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.
+
+```bash
+sst-laravel doctor
+```
+
+#### `status`
+
+Check a deployment in one view: running tasks plus an optional health-endpoint check.
+
+```bash
+sst-laravel status --stage production --url https://app.example.com
+```
+
+**Options:**
+- `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
+- `-c, --cluster <arn>` - ECS cluster ARN (skips auto-detection)
+- `-r, --region <region>` - AWS region (default: `AWS_REGION` or `us-east-1`)
+- `-u, --url <url>` - Public app URL to health-check
+- `-p, --path <path>` - Health path to request (default: `/up`)
+
 ### Usage with LaravelService
 
 ```typescript
@@ -134,7 +157,7 @@ Creates a new Laravel component for deploying Laravel applications to AWS Fargat
 - **Description:** Path to the Laravel application directory.
 
 ### `link`
-- **Type:** `Array<Resource | { resource: Resource; environment?: EnvCallback }>`
+- **Type:** `Array<Resource | { resource: Resource; envFrom?: EnvCallback }>`
 - **Description:** Resources to link to the Laravel application. Supports SST resources like databases, Redis, email services, queues, and S3 buckets. When linked, environment variables are automatically configured.
 
 Supported resources with automatic environment variable injection:
@@ -146,18 +169,20 @@ Supported resources with automatic environment variable injection:
 - `Queue` - Sets `SQS_QUEUE`
 - `Bucket` - Sets `FILESYSTEM_DISK` to 's3', `AWS_BUCKET`
 
-You can provide a custom `environment` callback function to override or extend the default environment variables:
+You can provide a custom `envFrom` callback function to override or extend the default environment variables:
 
 ```typescript
 link: [
   {
     resource: myDatabase,
-    environment: (resource) => ({
+    envFrom: (resource) => ({
       CUSTOM_DB_VAR: resource.host
     })
   }
 ]
 ```
+
+(The older `environment` name for this callback still works but `envFrom` is preferred.)
 
 ### `permissions`
 - **Type:** `Array<{ actions: string[]; resources: string[] }>`
@@ -221,21 +246,33 @@ web: {
 }
 ```
 
+#### `web.size`
+- **Type:** `"small" | "medium" | "large"`
+- **Description:** Simple container size. Maps to a valid Fargate cpu/memory pair: `small` (0.5 vCPU / 1 GB, ~$18/mo), `medium` (1 vCPU / 2 GB, ~$36/mo), `large` (2 vCPU / 4 GB, ~$72/mo). Setting `cpu` or `memory` directly wins over `size`.
+
+**Example:**
+```typescript
+web: {
+  size: "small",
+  scaling: { min: 1, max: 3 }
+}
+```
+
 #### `web.architecture`
 - **Type:** `ServiceArgs["architecture"]`
-- **Description:** The CPU architecture for the web service.
+- **Description:** The CPU architecture for the web service. Prefer the simple options above; SST-specific tuning lives under `web.advanced` (e.g. `advanced: { architecture: "arm64" }`). Setting this top-level key still works but logs a deprecation warning — use `advanced.architecture` instead.
 
 #### `web.cpu`
 - **Type:** `ServiceArgs["cpu"]`
-- **Description:** CPU units for the web service.
+- **Description:** CPU units for the web service. Wins over `web.size` when both are set.
 
 #### `web.memory`
 - **Type:** `ServiceArgs["memory"]`
-- **Description:** Memory allocation for the web service.
+- **Description:** Memory allocation for the web service. Wins over `web.size` when both are set.
 
 #### `web.storage`
 - **Type:** `ServiceArgs["storage"]`
-- **Description:** Storage configuration for the web service.
+- **Description:** Storage configuration for the web service. Setting this top-level key still works but logs a deprecation warning — use `advanced.storage` instead.
 
 #### `web.scaling`
 - **Type:** `ServiceArgs["scaling"]`
@@ -255,11 +292,11 @@ web: {
 
 #### `web.logging`
 - **Type:** `ServiceArgs["logging"]`
-- **Description:** Logging configuration for the web service.
+- **Description:** Logging configuration for the web service. Setting this top-level key still works but logs a deprecation warning — use `advanced.logging` instead.
 
 #### `web.health`
 - **Type:** `ServiceArgs["health"]`
-- **Description:** ECS container-level health check for the web service. Distinct from `web.healthCheck` (load balancer).
+- **Description:** ECS container-level health check for the web service. Distinct from `web.healthCheck` (load balancer URL check). Setting this top-level key still works but logs a deprecation warning — use `advanced.health` instead.
 
 #### `web.healthCheck`
 - **Type:** `Input<LaravelHealthCheck>`
@@ -333,11 +370,24 @@ web: {
 
 #### `web.executionRole`
 - **Type:** `ServiceArgs["executionRole"]`
-- **Description:** Execution role for the web service.
+- **Description:** Execution role for the web service. Setting this top-level key still works but logs a deprecation warning — use `advanced.executionRole` instead.
 
 #### `web.permissions`
 - **Type:** `ServiceArgs["permissions"]`
-- **Description:** IAM permissions specific to the web service.
+- **Description:** IAM permissions specific to the web service. Falls back to the top-level `permissions` when not set.
+
+#### `web.advanced`
+- **Type:** `LaravelAdvancedArgs`
+- **Description:** Escape hatch for SST experts. `architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, and `transform` passed straight to the underlying `sst.aws.Service`. Values here win over the deprecated top-level keys.
+
+**Example:**
+```typescript
+web: {
+  advanced: {
+    architecture: "arm64",
+  }
+}
+```
 
 ### `workers`
 - **Type:** `LaravelWorkerConfig[]`
@@ -387,19 +437,23 @@ workers: [
 
 #### `workers[].architecture`
 - **Type:** `ServiceArgs["architecture"]`
-- **Description:** The CPU architecture for the worker service.
+- **Description:** The CPU architecture for the worker service. Prefer `advanced.architecture` — the top-level key still works but logs a deprecation warning.
+
+#### `workers[].size`
+- **Type:** `"small" | "medium" | "large"`
+- **Description:** Simple container size (same mapping as `web.size`). Setting `cpu` or `memory` directly wins over `size`.
 
 #### `workers[].cpu`
 - **Type:** `ServiceArgs["cpu"]`
-- **Description:** CPU units for the worker service.
+- **Description:** CPU units for the worker service. Wins over `workers[].size` when both are set.
 
 #### `workers[].memory`
 - **Type:** `ServiceArgs["memory"]`
-- **Description:** Memory allocation for the worker service.
+- **Description:** Memory allocation for the worker service. Wins over `workers[].size` when both are set.
 
 #### `workers[].storage`
 - **Type:** `ServiceArgs["storage"]`
-- **Description:** Storage configuration for the worker service.
+- **Description:** Storage configuration for the worker service. Prefer `advanced.storage` — the top-level key still works but logs a deprecation warning.
 
 #### `workers[].scaling`
 - **Type:** `ServiceArgs["scaling"]`
@@ -407,19 +461,23 @@ workers: [
 
 #### `workers[].logging`
 - **Type:** `ServiceArgs["logging"]`
-- **Description:** Logging configuration for the worker service.
+- **Description:** Logging configuration for the worker service. Prefer `advanced.logging` — the top-level key still works but logs a deprecation warning.
 
 #### `workers[].health`
 - **Type:** `ServiceArgs["health"]`
-- **Description:** Health check configuration for the worker service.
+- **Description:** Health check configuration for the worker service. Prefer `advanced.health` — the top-level key still works but logs a deprecation warning.
 
 #### `workers[].executionRole`
 - **Type:** `ServiceArgs["executionRole"]`
-- **Description:** Execution role for the worker service.
+- **Description:** Execution role for the worker service. Prefer `advanced.executionRole` — the top-level key still works but logs a deprecation warning.
 
 #### `workers[].permissions`
 - **Type:** `ServiceArgs["permissions"]`
-- **Description:** IAM permissions specific to this worker.
+- **Description:** IAM permissions specific to this worker. Falls back to the top-level `permissions` when not set.
+
+#### `workers[].advanced`
+- **Type:** `LaravelAdvancedArgs`
+- **Description:** Escape hatch for SST experts. Same shape as `web.advanced`.
 
 ### `reverb`
 - **Type:** `boolean | LaravelReverbArgs`
@@ -484,19 +542,23 @@ REVERB_SCHEME=https
 
 #### `reverb.architecture`
 - **Type:** `ServiceArgs["architecture"]`
-- **Description:** The CPU architecture for the Reverb service.
+- **Description:** The CPU architecture for the Reverb service. Prefer `advanced.architecture` — the top-level key still works but logs a deprecation warning.
+
+#### `reverb.size`
+- **Type:** `"small" | "medium" | "large"`
+- **Description:** Simple container size (same mapping as `web.size`). Setting `cpu` or `memory` directly wins over `size`.
 
 #### `reverb.cpu`
 - **Type:** `ServiceArgs["cpu"]`
-- **Description:** CPU units for the Reverb service.
+- **Description:** CPU units for the Reverb service. Wins over `reverb.size` when both are set.
 
 #### `reverb.memory`
 - **Type:** `ServiceArgs["memory"]`
-- **Description:** Memory allocation for the Reverb service.
+- **Description:** Memory allocation for the Reverb service. Wins over `reverb.size` when both are set.
 
 #### `reverb.storage`
 - **Type:** `ServiceArgs["storage"]`
-- **Description:** Storage configuration for the Reverb service.
+- **Description:** Storage configuration for the Reverb service. Prefer `advanced.storage` — the top-level key still works but logs a deprecation warning.
 
 #### `reverb.scaling`
 - **Type:** `ServiceArgs["scaling"]`
@@ -504,26 +566,30 @@ REVERB_SCHEME=https
 
 #### `reverb.logging`
 - **Type:** `ServiceArgs["logging"]`
-- **Description:** Logging configuration for the Reverb service.
+- **Description:** Logging configuration for the Reverb service. Prefer `advanced.logging` — the top-level key still works but logs a deprecation warning.
 
 #### `reverb.health`
 - **Type:** `ServiceArgs["health"]`
-- **Description:** ECS health check configuration for the Reverb service.
+- **Description:** ECS health check configuration for the Reverb service. Prefer `advanced.health` — the top-level key still works but logs a deprecation warning.
 
 #### `reverb.executionRole`
 - **Type:** `ServiceArgs["executionRole"]`
-- **Description:** Execution role for the Reverb service.
+- **Description:** Execution role for the Reverb service. Prefer `advanced.executionRole` — the top-level key still works but logs a deprecation warning.
 
 #### `reverb.permissions`
 - **Type:** `ServiceArgs["permissions"]`
-- **Description:** IAM permissions specific to the Reverb service.
+- **Description:** IAM permissions specific to the Reverb service. Falls back to the top-level `permissions` when not set.
+
+#### `reverb.advanced`
+- **Type:** `LaravelAdvancedArgs`
+- **Description:** Escape hatch for SST experts. Same shape as `web.advanced`.
 
 ### `config`
 - **Type:** `object`
 - **Description:** Config settings.
 
 #### `config.php`
-- **Type:** `Input<Number>`
+- **Type:** `Input<number>`
 - **Default:** `8.4`
 - **Description:** PHP version. Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
 
@@ -610,8 +676,8 @@ config: {
 ## Properties
 
 ### `url`
-- **Type:** `Output<string>`
-- **Description:** The URL of the web service. If `web.domain` is set, returns the custom domain URL. Otherwise, returns the auto-generated load balancer URL.
+- **Type:** `Output<string> | undefined`
+- **Description:** The URL of the web service. If `web.domain` is set, returns the custom domain URL. Otherwise, returns the auto-generated load balancer URL. `undefined` when no `web` service is configured.
 
 **Example:**
 ```typescript
@@ -620,8 +686,8 @@ console.log(app.url); // https://example.com or https://xyz.elb.amazonaws.com
 ```
 
 ### `reverbUrl`
-- **Type:** `Output<string>`
-- **Description:** The URL of the Reverb service. If `reverb.domain` is set, returns the custom domain URL. Otherwise, returns the auto-generated load balancer URL.
+- **Type:** `Output<string> | undefined`
+- **Description:** The URL of the Reverb service. If `reverb.domain` is set, returns the custom domain URL. Otherwise, returns the auto-generated load balancer URL. `undefined` when no `reverb` service is configured.
 
 **Example:**
 ```typescript

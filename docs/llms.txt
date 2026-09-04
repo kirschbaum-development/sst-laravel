@@ -1,0 +1,57 @@
+# SST Laravel — agent quick reference
+
+Deploy Laravel on AWS Fargate (containers). Full docs: `docs/api.md`.
+
+## Setup flow (in the Laravel app folder)
+
+```bash
+npx -y @kirschbaum-development/sst-laravel doctor   # readiness check
+npx sst-laravel init                                 # creates sst.config.ts (minimal)
+npx sst-laravel deploy --stage dev                   # deploy (vault-aware, use instead of sst deploy)
+npx sst-laravel status --stage dev --url https://<url-from-deploy>  # verify tasks + /up
+```
+
+Never print secret values. Never put AWS keys in `.env` files. Never deploy to
+`production` unless the user said so.
+
+## Minimal config (first deploy: web only, no domain, no database)
+
+```ts
+const app = new LaravelService("MyApp", {
+  vpc,
+  web: { size: "small", healthCheck: { path: "/up" } },
+  config: { environment: { file: `.env.${$app.stage}` } },
+});
+return { url: app.url };
+```
+
+`new sst.aws.Vpc("MyVpc")` with no options is cheapest (~$0.50/mo). Only add
+`nat: "ec2"` (~$6/mo) when private resources need internet. Avoid
+`nat: "managed"` (~$65/mo) unless you need the scale.
+
+## Add only what the app needs
+
+```ts
+link: [database],                       // auto-injects DB_*/REDIS_*/AWS_* vars
+link: [{ resource: db, envFrom: (db) => ({ CUSTOM: db.host }) }], // extra vars
+web: { domain: "app.example.com" },     // custom domain (https)
+web: { size: "medium", scaling: { min: 1, max: 3 } },  // small|medium|large; cpu/memory win
+workers: [{ horizon: true, scheduler: true }],         // queues / scheduler
+reverb: { domain: "ws.example.com" },   // WebSockets (or `reverb: true`)
+config: { environment: { secrets: env } },  // RemoteEnvVault instead of file
+web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
+```
+
+## Before deploying
+
+- `.env.<stage>` exists, `APP_KEY` set, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`.
+- Stage env file is git-ignored (`git check-ignore .env.dev`).
+- `bootstrap/app.php` has `$middleware->trustProxies(at: "*")`.
+- No migrations at startup until a persistent database exists.
+
+## If /up is not healthy
+
+1. `npx sst-laravel status --stage <stage> --url <url>` — tasks + health in one view.
+2. `npx sst-laravel logs web --stage <stage>` — recent errors (stop it after reading).
+3. Usual causes: missing `APP_KEY`, wrong env names, DB unreachable, wrong health
+   path, AWS keys committed in the env file (use the IAM role instead).

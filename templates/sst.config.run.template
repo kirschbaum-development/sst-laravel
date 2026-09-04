@@ -1,52 +1,72 @@
-    const { LaravelService, RemoteEnvVault } = await import("@kirschbaum-development/sst-laravel");
-    const vpc = new sst.aws.Vpc("MyVpc");
-    // you can also use an existing VPC
-    // const vpc = sst.aws.Vpc.get("DefaultVpc", "vpc-12345678901234567");
-
-    const database = new sst.aws.Postgres('MyDB', { vpc });
+    const { LaravelService } = await import("@kirschbaum-development/sst-laravel");
 
     /**
-     * With RemoteEnvVault, SST-Laravel will use the environment variables stored in the remote vault (AWS Secrets Manager)
-     * This makes it easy to manage env with teams, and especially makes it ready for CI/CD
-     * 
-     * To get started, create the environment file first, and push it to the remote vault. Examples:
-     * - `cp .env.example .env.dev`
-     * - `php artisan key:generate --env .env.dev`
-     * - `npx sst-laravel env:push --stage dev`
-     * 
-     * Replace `dev` with the stage you want to set up
+     * A VPC is required — containers (Fargate) can only run inside one.
+     * This default has no NAT gateway, so it stays cheap (about $0.50/month
+     * for service discovery). Only add `nat: "ec2"` (~$6/month, cheapest NAT
+     * option) if resources in private subnets (like a database) need internet
+     * access. Avoid `nat: "managed"` (~$65/month) unless you need the scale.
+     *
+     * To reuse an existing VPC instead of creating one:
+     * const vpc = sst.aws.Vpc.get("MyVpc", "vpc-12345678901234567");
      */
-    const env = new RemoteEnvVault("Env");
+    const vpc = new sst.aws.Vpc("MyVpc");
 
     const app = new LaravelService("MyLaravelApp", {
       vpc,
-      link: [database],
 
       config: {
         php: 8.4,
         environment: {
-          secrets: env,
+          // First deploy: copy `.env.example` to `.env.<stage>`
+          // (e.g. `.env.dev`), set a key, and deploy. Simple, nothing extra.
+          file: `.env.${$app.stage}`,
+
+          // Teams / CI alternative: store the file in AWS Secrets Manager.
+          // const { RemoteEnvVault } = await import("@kirschbaum-development/sst-laravel");
+          // const env = new RemoteEnvVault("Env");
+          // secrets: env,
         },
-        deployment: {
-          script: 'infra/deploy.sh',
-        },
+        // deployment: {
+        //   // Runs at container startup. Only enable after a persistent
+        //   // database exists — otherwise migrations have nowhere to run.
+        //   script: 'infra/deploy.sh',
+        // },
       },
 
       web: {
-        domain: {
-          // if your domain is managed via Route53 in the same account, SST will handle the DNS for you
-          // you can also use Cloudflare DNS (see https://sst.dev/docs/component/cloudflare/dns/)
-          // you can also manually configure DNS. Check all "domain" options in "loadBalancer.domain" here: https://sst.dev/docs/component/aws/service/#loadbalancer-domain.
-          // dns: false,
+        // Simple container size: small (0.5 vCPU / 1 GB), medium
+        // (1 vCPU / 2 GB), large (2 vCPU / 4 GB). `cpu`/`memory` win over it.
+        size: "small",
+        healthCheck: { path: "/up" },
 
-          // if you don't provide a domain name, you will be able to use the load balancer domain for testing (http only)
-          name: $app.stage === "production"
-            ? "example.com"
-            : `${$app.stage}.example.com`,
-        }
+        // Add a custom domain when DNS is ready. Without it you get the load
+        // balancer address for testing (http only).
+        // domain: {
+        //   // Same-account Route53 is automatic. For Cloudflare use
+        //   // `dns: sst.cloudflare.dns()`. For manual DNS use `dns: false`.
+        //   name: $app.stage === "production"
+        //     ? "example.com"
+        //     : `${$app.stage}.example.com`,
+        // }
       },
 
-      // this configuration will create a dedicated Reverb container for WebSocket traffic
+      // Add these only when the app needs them:
+      //
+      // Database (Postgres). Needs `nat: "ec2"` on the VPC above if the
+      // database must reach the internet.
+      // const database = new sst.aws.Postgres('MyDB', { vpc });
+      // link: [database],
+      //
+      // Background work (queues, scheduler) in a separate container:
+      // workers: [
+      //   {
+      //     horizon: true,
+      //     scheduler: true,
+      //   }
+      // ],
+      //
+      // WebSockets:
       // reverb: {
       //   domain: {
       //     name: $app.stage === "production"
@@ -54,17 +74,8 @@
       //       : `ws.${$app.stage}.example.com`,
       //   },
       // },
-
-      // this configuration will create one worker container, which will run horizon and the laravel scheduler as background jobs
-      workers: [
-        {
-          horizon: true,
-          scheduler: true,
-        }
-      ]
     });
 
     return {
       url: app.url,
-      // reverbUrl: app.reverbUrl,
     };

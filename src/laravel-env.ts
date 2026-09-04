@@ -84,19 +84,48 @@ export function extractSecrets(links: LinkSupportedTypes[]): Secret[] {
   return links.filter((link): link is Secret => link instanceof Secret);
 }
 
-function applyDatabaseEnv(database: Database, callbacks?: EnvCallbacks): EnvType {
-  let port: number | undefined;
-database.port.apply(value => port = value);
-
-  if (database instanceof Postgres || (database instanceof Aurora && port === 5432)) {
+function applyDatabaseEnv(database: Database): EnvType {
+  if (database instanceof Postgres) {
     return applyPostgresEnv(database);
   }
 
-  if (database instanceof Mysql || (database instanceof Aurora && port === 3306) || database instanceof pulumiAws.rds.Instance) {
+  if (database instanceof Mysql || database instanceof pulumiAws.rds.Instance) {
     return applyMySqlEnv(database);
   }
 
+  if (database instanceof Aurora) {
+    return applyAuroraEnv(database);
+  }
+
   return {};
+}
+
+function applyAuroraEnv(database: Aurora): EnvType {
+  const engine = (database as unknown as { engine?: unknown }).engine;
+
+  if (typeof engine === 'string') {
+    if (engine.includes('mysql')) {
+      return applyMySqlEnv(database);
+    }
+
+    if (engine.includes('postgres')) {
+      return applyPostgresEnv(database);
+    }
+  }
+
+  // Without engine info, decide from the port. This stays async (via
+  // `.apply`) so previews and deploys agree — reading the port into a
+  // plain variable here would always be `undefined`.
+  return {
+    DB_CONNECTION: database.port.apply((port) =>
+      port === 3306 ? 'mysql' : 'pgsql',
+    ),
+    DB_HOST: database.host,
+    DB_DATABASE: database.database,
+    DB_USERNAME: database.username,
+    DB_PASSWORD: database.password,
+    DB_PORT: database.port.apply((port) => port.toString()),
+  };
 }
 
 function applyPostgresEnv(database: Postgres|Aurora): EnvType {

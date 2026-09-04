@@ -32,13 +32,23 @@ npm install @kirschbaum-development/sst-laravel --save
 
 ## Deploy with an AI agent
 
-You can let your coding agent handle the full setup. Start in your Laravel application and give the agent this prompt before you install the package:
+You can let your coding agent handle the full setup. Start in your Laravel application and paste this prompt — no install needed first:
 
 ```text
-Install @kirschbaum-development/sst-laravel in this Laravel application. Then read node_modules/@kirschbaum-development/sst-laravel/resources/boost/skills/sst-laravel/SKILL.md and follow it to set up and deploy the application. Continue until /up is healthy.
+Set up SST Laravel in this Laravel app and deploy it to AWS until /up is healthy.
+
+Steps:
+1. Run `npx -y @kirschbaum-development/sst-laravel doctor` and show me what it finds.
+2. Run `npx sst-laravel init` if there is no sst.config.ts.
+3. Keep the first deploy small: web only, no domain, health check at /up, env file .env.dev.
+4. Before you deploy, tell me in plain words: AWS account, region, stage, what will be created, and what it costs per month. Wait for my yes.
+5. Deploy with `npx sst-laravel deploy --stage dev`, then check it with `npx sst-laravel status --stage dev --url <the-url-from-the-deploy>` and show me the URL.
+6. Never print secret values. Do not put AWS keys in .env files. Do not deploy to production unless I say so.
+
+If you get stuck, show the exact error and what you checked (running tasks, health endpoint, recent logs).
 ```
 
-The skill inspects the Laravel application, checks AWS access, prepares the smallest valid configuration, deploys it, and verifies the live health endpoint. It does not print secret values.
+The agent inspects the Laravel application, checks AWS access, prepares the smallest working configuration, deploys it, and verifies the live health endpoint. It does not print secret values.
 
 ## Quick start
 
@@ -84,6 +94,24 @@ const app = new LaravelService('MyLaravelApp', {
 ```
 
 Check all the `web` options [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md#web).
+
+#### Container size
+
+Instead of raw `cpu`/`memory` numbers, you can pick a size: `small` (0.5 vCPU / 1 GB), `medium` (1 vCPU / 2 GB), or `large` (2 vCPU / 4 GB). Setting `cpu` or `memory` directly wins over `size`.
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    size: 'small',
+    scaling: {
+      min: 1,
+      max: 3,
+    }
+  },
+});
+```
+
+Need something SST-specific (architecture, logging, custom load balancer)? Put it under `web.advanced` — for example `web: { advanced: { architecture: 'arm64' } }`. The simple options above cover the rest.
 
 #### Load balancer health check
 
@@ -411,7 +439,7 @@ const app = new LaravelService('MyLaravelApp', {
     email, 
     {
       resource: database,
-      environment: (database: sst.aws.Postgres) => ({
+      envFrom: (database: sst.aws.Postgres) => ({
         CUSTOM_DB_HOST: database.host.apply(host => host.toString()),
         CUSTOM_DB_NAME: database.database.apply(database => database.toString()),
         CUSTOM_DB_USER: database.username.apply(username => username.toString()),
@@ -420,7 +448,7 @@ const app = new LaravelService('MyLaravelApp', {
     },
     {
       resource: redis,
-      environment: (redis: sst.aws.Redis) => ({
+      envFrom: (redis: sst.aws.Redis) => ({
         QUEUE_CONNECTION: 'redis',
         QUEUE_REDIS_HOST: redis.host.apply(host => host ? `tls://${host}` : ''),
         QUEUE_REDIS_PORT: redis.port.apply(port => port.toString()),
@@ -431,7 +459,7 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones.
+The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones. (The older `environment` name for this callback still works.)
 
 #### Disabling the auto-inject of environment variables
 
@@ -495,6 +523,22 @@ npx sst-laravel deploy --stage production
 ```
 
 > **Note:** If you're using `RemoteEnvVault` for secrets management, you should use `sst-laravel deploy` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
+
+## Readiness and Status
+
+Before deploying, check that the machine and app are ready:
+
+```bash
+npx sst-laravel doctor
+```
+
+It checks tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+
+After deploying, check everything in one view (running tasks plus the `/up` health endpoint):
+
+```bash
+npx sst-laravel status --stage production --url https://app.example.com
+```
 
 ## Accessing Containers
 
