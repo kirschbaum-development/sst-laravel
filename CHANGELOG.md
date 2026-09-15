@@ -5,6 +5,12 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0]
+
+### Changed
+
+- **Breaking:** Require SST `^4.17.1`. New projects created with `sst-laravel init` install the same supported version range.
+
 ## [0.3.9]
 
 ### Added

@@ -143,7 +143,7 @@ export const initCommand = new Command('init')
       if (!hasSst) {
         console.log('SST not found in project. Installing SST...');
 
-        const installProcess = spawn(resolveBin('npm'), ['install', '--save-dev', 'sst@latest'], {
+        const installProcess = spawn(resolveBin('npm'), ['install', '--save-dev', 'sst@^4.17.1'], {
           cwd,
           stdio: 'inherit'
         });

@@ -19,6 +19,7 @@ Behind the scenes, we use the powerful PHP containers from [Serverside Up](https
 ## Pre-requisites
 
 1. NodeJS.
+1. SST 4.17.1 or later within version 4. The `init` command installs SST if it is missing.
 1. Have [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured.
   * Guide on how to set up IAM Credentials [here](https://sst.dev/docs/iam-credentials/).
 
