@@ -3,7 +3,7 @@
 This project is an NPM package, and it is an extension of SST to add some functionality on top of it, to help deploy Laravel applications to AWS Fargate using Docker containers.
 
 ## Build/Test Commands
-- **Publish**: `npm run publish` (publishes package to npm with public access)
+- **Release**: ALWAYS use `npm run release` when publishing a new release. Do not publish directly with `npm publish` or `npm run publish`.
 - No test suite or linting configured in this project
 - No build step required (TypeScript consumed directly by SST)
 
