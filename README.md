@@ -402,6 +402,65 @@ The `DB_*`, `REDIS_*` and `AWS_*` environment variables will be automatically in
 
 You can also [import existing resources](https://sst.dev/docs/import-resources/) into SST, in case you already have resources like databases, buckets, etc. created and in use in your AWS account.
 
+#### PlanetScale
+
+Wrap your PlanetScale credentials in an `sst.Linkable` and set `provider: "planetscale"`. Set `engine` to `"mysql"` (the default) for Vitess or `"postgres"` for Postgres. Connection values can come from provider resources or `sst.Secret` values.
+
+For MySQL, follow the [SST PlanetScale guide](https://sst.dev/docs/integrations/planetscale/) to configure the provider and create a branch password. This example uses the `planetscale.Password` resource from that guide:
+
+```ts
+const database = new sst.Linkable('Database', {
+  properties: {
+    provider: 'planetscale',
+    engine: 'mysql',
+    host: password.accessHostUrl,
+    database: password.database,
+    username: password.username,
+    password: password.plaintext,
+  },
+});
+
+const app = new LaravelService('MyLaravelApp', {
+  link: [database],
+  config: {
+    environment: {
+      file: '.env.production',
+    },
+  },
+  web: {},
+});
+```
+
+For Postgres, use the credentials from a [PlanetScale Postgres role](https://planetscale.com/docs/postgres/connecting/roles). For example, if `role` is a `planetscale.PostgresBranchRole` resource:
+
+```ts
+const database = new sst.Linkable('Database', {
+  properties: {
+    provider: 'planetscale',
+    engine: 'postgres',
+    host: role.accessHostUrl,
+    database: 'postgres',
+    username: role.username,
+    password: role.password,
+  },
+});
+```
+
+Use this link in the same `LaravelService` configuration. `database` is the logical Postgres database name, usually `postgres`; it is not the project name in the PlanetScale dashboard. The available provider resource names depend on your provider version.
+
+Both engines inject `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. The engine sets the following defaults:
+
+| Engine | `DB_CONNECTION` | `DB_PORT` | TLS variables |
+| --- | --- | --- | --- |
+| MySQL (Vitess) | `mysql` | `3306` | `MYSQL_ATTR_SSL_CA` |
+| Postgres | `pgsql` | `5432` | `DB_SSLMODE=verify-full` and `DB_URL` with `sslmode` and `sslrootcert` |
+
+Set `port` in the link properties to use another port. Set `sslCa` to change the CA bundle path. The default path is `/etc/ssl/certs/ca-certificates.crt`, which applies to the package's Debian-based containers. Passwords and the Postgres connection URL are marked as Pulumi secrets.
+
+Laravel must retain its standard `MYSQL_ATTR_SSL_CA` option for MySQL, or `DB_URL` option for Postgres, in `config/database.php`. The Postgres URL includes the credentials and TLS settings so certificate verification also works after `php artisan config:cache`. Laravel gives URL values precedence over individual `DB_*` values. To change Postgres credentials, change the link properties or override the full `DB_URL` in an `environment` callback.
+
+This also works with `config.environment.secrets` (`RemoteEnvVault`). Set `config.environment.autoInject: false` to disable injection. Only links with the explicit `provider: 'planetscale'` property use these defaults.
+
 #### Custom Environment Key Names
 
 If you need to customize the environment variable names for your resources, you can provide an object with the resource and a callback function in the `link` array:

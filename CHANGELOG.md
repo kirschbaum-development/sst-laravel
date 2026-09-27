@@ -5,6 +5,12 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Automatic Laravel database environment variables and TLS certificate verification for PlanetScale MySQL (Vitess) and Postgres credentials in an `sst.Linkable` with `provider: 'planetscale'`.
+
 ## [0.5.0]
 
 ### Changed
