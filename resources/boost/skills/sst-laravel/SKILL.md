@@ -118,6 +118,7 @@ After the baseline is clear, add or import resources that the application needs.
 - Add a worker for Horizon, the scheduler, or another long-running process only when the application uses it.
 - Use the first-class `reverb` option for Laravel Reverb.
 - Add a domain after you know the DNS provider, certificate plan, and stage hostname.
+- Leave the load balancer as it is. It is secure by default (TLS 1.2+, only the listener ports open). Add `loadBalancer.ingressCidrs` or `loadBalancer.accessLogs` only when the user asks, and confirm the IP ranges first, because every other address is blocked.
 - Configure trusted proxies with the API supported by the installed Laravel version.
 
 Keep production protection and retention settings. Explain material cost items, such as load balancers, NAT gateways, databases, Redis, and extra container services, before you add them.

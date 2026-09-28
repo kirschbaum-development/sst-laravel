@@ -36,6 +36,10 @@ REVERB_PORT=443
 REVERB_SCHEME=https
 ```
 
+## Load balancer hardening
+
+Reverb has its own load balancer, hardened by default like the one of `web`. The `loadBalancer` options (`sslPolicy`, `ingressCidrs`, `accessLogs`) work on `reverb` the same way. See [Load Balancer](load-balancer.md).
+
 ## Scaling
 
 If you enable horizontal scaling for Reverb, make sure your Laravel application is configured for Reverb scaling with Redis.

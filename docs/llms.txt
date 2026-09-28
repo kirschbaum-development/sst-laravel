@@ -52,6 +52,28 @@ config: { environment: { secrets: env } },  // RemoteEnvVault instead of file
 web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
 ```
 
+## Load balancer (web and reverb)
+
+Secure by default, nothing to configure: TLS 1.2+ on the https listener, only
+the listener ports open, invalid headers dropped, http redirected to https.
+
+```ts
+web: {
+  loadBalancer: {
+    ingressCidrs: ["173.245.48.0/20", "2400:cb00::/32"], // only these ranges (CDN/WAF) reach the load balancer
+    accessLogs: true,                                    // access logs to a new S3 bucket, kept 90 days
+    // accessLogs: { bucket, prefix: "web", retentionDays: 365 },
+    // sslPolicy: "ELBSecurityPolicy-TLS13-1-2-Ext2-2021-06", // only to support older clients
+  },
+},
+```
+
+Only add these when the user asks. `ingressCidrs` blocks every other address,
+so confirm the ranges first. `loadBalancer.accessLogs` is not `web.accessLogs`
+(nginx logs in CloudWatch). `loadBalancer` only takes these three keys; any
+other key fails the deploy. To define the load balancer itself (listeners,
+ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
+
 ## Before deploying
 
 - `.env.<stage>` exists, `APP_KEY` set, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`.

@@ -39,11 +39,11 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-Need something SST-specific (architecture, logging, custom load balancer)? Put it under `web.advanced`, for example `web: { advanced: { architecture: 'arm64' } }`. The simple options above cover the rest.
+Need something SST-specific (architecture, logging, custom listeners on the load balancer)? Put it under `web.advanced`, for example `web: { advanced: { architecture: 'arm64' } }`. The simple options above cover the rest.
 
 ## Load balancer health check
 
-Laravel ships a built-in `/up` health endpoint. Point the load balancer at it via `web.healthCheck`, a shortcut over `loadBalancer.health` that targets the default forward port for you:
+Laravel ships a built-in `/up` health endpoint. Point the load balancer at it via `web.healthCheck`, which targets the default forward port for you:
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
@@ -54,7 +54,7 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-All [`loadBalancer.health` options](https://sst.dev/docs/component/aws/service/#loadbalancer-health) are supported (`interval`, `timeout`, `healthyThreshold`, `unhealthyThreshold`, `successCodes`). If you set `web.loadBalancer` explicitly, `healthCheck` is ignored. Configure `loadBalancer.health` directly there.
+All the [health check options of SST](https://sst.dev/docs/component/aws/service/#loadbalancer-health) are supported (`interval`, `timeout`, `healthyThreshold`, `unhealthyThreshold`, `successCodes`). If you set `web.advanced.loadBalancer`, `healthCheck` is ignored. Configure its `health` directly there.
 
 ## HTTP to HTTPS redirect
 
@@ -69,7 +69,7 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-This has no effect when no `domain` is set, or when you provide an explicit `web.loadBalancer` (configure `loadBalancer.ports` yourself in that case).
+This has no effect when no `domain` is set, or when you set `web.advanced.loadBalancer` (configure its `rules` yourself in that case).
 
 ## Access logs
 
@@ -84,6 +84,12 @@ const app = new LaravelService('MyLaravelApp', {
 ```
 
 This points the serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`. Error logs and the Laravel application logs are unaffected. Only the web container runs nginx, so this has no effect on workers or the Reverb service.
+
+The load balancer keeps its own access logs. To ship those to S3, see [Access logs in S3](load-balancer.md#access-logs-in-s3).
+
+## Load balancer hardening
+
+The load balancer is hardened by default: it only accepts TLS 1.2 and 1.3, only opens the ports it listens on, and drops invalid headers. To only accept traffic from your CDN or WAF, or to ship the load balancer access logs to S3, use the `web.loadBalancer` options. See [Load Balancer](load-balancer.md).
 
 ## Background processes
 

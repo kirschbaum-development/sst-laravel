@@ -76,6 +76,7 @@ Read the full documentation at [docs.kirschbaumdevelopment.com](https://docs.kir
 | [Web](docs/web.md) | The HTTP service: domain, container size, scaling, health check, HTTPS redirect, and access logs. |
 | [Workers](docs/workers.md) | Horizon, the scheduler, and custom commands in worker containers or in the web container. |
 | [Reverb](docs/reverb.md) | A dedicated Laravel Reverb service for WebSockets, with its own domain. |
+| [Load Balancer](docs/load-balancer.md) | The secure defaults of the load balancer, the IP allowlist, and access logs in S3. |
 | [Environment Variables](docs/environment-variables.md) | Environment files, SST secrets, `RemoteEnvVault` (AWS Secrets Manager), and the variables SST Laravel adds. |
 | [Linking Resources](docs/linking-resources.md) | Linked databases, Redis, and buckets, PlanetScale, custom variable names, and IAM permissions. |
 | [Deploying](docs/deploying.md) | The `deploy` command, readiness and status checks, PHP settings, the deployment script, and GitHub Actions. |

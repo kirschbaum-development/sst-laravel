@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildServiceArgs,
   composeTransform,
+  composeTransforms,
   findDeprecatedTopLevelKeys,
   resolveAdvancedArgs,
 } from '../src/service-args';
@@ -77,6 +78,21 @@ describe('resolveAdvancedArgs', () => {
   it('ignores first-class keys', () => {
     expect(resolveAdvancedArgs({ cpu: '1 vCPU' } as never)).toEqual({});
   });
+
+  it('only reads the load balancer config from the advanced block', () => {
+    const rules = [{ listen: '80/http', forward: '8080/http' }];
+
+    expect(
+      resolveAdvancedArgs({
+        loadBalancer: { accessLogs: true },
+        advanced: { loadBalancer: { rules } },
+      } as never),
+    ).toEqual({ loadBalancer: { rules } });
+
+    expect(
+      resolveAdvancedArgs({ loadBalancer: { accessLogs: true } } as never),
+    ).toEqual({});
+  });
 });
 
 describe('findDeprecatedTopLevelKeys', () => {
@@ -89,9 +105,17 @@ describe('findDeprecatedTopLevelKeys', () => {
     expect(
       findDeprecatedTopLevelKeys({
         architecture: 'arm64',
-        loadBalancer: {},
+        storage: '30 GB',
       }),
-    ).toEqual(['architecture', 'loadBalancer']);
+    ).toEqual(['architecture', 'storage']);
+  });
+
+  it('does not treat the load balancer options as deprecated', () => {
+    expect(
+      findDeprecatedTopLevelKeys({
+        loadBalancer: { accessLogs: true },
+      } as never),
+    ).toEqual([]);
   });
 });
 
@@ -136,5 +160,54 @@ describe('composeTransform', () => {
       networkConfiguration: 'user',
       enableExecuteCommand: true,
     });
+  });
+});
+
+describe('composeTransforms', () => {
+  it('keeps keys that only exist on one side', () => {
+    const listener = () => {};
+    const target = () => {};
+
+    const composed = composeTransforms({ listener }, { target });
+
+    expect(composed.listener).toBe(listener);
+    expect(composed.target).toBe(target);
+  });
+
+  it('returns the internal transforms when the user has none', () => {
+    const listener = () => {};
+
+    expect(composeTransforms({ listener })).toEqual({ listener });
+    expect(composeTransforms({}, undefined)).toEqual({});
+  });
+
+  it('runs the internal transform before the user one for the same key', () => {
+    const order: string[] = [];
+
+    const composed = composeTransforms(
+      { listener: () => order.push('internal') },
+      { listener: () => order.push('user') },
+    );
+
+    (composed.listener as Function)({}, {}, 'Listener');
+
+    expect(order).toEqual(['internal', 'user']);
+  });
+
+  it('lets a user object override what the internal transform set', () => {
+    const composed = composeTransforms(
+      {
+        listener: (args: Record<string, unknown>) => {
+          args.sslPolicy = 'internal-policy';
+          args.port = 443;
+        },
+      },
+      { listener: { sslPolicy: 'user-policy' } },
+    );
+
+    const args: Record<string, unknown> = {};
+    (composed.listener as Function)(args, {}, 'Listener');
+
+    expect(args).toEqual({ sslPolicy: 'user-policy', port: 443 });
   });
 });

@@ -18,11 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sst-laravel guide` command: prints the agent deploy guide (the skill), or the short config reference with `--reference`.
 - `docs/llms.txt`: short agent quick reference (minimal config, common recipes, failure checklist).
 - `docs/agent-setup.md`: setup instructions for agents to fetch. They install the package, install or update the skill with `skill:install`, and follow it.
+- `loadBalancer` options on `web`, `reverb`, and workers with a load balancer, so hardening it no longer needs hand-written `transform` callbacks (#7). Documented in `docs/load-balancer.md`:
+  - `loadBalancer.sslPolicy` sets the SSL security policy on the HTTPS/TLS listeners only. HTTP listeners, which reject an SSL policy, are left untouched.
+  - `loadBalancer.ingressCidrs` only accepts traffic to the load balancer from the given IPv4/IPv6 ranges, with one security group rule per listener port. It takes a plain list or `{ v4, v6, ports }`.
+  - `loadBalancer.accessLogs` ships the load balancer access logs to S3. The package creates the bucket (private, HTTPS only, delivery limited to the load balancers of the account and region, logs kept 90 days unless `retentionDays` says otherwise), or delivers to a bucket you own.
+- `advanced.transform` entries for the load balancer, its listeners, and its security group now run after the defaults and options above, so they compose instead of one replacing the other.
 
 ### Changed
 
+- **Breaking:** `loadBalancer` on `web`, `workers[]`, and `reverb` no longer takes the SST load balancer config (`rules`, `ports`, `domain`, `health`, ...). It now holds the load balancer options (see Added). Move the SST config to `advanced.loadBalancer`. Any key `loadBalancer` does not know fails the deploy before anything is created.
+- Load balancers are now hardened by default. On the next deploy, existing load balancers are updated in place:
+  - HTTPS listeners use `ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09`, the policy AWS recommends, instead of `ELBSecurityPolicy-2016-08`. Clients that only speak TLS 1.0 or 1.1 can no longer connect. Set `loadBalancer.sslPolicy` to pick another policy.
+  - The security group only opens the ports the load balancer listens on, instead of every port and protocol. New connections can fail for a moment while the rules are replaced.
+  - Application load balancers drop HTTP headers with an invalid name (anything other than letters, digits, and hyphens). Set `dropInvalidHeaderFields` to `false` in `advanced.transform.loadBalancer` to keep them.
 - `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$13/month) is documented for keeping containers in private subnets.
-- SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set.
+- SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set. The exception is `loadBalancer`, which has no top-level alias (see above).
 - Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
 - The README agent prompt is now one line that points the agent to `docs/agent-setup.md`. The skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
 - `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.

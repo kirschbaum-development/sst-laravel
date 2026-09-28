@@ -116,5 +116,6 @@ npx sst-laravel status --stage dev --url <url-from-deploy>
 
 - Add a domain, a bigger container, or auto-scaling: [Web](web.md).
 - Run queues and the scheduler: [Workers](workers.md).
+- Only accept traffic from your CDN or WAF, or keep the load balancer access logs: [Load Balancer](load-balancer.md).
 - Add a database, Redis, or a bucket: [Linking Resources](linking-resources.md).
 - Run migrations on each deploy: [Deploying](deploying.md#deployment-script).

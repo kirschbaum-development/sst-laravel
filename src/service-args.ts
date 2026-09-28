@@ -18,12 +18,18 @@ export interface LaravelAdvancedArgs {
    */
   health?: unknown;
   executionRole?: unknown;
+  /**
+   * The SST load balancer config (`rules`, `domain`, `health`, ...). It
+   * replaces the load balancer the package sets up. To tune that one
+   * instead, use the `loadBalancer` options on the block.
+   */
   loadBalancer?: unknown;
   /**
    * Transform the underlying ECS Service resources.
    *
    * `image` and `taskDefinition` are managed internally and cannot be
-   * overridden here.
+   * overridden here. Transforms for the load balancer run after the
+   * `loadBalancer` options (`sslPolicy`, `ingressCidrs`, `accessLogs`).
    */
   transform?: unknown;
 }
@@ -39,11 +45,20 @@ export const DEPRECATED_TOP_LEVEL_KEYS = [
   'logging',
   'health',
   'executionRole',
-  'loadBalancer',
   'transform',
 ] as const;
 
 export type DeprecatedTopLevelKey = (typeof DEPRECATED_TOP_LEVEL_KEYS)[number];
+
+/**
+ * Everything the `advanced` block takes. `loadBalancer` has no top-level
+ * alias: on the block itself, `loadBalancer` holds the load balancer options
+ * (`sslPolicy`, `ingressCidrs`, `accessLogs`).
+ */
+export const ADVANCED_KEYS = [
+  ...DEPRECATED_TOP_LEVEL_KEYS,
+  'loadBalancer',
+] as const;
 
 /**
  * The subset of `sst.aws.Service` arguments that stay first-class on a `web`,
@@ -99,8 +114,12 @@ export function resolveAdvancedArgs<
   const result: Record<string, unknown> = {};
   const advanced = config.advanced ?? {};
 
-  for (const key of DEPRECATED_TOP_LEVEL_KEYS) {
-    const topLevel = (config as Record<string, unknown>)[key];
+  for (const key of ADVANCED_KEYS) {
+    const topLevel = (DEPRECATED_TOP_LEVEL_KEYS as readonly string[]).includes(
+      key,
+    )
+      ? (config as Record<string, unknown>)[key]
+      : undefined;
     const advancedValue = (advanced as Record<string, unknown>)[key];
 
     if (advancedValue !== undefined) {
@@ -150,4 +169,29 @@ export function composeTransform<T extends object>(
 
     return undefined;
   };
+}
+
+/**
+ * Combines a map of internal transforms with the user's `advanced.transform`
+ * map, key by key. Keys set on both sides go through `composeTransform`, so
+ * the internal transform runs first and the user's still has the last word.
+ * Keys set on one side only are passed along unchanged.
+ */
+export function composeTransforms(
+  internal: Record<
+    string,
+    (args: any, opts: any, name: string) => void
+  >,
+  user?: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...(user ?? {}) };
+
+  for (const [key, transform] of Object.entries(internal)) {
+    result[key] =
+      user?.[key] === undefined
+        ? transform
+        : composeTransform(transform, user[key]);
+  }
+
+  return result;
 }

@@ -17,6 +17,36 @@ SST Laravel puts the container behind a load balancer, so you must configure you
 })
 ```
 
+## loadBalancer does not take "rules"
+
+```
+[sst-laravel] web.loadBalancer does not take "rules". It takes sslPolicy, ingressCidrs, accessLogs. The SST load balancer config goes in web.advanced.loadBalancer.
+```
+
+Since version 0.6, `loadBalancer` holds the [load balancer options](load-balancer.md). The SST load balancer config (`rules`, `ports`, `domain`, `health`) moved to `advanced.loadBalancer`:
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    advanced: {
+      loadBalancer: {
+        rules: [{ listen: '80/http', forward: '8080/http' }],
+      },
+    },
+  },
+});
+```
+
+You get the same error for a misspelled option, such as `ingressCidr`.
+
+## Requests to the app time out
+
+If this started after you set `loadBalancer.ingressCidrs`, the load balancer only accepts traffic from the ranges in that list. Check that the list has the current ranges of your CDN or WAF, and that your domain points to the CDN or WAF and not to the load balancer. Calling the load balancer address directly times out from any other address. See [IP allowlist](load-balancer.md#ip-allowlist).
+
+## An old client can't connect over HTTPS
+
+The load balancer only accepts TLS 1.2 and 1.3. To support a client that needs an older version, set another policy with `loadBalancer.sslPolicy`. See [TLS policy](load-balancer.md#tls-policy).
+
 ## Failed to build sst.config.ts
 
 In case you get the following error when running SST commands, run `npx sst-laravel install`. If this fails, temporarily rename the `sst.config.ts` file, and run `npx sst install`.

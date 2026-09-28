@@ -260,7 +260,7 @@ web: {
 
 #### `web.healthCheck`
 - **Type:** `Input<LaravelHealthCheck>`
-- **Description:** Load balancer health check applied to the default forward port (`8080/http`). Shorthand so you don't have to override the full `loadBalancer` config just to set a path. Ignored when `loadBalancer` is provided — configure `loadBalancer.health` directly in that case.
+- **Description:** Load balancer health check applied to the default forward port (`8080/http`). Shorthand so you don't have to set the full `advanced.loadBalancer` config just to set a path. Ignored when `advanced.loadBalancer` is provided — configure its `health` directly in that case.
 
 **Example:**
 ```typescript
@@ -279,7 +279,7 @@ web: {
 #### `web.httpsRedirect`
 - **Type:** `boolean`
 - **Default:** `true`
-- **Description:** When a `domain` is configured, redirect HTTP (port 80) traffic to the HTTPS (port 443) listener instead of forwarding it straight to the application. Set to `false` to keep forwarding HTTP traffic to the app. Has no effect when no `domain` is set (there is no HTTPS listener to redirect to) or when an explicit `loadBalancer` is provided.
+- **Description:** When a `domain` is configured, redirect HTTP (port 80) traffic to the HTTPS (port 443) listener instead of forwarding it straight to the application. Set to `false` to keep forwarding HTTP traffic to the app. Has no effect when no `domain` is set (there is no HTTPS listener to redirect to) or when `advanced.loadBalancer` is provided (configure its `rules` yourself in that case).
 
 **Example:**
 ```typescript
@@ -298,6 +298,92 @@ web: {
 ```typescript
 web: {
   accessLogs: false,
+}
+```
+
+#### `web.loadBalancer`
+- **Type:** `LaravelLoadBalancerArgs`
+- **Description:** Options for the load balancer in front of the web service: `sslPolicy`, `ingressCidrs`, and `accessLogs`. The load balancer is hardened by default: its HTTPS listeners only accept TLS 1.2 and 1.3, its security group only opens the ports it listens on, and it drops HTTP headers with an invalid name. You only need this to go further (an IP allowlist, access logs) or to pick another policy. The SST load balancer config (`rules`, `domain`, `health`, ...) does not go here. Set `web.advanced.loadBalancer` for that. Any other key fails the deploy. See [Load Balancer](load-balancer.md).
+
+**Example:**
+```typescript
+web: {
+  domain: 'app.example.com',
+  loadBalancer: {
+    ingressCidrs: ['173.245.48.0/20', '2400:cb00::/32'],
+    accessLogs: true,
+  },
+}
+```
+
+##### `web.loadBalancer.sslPolicy`
+- **Type:** `Input<string>`
+- **Default:** `"ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"`
+- **Description:** SSL security policy for the HTTPS/TLS listeners of the load balancer. The default is the policy AWS recommends, which accepts TLS 1.2 and 1.3 only. Plain HTTP listeners reject an SSL policy, so the package leaves them untouched. See [TLS policy](load-balancer.md#tls-policy).
+
+**Example:**
+```typescript
+web: {
+  domain: 'app.example.com',
+  loadBalancer: {
+    sslPolicy: 'ELBSecurityPolicy-TLS13-1-2-Ext2-2021-06',
+  },
+}
+```
+
+##### `web.loadBalancer.ingressCidrs`
+- **Type:** `Input<string[]> | { v4?: Input<string[]>; v6?: Input<string[]>; ports?: Input<number[]> }`
+- **Default:** `["0.0.0.0/0"]`
+- **Description:** Only accept traffic to the load balancer from these CIDR blocks, for example the edge ranges of the CDN or WAF in front of it, so nobody can go around it by calling the load balancer address directly. By default the load balancer accepts traffic from everywhere, but only on the ports it listens on (SST opens every port and protocol). Pass a list (IPv4 and IPv6 blocks are told apart for you), or an object with `v4`, `v6`, and `ports`. `ports` defaults to the ports the load balancer listens on (`80`, plus `443` when a domain is set), and is only needed when `advanced.loadBalancer` is a value the package cannot read before the deploy, in which case `80` and `443` are used. See [IP allowlist](load-balancer.md#ip-allowlist).
+
+**Example (list):**
+```typescript
+web: {
+  loadBalancer: {
+    ingressCidrs: ['173.245.48.0/20', '103.21.244.0/22', '2400:cb00::/32'],
+  },
+}
+```
+
+**Example (object):**
+```typescript
+web: {
+  loadBalancer: {
+    ingressCidrs: {
+      v4: ['173.245.48.0/20', '103.21.244.0/22'],
+      v6: ['2400:cb00::/32'],
+    },
+  },
+}
+```
+
+##### `web.loadBalancer.accessLogs`
+- **Type:** `boolean | { bucket?: Input<string> | { name: Input<string> }; prefix?: Input<string>; enabled?: Input<boolean>; retentionDays?: number | false }`
+- **Default:** `false`
+- **Description:** Ship the load balancer access logs to an S3 bucket. Set to `true` to let the package create the bucket, or pass an object to choose the bucket, prefix, and retention. Not the same as `web.accessLogs`, which is about the nginx logs the container sends to CloudWatch. Off by default, since it creates a bucket and adds storage cost to every stage. See [Access logs in S3](load-balancer.md#access-logs-in-s3).
+  - `bucket`: An existing S3 bucket to deliver the logs to: an `sst.aws.Bucket` or a bucket name. When omitted, the package creates a dedicated bucket with public access blocked and the Elastic Load Balancing log-delivery policy attached. It uses the S3 default encryption (SSE-S3), since ELB cannot deliver logs to a bucket encrypted with a KMS key. When you bring your own bucket, you own its bucket policy. The package does not attach one, because a bucket can only have a single policy.
+  - `prefix`: S3 key prefix the logs are delivered under. Leading and trailing slashes are stripped, since ELB rejects them. The prefix must not include the reserved `AWSLogs` path segment.
+  - `enabled`: Whether the load balancer ships access logs. Set to `false` to stop shipping logs while keeping the bucket and the logs already in it. Defaults to `true`.
+  - `retentionDays`: Days to keep access logs before they expire. Set to `false` to keep them forever. Only used when the package creates the bucket. Defaults to `90`.
+
+**Example:**
+```typescript
+web: {
+  loadBalancer: {
+    accessLogs: true,
+  },
+}
+```
+
+**Example (with options):**
+```typescript
+web: {
+  loadBalancer: {
+    accessLogs: {
+      prefix: 'alb',
+      retentionDays: 365,
+    },
+  },
 }
 ```
 
@@ -338,7 +424,7 @@ web: {
 
 #### `web.advanced`
 - **Type:** `LaravelAdvancedArgs`
-- **Description:** Escape hatch for SST experts. `architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, and `transform` passed straight to the underlying `sst.aws.Service`. Values here win over the deprecated top-level keys.
+- **Description:** Escape hatch for SST experts. `architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, and `transform` passed straight to the underlying `sst.aws.Service`. Values here win over the deprecated top-level keys. `advanced.loadBalancer` is the SST load balancer config (`rules`, `domain`, `health`, ...) and replaces the load balancer the package sets up; it is not the same as `web.loadBalancer`.
 
 **Example:**
 ```typescript
@@ -434,6 +520,10 @@ workers: [
 #### `workers[].permissions`
 - **Type:** `ServiceArgs["permissions"]`
 - **Description:** IAM permissions specific to this worker. Falls back to the top-level `permissions` when not set.
+
+#### `workers[].loadBalancer`
+- **Type:** `LaravelLoadBalancerArgs`
+- **Description:** Same options and defaults as [`web.loadBalancer`](#webloadbalancer) (`sslPolicy`, `ingressCidrs`, `accessLogs`). Workers have no load balancer, so this only applies to a worker with `advanced.loadBalancer`. It is ignored with a warning otherwise.
 
 #### `workers[].advanced`
 - **Type:** `LaravelAdvancedArgs`
@@ -539,6 +629,20 @@ REVERB_SCHEME=https
 #### `reverb.permissions`
 - **Type:** `ServiceArgs["permissions"]`
 - **Description:** IAM permissions specific to the Reverb service. Falls back to the top-level `permissions` when not set.
+
+#### `reverb.loadBalancer`
+- **Type:** `LaravelLoadBalancerArgs`
+- **Description:** Options for the Reverb load balancer. Same options and defaults as [`web.loadBalancer`](#webloadbalancer) (`sslPolicy`, `ingressCidrs`, `accessLogs`).
+
+**Example:**
+```typescript
+reverb: {
+  domain: 'ws.example.com',
+  loadBalancer: {
+    ingressCidrs: ['173.245.48.0/20', '2400:cb00::/32'],
+  },
+}
+```
 
 #### `reverb.advanced`
 - **Type:** `LaravelAdvancedArgs`
