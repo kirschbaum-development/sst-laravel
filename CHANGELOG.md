@@ -5,6 +5,39 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `size` option (`small` | `medium` | `large`) on `web`, `workers[]`, and `reverb` mapping to valid Fargate cpu/memory pairs. Explicit `cpu`/`memory` still win over `size`.
+- `advanced` block on `web`, `workers[]`, and `reverb` as the escape hatch for SST experts (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`).
+- `envFrom` as the preferred name for the per-link environment callback (`environment` still works).
+- `sst-laravel doctor` command: one readiness check for tools, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
+- `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary.
+- `sst-laravel skill:install` command: installs or updates the agent skill. With Laravel Boost 2.0+ set up, it adds the skill to `.ai/skills` and runs `boost:update`; otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
+- `sst-laravel guide` command: prints the agent deploy guide (the skill), or the short config reference with `--reference`.
+- `docs/llms.txt`: short agent quick reference (minimal config, common recipes, failure checklist).
+- `docs/agent-setup.md`: setup instructions for agents to fetch. They install the package, install or update the skill with `skill:install`, and follow it.
+
+### Changed
+
+- `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$13/month) is documented for keeping containers in private subnets.
+- SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set.
+- Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
+- The README agent prompt is now one line that points the agent to `docs/agent-setup.md`. The skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
+- `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.
+- `doctor` checks that the package is installed in the project.
+- `init` installs the skill the same way as `skill:install`. It only uses Laravel Boost when `boost.json` lists agents (`boost:update` fails otherwise), and the skills CLI now installs from GitHub so `npx skills update` works.
+
+### Fixed
+
+- Containers in an `sst.aws.Vpc` without NAT now run in the public subnets with a public IP, like SST's default. They were placed in private subnets with no route to the internet, so they could not pull their image and never started. VPCs with NAT keep their containers in private subnets.
+- `app.url` and `app.reverbUrl` return `undefined` instead of throwing when the `web`/`reverb` service is not configured.
+- `config.php` type corrected from `Input<Number>` to `Input<number>`.
+- Aurora database detection no longer reads the async `port` into a sync variable (always `undefined`); it uses the engine name when available and an async port check otherwise.
+- Updating `.dockerignore` for the Docker build is now reported via the component messages.
+- Corrected `sst deploy` to `sst-laravel deploy` in `RemoteEnvVault` docs and the `init` success message.
+
 ## [0.5.2]
 
 ### Added

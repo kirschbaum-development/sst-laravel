@@ -212,11 +212,22 @@ export function validateDeployment(stage: string): void {
 }
 
 /**
+ * Removes line and block comments so the regex detectors below only see
+ * active code. Template files ship commented examples (e.g. a commented
+ * `RemoteEnvVault`) that must not count as configuration.
+ */
+export function stripTsComments(content: string): string {
+  return content
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[\s;{}(,])\/\/.*$/gm, '$1');
+}
+
+/**
  * Extract RemoteEnvVault secrets configuration from SST config
  * Returns the custom path if specified, or null if no RemoteEnvVault is used
  */
 export function extractSecretsConfig(configPath: string): { path?: string } | null {
-  const content = fs.readFileSync(configPath, 'utf-8');
+  const content = stripTsComments(fs.readFileSync(configPath, 'utf-8'));
 
   // Check if RemoteEnvVault is used
   const laravelEnvMatch = content.match(/new\s+RemoteEnvVault\s*\(/);

@@ -29,7 +29,14 @@ import { buildReverbEnvironmentVariables } from './src/reverb';
 import { getSecretsFingerprint } from './src/secrets-manager';
 import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import { buildWebServerEnvironment } from './src/web-server';
-import { buildServiceArgs } from './src/service-args';
+import {
+  buildServiceArgs,
+  composeTransform,
+  findDeprecatedTopLevelKeys,
+  LaravelAdvancedArgs,
+  resolveAdvancedArgs,
+} from './src/service-args';
+import { buildSizeDefaults, ServiceSize } from './src/size';
 import {
     assertSafeWorkerName,
     buildBackgroundTasks,
@@ -39,6 +46,9 @@ import {
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
 export type { PlanetScaleProperties } from './src/planetscale-env.js';
+
+/** The `transform.service` hook of `sst.aws.Service` (the ECS service). */
+type ServiceResourceTransform = NonNullable<ServiceArgs['transform']>['service'];
 
 enum ImageType {
     Web = 'web',
@@ -91,16 +101,50 @@ export type LaravelDomain = Input<
 >;
 
 export interface LaravelServiceArgs {
-    architecture?: ServiceArgs['architecture'];
+    /**
+     * Simple container size. Maps to a valid Fargate cpu/memory pair:
+     * `small` (0.5 vCPU / 1 GB), `medium` (1 vCPU / 2 GB),
+     * `large` (2 vCPU / 4 GB). Setting `cpu` or `memory` directly wins
+     * over `size`.
+     */
+    size?: ServiceSize;
     cpu?: ServiceArgs['cpu'];
     memory?: ServiceArgs['memory'];
-    storage?: ServiceArgs['storage'];
-    loadBalancer?: ServiceArgs['loadBalancer'];
     scaling?: ServiceArgs['scaling'];
-    logging?: ServiceArgs['logging'];
-    health?: ServiceArgs['health'];
-    executionRole?: ServiceArgs['executionRole'];
     permissions?: ServiceArgs['permissions'];
+
+    /**
+     * Escape hatch for SST experts. Values here are passed straight to the
+     * underlying `sst.aws.Service`. Prefer the simple options above — use
+     * `advanced` only when you know what the SST Service does with the value.
+     *
+     * @example
+     * ```js
+     * web: {
+     *   advanced: {
+     *     architecture: 'arm64',
+     *   },
+     * }
+     * ```
+     */
+    advanced?: LaravelAdvancedArgs;
+
+    /** @deprecated Set `advanced.architecture` instead. */
+    architecture?: ServiceArgs['architecture'];
+    /** @deprecated Set `advanced.storage` instead. */
+    storage?: ServiceArgs['storage'];
+    /** @deprecated Set `advanced.loadBalancer` instead. */
+    loadBalancer?: ServiceArgs['loadBalancer'];
+    /** @deprecated Set `advanced.logging` instead. */
+    logging?: ServiceArgs['logging'];
+    /**
+     * @deprecated Set `advanced.health` instead. Note this is the
+     * container-level check — different from `web.healthCheck`, which is
+     * the load balancer URL check.
+     */
+    health?: ServiceArgs['health'];
+    /** @deprecated Set `advanced.executionRole` instead. */
+    executionRole?: ServiceArgs['executionRole'];
 
     /**
      * Transform the underlying ECS Service resources. Useful for hardening the
@@ -111,17 +155,22 @@ export interface LaravelServiceArgs {
      * overridden here — they carry the env-file dependency wiring and the
      * `initProcessEnabled: false` setting required by this package.
      *
+     * Prefer `advanced.transform`. This top-level alias still works for
+     * existing projects.
+     *
      * @example
      * ```js
      * web: {
-     *   transform: {
-     *     loadBalancerSecurityGroup: (sgArgs) => {
-     *       sgArgs.ingress = [{
-     *         protocol: "tcp",
-     *         fromPort: 443,
-     *         toPort: 443,
-     *         cidrBlocks: ["173.245.48.0/20", "103.21.244.0/22"],
-     *       }];
+     *   advanced: {
+     *     transform: {
+     *       loadBalancerSecurityGroup: (sgArgs) => {
+     *         sgArgs.ingress = [{
+     *           protocol: "tcp",
+     *           fromPort: 443,
+     *           toPort: 443,
+     *           cidrBlocks: ["173.245.48.0/20", "103.21.244.0/22"],
+     *         }];
+     *       },
      *     },
      *   },
      * }
@@ -132,6 +181,37 @@ export interface LaravelServiceArgs {
         'image' | 'taskDefinition'
     >;
 }
+
+/**
+ * A resource linked into the Laravel containers, with optional extra
+ * environment variables.
+ */
+export interface LaravelLinkObject {
+    resource: any;
+    /**
+     * Preferred. Receives the linked resource and returns extra environment
+     * variables. Merged over the auto-injected defaults for that resource.
+     *
+     * @example
+     * ```js
+     * link: [
+     *   {
+     *     resource: database,
+     *     envFrom: (db) => ({
+     *       CUSTOM_DB_HOST: db.host,
+     *     }),
+     *   },
+     * ],
+     * ```
+     */
+    envFrom?: EnvCallback;
+    /**
+     * @deprecated Use `envFrom` instead. Kept working for existing projects.
+     */
+    environment?: EnvCallback;
+}
+
+export type LaravelLink = any | LaravelLinkObject;
 
 /**
  * Shorthand for the load balancer health check applied to the default forward
@@ -327,13 +407,7 @@ export interface LaravelWorkerConfig
 export interface LaravelArgs extends ClusterArgs {
     // dev?: false | DevArgs["dev"];
     path?: Input<string>;
-    link?: Array<
-        | any
-        | {
-              resource: any;
-              environment?: EnvCallback;
-          }
-    >;
+    link?: LaravelLink[];
 
     permissions?: Array<{
         actions: string[];
@@ -365,7 +439,7 @@ export interface LaravelArgs extends ClusterArgs {
          *
          * @default `8.4`
          */
-        php?: Input<Number>;
+        php?: Input<number>;
 
         /**
          * PHP Opcache should be enabled?
@@ -458,11 +532,53 @@ export class LaravelService extends Component {
 
         this.services = {};
 
+        // Captured for `function` declarations below, where `this` is unbound.
+        const componentMessages = this._messages;
+
         args.config = args.config ?? {};
         const sitePath = args.path ?? '.';
         const absSitePath = path.resolve(sitePath.toString());
         const nodeModulePath = getPackagePath();
         const reverbConfig = normalizeReverbConfig(args.reverb);
+
+        /**
+         * Merges a `web`, `workers[]`, or `reverb` block into the args for the
+         * underlying `sst.aws.Service`. Simple options (`size`, `cpu`,
+         * `memory`, `permissions`) stay first-class; everything else lives
+         * under `advanced` with the old top-level keys kept as deprecated
+         * aliases (the `advanced` value wins when both are set).
+         */
+        const resolveBlockServiceArgs = (
+          label: string,
+          config?: LaravelServiceArgs & LaravelBackgroundTasksArgs,
+        ): Record<string, unknown> => {
+          const advanced = config?.advanced ?? {};
+
+          for (const key of findDeprecatedTopLevelKeys(config)) {
+            if (
+              (advanced as Record<string, unknown>)[key] === undefined &&
+              (config as Record<string, unknown>)[key] !== undefined
+            ) {
+              console.warn(
+                `[sst-laravel] ${label}.${key} is deprecated. Use ${label}.advanced.${key} instead.`,
+              );
+            }
+          }
+
+          const { loadBalancer, transform, ...advancedPassthrough } =
+            resolveAdvancedArgs(config) as Record<string, unknown> & {
+              loadBalancer?: unknown;
+              transform?: Record<string, unknown>;
+            };
+
+          return {
+            ...buildSizeDefaults(config),
+            ...buildServiceArgs(config),
+            ...advancedPassthrough,
+            ...(loadBalancer !== undefined ? { loadBalancer } : {}),
+            ...(transform !== undefined ? { transform } : {}),
+          };
+        };
 
         // Determine the path where our plugin will save build files.
         // SST sets __dirname to the .sst/platform directory.
@@ -520,9 +636,38 @@ export class LaravelService extends Component {
             return undefined;
         };
 
+        const clusterNetwork = normalizeClusterVpc(args.vpc);
         const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
-            vpc: normalizeClusterVpc(args.vpc),
+            vpc: clusterNetwork.vpc,
         });
+
+        /**
+         * SST only gives containers a public IP when the cluster gets the
+         * `sst.aws.Vpc` itself. We pass a plain object so we can choose the
+         * subnets, so set the public IP on the ECS service to match. The
+         * user's `advanced.transform.service` still runs after this.
+         */
+        const withContainerNetwork = (
+            userTransform: unknown,
+        ): ServiceResourceTransform => {
+            const assignPublicIp = clusterNetwork.assignPublicIp;
+
+            if (!assignPublicIp) {
+                return userTransform as ServiceResourceTransform;
+            }
+
+            return composeTransform<{
+                networkConfiguration?: PulumiInput<object>;
+            }>((serviceArgs) => {
+                serviceArgs.networkConfiguration = all([
+                    serviceArgs.networkConfiguration,
+                    assignPublicIp,
+                ]).apply(([networkConfiguration, publicIp]) => ({
+                    ...networkConfiguration,
+                    assignPublicIp: publicIp,
+                }));
+            }, userTransform) as ServiceResourceTransform;
+        };
 
         const addWebService = () => {
             const webBuildPath = path.resolve(pluginBuildPath, 'web');
@@ -535,13 +680,24 @@ export class LaravelService extends Component {
                 }),
             };
 
+            const webResolved = resolveBlockServiceArgs(
+                'web',
+                args.web,
+            ) as {
+                loadBalancer?: ServiceArgs['loadBalancer'];
+                transform?: Record<string, unknown>;
+                [key: string]: unknown;
+            };
+            const { loadBalancer: webLoadBalancer, transform: webTransform } =
+                webResolved;
+
             this.services['web'] = new sst.aws.Service(
                 `${name}-Web`,
                 {
                     cluster,
                     link: getLinks(),
                     permissions: args.permissions,
-                    ...buildServiceArgs(args.web),
+                    ...webResolved,
 
                     /**
                      * Image passed or use our default provided image.
@@ -552,10 +708,9 @@ export class LaravelService extends Component {
                     environment: envVariables,
                     scaling: args.web?.scaling,
 
-                    loadBalancer:
-                        args.web && args.web.loadBalancer
-                            ? args.web.loadBalancer
-                            : {
+                    loadBalancer: webLoadBalancer
+                        ? webLoadBalancer
+                        : {
                                   domain: args.web?.domain,
                                   ports: buildDefaultPublicPorts({
                                       hasDomain: Boolean(args.web?.domain),
@@ -576,7 +731,8 @@ export class LaravelService extends Component {
                     },
 
                     transform: {
-                        ...(args.web?.transform ?? {}),
+                        ...((webTransform as Record<string, unknown>) ?? {}),
+                        service: withContainerNetwork(webTransform?.service),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (
@@ -618,25 +774,43 @@ export class LaravelService extends Component {
                 CUSTOM_CONF_PATH: workerBuildPath.replace(absSitePath, ''),
             };
 
+            const workerLabel =
+                serviceKey === 'reverb'
+                    ? 'reverb'
+                    : `workers[${(workerConfig.name as string) ?? serviceKey}]`;
+            const workerResolved = resolveBlockServiceArgs(
+                workerLabel,
+                workerConfig,
+            ) as {
+                loadBalancer?: ServiceArgs['loadBalancer'];
+                transform?: Record<string, unknown>;
+                [key: string]: unknown;
+            };
+            const {
+                loadBalancer: workerLoadBalancer,
+                transform: workerTransform,
+            } = workerResolved;
+
             this.services[serviceKey] = new sst.aws.Service(
                 serviceName,
                 {
                     cluster,
                     link: getLinks(),
                     permissions: args.permissions,
-                    ...buildServiceArgs(workerConfig),
+                    ...workerResolved,
 
                     image: getImage(ImageType.Worker, imgBuildArgs),
                     scaling: workerConfig.scaling,
                     environment: getEnvironmentVariables(),
-                    loadBalancer: workerConfig.loadBalancer,
+                    loadBalancer: workerLoadBalancer,
 
                     dev: {
                         command: devCommand,
                     },
 
                     transform: {
-                        ...(workerConfig.transform ?? {}),
+                        ...((workerTransform as Record<string, unknown>) ?? {}),
+                        service: withContainerNetwork(workerTransform?.service),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (
@@ -668,19 +842,28 @@ export class LaravelService extends Component {
             }
 
             const reverbPort: Port = `${reverbConfig.port}/http`;
+            const reverbAdvanced = resolveAdvancedArgs(reverbConfig) as {
+                loadBalancer?: ServiceArgs['loadBalancer'];
+            };
             const reverbWorkerConfig: LaravelWorkerConfig = {
                 ...reverbConfig,
                 name: 'reverb',
-                loadBalancer: reverbConfig.loadBalancer ?? {
-                    domain: reverbConfig.domain,
-                    ports: buildDefaultPublicPorts({
-                        hasDomain: Boolean(reverbConfig.domain),
-                        forwardPort: reverbConfig.port,
-                    }),
-                    health: {
-                        [reverbPort]: {
-                            path: '/apps',
-                            successCodes: '200-499',
+                // Keep the load balancer in `advanced` so the worker service
+                // resolution does not warn about our own default.
+                loadBalancer: undefined,
+                advanced: {
+                    ...reverbConfig.advanced,
+                    loadBalancer: reverbAdvanced.loadBalancer ?? {
+                        domain: reverbConfig.domain,
+                        ports: buildDefaultPublicPorts({
+                            hasDomain: Boolean(reverbConfig.domain),
+                            forwardPort: reverbConfig.port,
+                        }),
+                        health: {
+                            [reverbPort]: {
+                                path: '/apps',
+                                successCodes: '200-499',
+                            },
                         },
                     },
                 },
@@ -729,31 +912,56 @@ export class LaravelService extends Component {
             addReverbService();
         }
 
-        function normalizeClusterVpc(
-            vpc: LaravelArgs['vpc'],
-        ): LaravelArgs['vpc'] {
+        /**
+         * Picks the subnets the containers run in when `vpc` is an
+         * `sst.aws.Vpc`.
+         *
+         * With NAT, containers stay in the private subnets and reach the
+         * internet through it. Without NAT, private subnets have no route
+         * out, so containers could not even pull their image from ECR. They
+         * run in the public subnets with a public IP instead, which is what
+         * SST does by default. The VPC security group still only accepts
+         * inbound traffic from inside the VPC (the load balancer).
+         */
+        function normalizeClusterVpc(vpc: LaravelArgs['vpc']): {
+            vpc: LaravelArgs['vpc'];
+            assignPublicIp?: Output<boolean>;
+        } {
             if (
                 !vpc ||
                 typeof vpc !== 'object' ||
                 !('publicSubnets' in vpc) ||
                 !('nodes' in vpc)
             ) {
-                return vpc;
+                return { vpc };
             }
 
             const cloudmapNamespace = vpc.nodes?.cloudmapNamespace;
 
             if (!cloudmapNamespace) {
-                return vpc;
+                return { vpc };
             }
 
+            const hasNat = all([
+                vpc.nodes.natGateways,
+                vpc.nodes.natInstances,
+            ]).apply(
+                ([natGateways, natInstances]) =>
+                    natGateways.length > 0 || natInstances.length > 0,
+            );
+
             return {
-                id: vpc.id,
-                securityGroups: vpc.securityGroups,
-                containerSubnets: vpc.privateSubnets,
-                loadBalancerSubnets: vpc.publicSubnets,
-                cloudmapNamespaceId: cloudmapNamespace.id,
-                cloudmapNamespaceName: cloudmapNamespace.name,
+                vpc: {
+                    id: vpc.id,
+                    securityGroups: vpc.securityGroups,
+                    containerSubnets: hasNat.apply((nat) =>
+                        nat ? vpc.privateSubnets : vpc.publicSubnets,
+                    ),
+                    loadBalancerSubnets: vpc.publicSubnets,
+                    cloudmapNamespaceId: cloudmapNamespace.id,
+                    cloudmapNamespaceName: cloudmapNamespace.name,
+                },
+                assignPublicIp: hasNat.apply((nat) => !nat),
             };
         }
 
@@ -803,6 +1011,9 @@ export class LaravelService extends Component {
 
             if (normalizedLines.join('\n') !== lines.join('\n')) {
                 fs.writeFileSync(dockerIgnore, normalizedLines.join('\n'));
+                componentMessages.push(
+                    `Updated ${dockerIgnore} to exclude .sst but keep .sst/laravel for the Docker build.`,
+                );
             }
 
             return img;
@@ -853,19 +1064,23 @@ export class LaravelService extends Component {
                     resources.push(link.resource);
 
                     // If there's an envCallback, call it and merge the result
+                    const linkObject = link as {
+                        resource: any;
+                        envFrom?: EnvCallback;
+                        environment?: EnvCallback;
+                        envCallback?: EnvCallback;
+                    };
+
+                    if (linkObject.envFrom && linkObject.environment) {
+                        throw new Error(
+                            'A linked resource cannot set both `envFrom` and `environment`. Use `envFrom`.',
+                        );
+                    }
+
                     const callback =
-                        (
-                            link as {
-                                environment?: EnvCallback;
-                                envCallback?: EnvCallback;
-                            }
-                        ).environment ||
-                        (
-                            link as {
-                                environment?: EnvCallback;
-                                envCallback?: EnvCallback;
-                            }
-                        ).envCallback;
+                        linkObject.envFrom ||
+                        linkObject.environment ||
+                        linkObject.envCallback;
                     if (callback) {
                         const callbackResult = callback(link.resource);
                         Object.assign(customEnv, callbackResult);
@@ -1132,13 +1347,14 @@ export class LaravelService extends Component {
     }
 
     /**
-     * The URL of the service.
+     * The URL of the web service.
      *
-     * If `public.domain` is set, this is the URL with the custom domain.
+     * If `web.domain` is set, this is the URL with the custom domain.
      * Otherwise, it's the auto-generated load balancer URL.
+     * `undefined` when no `web` service is configured.
      */
     public get url() {
-        return this.services['web'].url;
+        return this.services['web']?.url;
     }
 
     /**
@@ -1146,9 +1362,10 @@ export class LaravelService extends Component {
      *
      * If `reverb.domain` is set, this is the URL with the custom domain.
      * Otherwise, it's the auto-generated load balancer URL.
+     * `undefined` when no `reverb` service is configured.
      */
     public get reverbUrl() {
-        return this.services['reverb'].url;
+        return this.services['reverb']?.url;
     }
 
     /**

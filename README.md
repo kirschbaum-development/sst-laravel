@@ -33,13 +33,21 @@ npm install @kirschbaum-development/sst-laravel --save
 
 ## Deploy with an AI agent
 
-You can let your coding agent handle the full setup. Start in your Laravel application and give the agent this prompt before you install the package:
+Start in your Laravel application and paste this into your coding agent:
 
 ```text
-Install @kirschbaum-development/sst-laravel in this Laravel application. Then read node_modules/@kirschbaum-development/sst-laravel/resources/boost/skills/sst-laravel/SKILL.md and follow it to set up and deploy the application. Continue until /up is healthy.
+Fetch and follow the instructions at https://raw.githubusercontent.com/kirschbaum-development/sst-laravel/main/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
 ```
 
-The skill inspects the Laravel application, checks AWS access, prepares the smallest valid configuration, deploys it, and verifies the live health endpoint. It does not print secret values.
+The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and prepares the smallest working configuration. Before the first deploy, it shows you what will be created and the monthly cost, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
+
+To install or update only the skill:
+
+```bash
+npx sst-laravel skill:install
+```
+
+With [Laravel Boost](https://laravel.com/docs/boost) set up, this adds the skill to `.ai/skills` and runs `php artisan boost:update`. Otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
 
 ## Quick start
 
@@ -85,6 +93,24 @@ const app = new LaravelService('MyLaravelApp', {
 ```
 
 Check all the `web` options [here](https://github.com/kirschbaum-development/sst-laravel/blob/main/docs/api.md#web).
+
+#### Container size
+
+Instead of raw `cpu`/`memory` numbers, you can pick a size: `small` (0.5 vCPU / 1 GB), `medium` (1 vCPU / 2 GB), or `large` (2 vCPU / 4 GB). Setting `cpu` or `memory` directly wins over `size`.
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    size: 'small',
+    scaling: {
+      min: 1,
+      max: 3,
+    }
+  },
+});
+```
+
+Need something SST-specific (architecture, logging, custom load balancer)? Put it under `web.advanced` — for example `web: { advanced: { architecture: 'arm64' } }`. The simple options above cover the rest.
 
 #### Load balancer health check
 
@@ -457,7 +483,7 @@ Both engines inject `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. 
 
 Set `port` in the link properties to use another port. Set `sslCa` to change the CA bundle path. The default path is `/etc/ssl/certs/ca-certificates.crt`, which applies to the package's Debian-based containers. Passwords and the Postgres connection URL are marked as Pulumi secrets.
 
-Laravel must retain its standard `MYSQL_ATTR_SSL_CA` option for MySQL, or `DB_URL` option for Postgres, in `config/database.php`. The Postgres URL includes the credentials and TLS settings so certificate verification also works after `php artisan config:cache`. Laravel gives URL values precedence over individual `DB_*` values. To change Postgres credentials, change the link properties or override the full `DB_URL` in an `environment` callback.
+Laravel must retain its standard `MYSQL_ATTR_SSL_CA` option for MySQL, or `DB_URL` option for Postgres, in `config/database.php`. The Postgres URL includes the credentials and TLS settings so certificate verification also works after `php artisan config:cache`. Laravel gives URL values precedence over individual `DB_*` values. To change Postgres credentials, change the link properties or override the full `DB_URL` in an `envFrom` callback.
 
 This also works with `config.environment.secrets` (`RemoteEnvVault`). Set `config.environment.autoInject: false` to disable injection. Only links with the explicit `provider: 'planetscale'` property use these defaults.
 
@@ -471,7 +497,7 @@ const app = new LaravelService('MyLaravelApp', {
     email, 
     {
       resource: database,
-      environment: (database: sst.aws.Postgres) => ({
+      envFrom: (database: sst.aws.Postgres) => ({
         CUSTOM_DB_HOST: database.host.apply(host => host.toString()),
         CUSTOM_DB_NAME: database.database.apply(database => database.toString()),
         CUSTOM_DB_USER: database.username.apply(username => username.toString()),
@@ -480,7 +506,7 @@ const app = new LaravelService('MyLaravelApp', {
     },
     {
       resource: redis,
-      environment: (redis: sst.aws.Redis) => ({
+      envFrom: (redis: sst.aws.Redis) => ({
         QUEUE_CONNECTION: 'redis',
         QUEUE_REDIS_HOST: redis.host.apply(host => host ? `tls://${host}` : ''),
         QUEUE_REDIS_PORT: redis.port.apply(port => port.toString()),
@@ -491,7 +517,7 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones.
+The callback function receives the resource as a parameter and should return an object with the custom environment variables. The default environment variables are still set, so you can either override them or add new ones. (The older `environment` name for this callback still works.)
 
 #### Disabling the auto-inject of environment variables
 
@@ -555,6 +581,24 @@ npx sst-laravel deploy --stage production
 ```
 
 > **Note:** If you're using `RemoteEnvVault` for secrets management, you should use `sst-laravel deploy` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
+
+## Readiness and Status
+
+Before deploying, check that the machine and app are ready:
+
+```bash
+npx sst-laravel doctor
+```
+
+It checks that the package is installed, tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+
+AI agents can print the full deploy guide with `npx sst-laravel guide`, or the short config reference with `npx sst-laravel guide --reference`.
+
+After deploying, check everything in one view (running tasks plus the `/up` health endpoint):
+
+```bash
+npx sst-laravel status --stage production --url https://app.example.com
+```
 
 ## Accessing Containers
 
