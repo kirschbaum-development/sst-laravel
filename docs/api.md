@@ -96,6 +96,14 @@ sst-laravel guide
 sst-laravel guide --reference
 ```
 
+#### `skill:install`
+
+Install or update the SST Laravel agent skill. When Laravel Boost 2.0+ is set up for at least one agent, it copies the skill into `.ai/skills/sst-laravel/` and runs `php artisan boost:update`. Otherwise it installs the skill from GitHub with the [skills CLI](https://github.com/vercel-labs/skills).
+
+```bash
+sst-laravel skill:install
+```
+
 #### `doctor`
 
 Check that the machine and Laravel app are ready to deploy. Covers tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.

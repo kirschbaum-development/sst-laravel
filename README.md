@@ -33,25 +33,21 @@ npm install @kirschbaum-development/sst-laravel --save
 
 ## Deploy with an AI agent
 
-You can let your coding agent handle the full setup. Start in your Laravel application and paste this prompt:
+Start in your Laravel application and paste this into your coding agent:
 
 ```text
-Set up SST Laravel in this Laravel app and deploy it to AWS until /up is healthy.
-
-Steps:
-1. Install the package: `npm install @kirschbaum-development/sst-laravel --save`.
-2. Read the deploy guide with `npx sst-laravel guide` and follow it.
-3. Run `npx sst-laravel doctor` and show me what it finds.
-4. Run `npx sst-laravel init` if there is no sst.config.ts.
-5. Keep the first deploy small: web only, no domain, health check at /up, env file .env.dev.
-6. Before you deploy, tell me in plain words: AWS account, region, stage, what will be created, and what it costs per month. Wait for my yes.
-7. Deploy with `npx sst-laravel deploy --stage dev`, then check it with `npx sst-laravel status --stage dev --url <the-url-from-the-deploy>` and show me the URL.
-8. Never print secret values. Do not put AWS keys in .env files. Do not deploy to production unless I say so.
-
-If you get stuck, show the exact error and what you checked (running tasks, health endpoint, recent logs).
+Fetch and follow the instructions at https://raw.githubusercontent.com/kirschbaum-development/sst-laravel/main/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
 ```
 
-The agent inspects the Laravel application, checks AWS access, prepares the smallest working configuration, deploys it, and verifies the live health endpoint. It does not print secret values.
+The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and prepares the smallest working configuration. Before the first deploy, it shows you what will be created and the monthly cost, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
+
+To install or update only the skill:
+
+```bash
+npx sst-laravel skill:install
+```
+
+With [Laravel Boost](https://laravel.com/docs/boost) set up, this adds the skill to `.ai/skills` and runs `php artisan boost:update`. Otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
 
 ## Quick start
 

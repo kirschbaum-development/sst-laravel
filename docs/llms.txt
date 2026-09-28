@@ -7,7 +7,8 @@ Deploy Laravel on AWS Fargate (containers). Full docs:
 
 ```bash
 npm install @kirschbaum-development/sst-laravel --save  # required: sst.config.ts imports it
-npx sst-laravel guide                    # full step-by-step deploy guide
+npx sst-laravel skill:install            # install/update the skill (.ai/skills with Laravel Boost)
+npx sst-laravel guide                    # same guide as the skill, from the installed package
 npx sst-laravel doctor                   # readiness check
 npx sst-laravel init                     # creates sst.config.ts (minimal)
 npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy)
