@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.
 - `doctor` checks that the package is installed in the project.
 - `init` installs the skill the same way as `skill:install`. It only uses Laravel Boost when `boost.json` lists agents (`boost:update` fails otherwise), and the skills CLI now installs from GitHub so `npx skills update` works.
+- Documentation moved from the README into topic pages in `docs/` (getting started, web, workers, Reverb, environment variables, linking resources, deploying, CLI, troubleshooting), published at [docs.kirschbaumdevelopment.com](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/). The README is now a short overview. The CLI reference now also covers `command:run`, `install`, and `github-iam`.
 
 ### Fixed
 

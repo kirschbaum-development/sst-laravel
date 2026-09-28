@@ -41,91 +41,7 @@ const env = new RemoteEnvVault("Env", {
 
 ### CLI Commands
 
-The following CLI commands are available for managing environment variables:
-
-#### `env:push`
-
-Push environment variables from a local `.env` file to AWS Secrets Manager.
-
-```bash
-sst-laravel env:push [options]
-```
-
-**Options:**
-- `-s, --stage <stage>` - SST stage name
-- `-i, --input <file>` - Input file path (default: `.env`)
-- `-f, --force` - Push without confirmation
-
-**Example:**
-```bash
-# Push .env.production to the production stage
-sst-laravel env:push --stage production --input .env.production
-
-# Push .env to staging with confirmation
-sst-laravel env:push --stage staging
-```
-
-#### `env:pull`
-
-Pull environment variables from AWS Secrets Manager to a local `.env` file.
-
-```bash
-sst-laravel env:pull [options]
-```
-
-**Options:**
-- `-s, --stage <stage>` - SST stage name
-- `-o, --output <file>` - Output file path (default: `.env.{stage}`)
-- `-f, --force` - Overwrite existing file without confirmation
-
-**Example:**
-```bash
-# Pull from production to .env.production
-sst-laravel env:pull --stage production
-
-# Pull from staging to a custom file
-sst-laravel env:pull --stage staging --output .env.local
-```
-
-#### `guide`
-
-Print the step-by-step deploy guide for AI agents (the SST Laravel skill). Use `--reference` for the short config reference (`docs/llms.txt`).
-
-```bash
-sst-laravel guide
-sst-laravel guide --reference
-```
-
-#### `skill:install`
-
-Install or update the SST Laravel agent skill. When Laravel Boost 2.0+ is set up for at least one agent, it copies the skill into `.ai/skills/sst-laravel/` and runs `php artisan boost:update`. Otherwise it installs the skill from GitHub with the [skills CLI](https://github.com/vercel-labs/skills).
-
-```bash
-sst-laravel skill:install
-```
-
-#### `doctor`
-
-Check that the machine and Laravel app are ready to deploy. Covers tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.
-
-```bash
-sst-laravel doctor
-```
-
-#### `status`
-
-Check a deployment in one view: running tasks plus an optional health-endpoint check.
-
-```bash
-sst-laravel status --stage production --url https://app.example.com
-```
-
-**Options:**
-- `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
-- `-c, --cluster <arn>` - ECS cluster ARN (skips auto-detection)
-- `-r, --region <region>` - AWS region (default: `AWS_REGION` or `us-east-1`)
-- `-u, --url <url>` - Public app URL to health-check
-- `-p, --path <path>` - Health path to request (default: `/up`)
+Use `sst-laravel env:push` and `sst-laravel env:pull` to manage the stored variables. See the [CLI reference](cli.md) for every command and its options.
 
 ### Usage with LaravelService
 
@@ -224,7 +140,7 @@ MySQL uses `MYSQL_ATTR_SSL_CA` for certificate verification. Postgres uses `DB_U
 
 Postgres URL values take precedence over individual `DB_*` values. Change connection values in the link properties, or override the full `DB_URL` with an `envFrom` callback. Use `sslCa` to change the CA bundle for either engine.
 
-Both environment file and `RemoteEnvVault` injection use this mapping. `config.environment.autoInject: false` disables it. Unmarked links are not detected as PlanetScale databases. See the [PlanetScale setup examples](../README.md#planetscale).
+Both environment file and `RemoteEnvVault` injection use this mapping. `config.environment.autoInject: false` disables it. Unmarked links are not detected as PlanetScale databases. See the [PlanetScale setup examples](linking-resources.md#planetscale).
 
 ### `permissions`
 - **Type:** `Array<{ actions: string[]; resources: string[] }>`

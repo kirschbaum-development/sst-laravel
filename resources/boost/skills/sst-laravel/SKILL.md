@@ -32,7 +32,7 @@ If the user selects `Start setup`, continue immediately. The initial request alr
 Read the documentation for the installed package version before you change the application:
 
 - In an application, run `npx sst-laravel guide --reference` first (short), then read `node_modules/@kirschbaum-development/sst-laravel/docs/api.md` only for the options you need, plus the `package.json` version in that folder.
-- In the SST Laravel package repository, read `docs/llms.txt`, `README.md`, `docs/api.md`, and `package.json`.
+- In the SST Laravel package repository, read `docs/llms.txt`, `docs/README.md` (it links every guide), `docs/api.md`, and `package.json`.
 - Run `npx sst-laravel --help` and the relevant subcommand help before use. Do not invent options that the installed CLI does not show.
 
 Use official SST, Laravel, and AWS documentation only when the local package documentation does not answer a version-sensitive question.

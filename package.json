@@ -50,7 +50,7 @@
   "bugs": {
     "url": "https://github.com/kirschbaum-development/sst-laravel/issues"
   },
-  "homepage": "https://github.com/kirschbaum-development/sst-laravel#readme",
+  "homepage": "https://docs.kirschbaumdevelopment.com/projects/sst-laravel/",
   "bin": {
     "sst-laravel": "dist/bin/cli.js"
   },

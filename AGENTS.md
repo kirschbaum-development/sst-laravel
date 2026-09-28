@@ -27,6 +27,14 @@ This project is an NPM package, and it is an extension of SST to add some functi
 - Never log or expose secrets/passwords
 - Set proper file permissions (0o755 for scripts, 0o777 for s6 executables)
 
+## Documentation
+
+- The docs live in this repository. The website (https://docs.kirschbaumdevelopment.com, repo `kirschbaum-development/docs`) imports `README.md`, every `.md` file in `docs/`, and `CHANGELOG.md` from here. Don't edit the imported copies in that repo.
+- `README.md` is a short overview. Guides go in `docs/<topic>.md`, one topic per file, starting with a `# Title` heading.
+- When adding or removing a page, update the tables in both `docs/README.md` and `README.md`.
+- Use relative links between files (`docs/web.md`, `api.md#web`), not `github.com/.../blob/main/...` URLs. The importer rewrites relative links into website links.
+- `docs/` ships in the npm package and agents read it from `node_modules`. `docs/llms.txt` (printed by `sst-laravel guide --reference`) and `docs/agent-setup.md` (fetched from `main` by the README agent prompt) are for agents; keep them in sync with option and command changes.
+
 ## Documenting API
 
 - When asked to document the API, you should document the `LaravelService` class in the `laravel-sst.ts` file.

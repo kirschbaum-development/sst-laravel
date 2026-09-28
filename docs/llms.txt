@@ -1,7 +1,8 @@
 # SST Laravel — agent quick reference
 
 Deploy Laravel on AWS Fargate (containers). Full docs:
-`node_modules/@kirschbaum-development/sst-laravel/docs/api.md`.
+`node_modules/@kirschbaum-development/sst-laravel/docs/` (guides listed in
+`README.md`, every option in `api.md`).
 
 ## Setup flow (in the Laravel app folder)
 
