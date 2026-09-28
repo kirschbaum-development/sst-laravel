@@ -1,15 +1,21 @@
 # SST Laravel — agent quick reference
 
-Deploy Laravel on AWS Fargate (containers). Full docs: `docs/api.md`.
+Deploy Laravel on AWS Fargate (containers). Full docs:
+`node_modules/@kirschbaum-development/sst-laravel/docs/api.md`.
 
 ## Setup flow (in the Laravel app folder)
 
 ```bash
-npx -y @kirschbaum-development/sst-laravel doctor   # readiness check
-npx sst-laravel init                                 # creates sst.config.ts (minimal)
-npx sst-laravel deploy --stage dev                   # deploy (vault-aware, use instead of sst deploy)
+npm install @kirschbaum-development/sst-laravel --save  # required: sst.config.ts imports it
+npx sst-laravel guide                    # full step-by-step deploy guide
+npx sst-laravel doctor                   # readiness check
+npx sst-laravel init                     # creates sst.config.ts (minimal)
+npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy)
 npx sst-laravel status --stage dev --url https://<url-from-deploy>  # verify tasks + /up
 ```
+
+Install the package before any `npx sst-laravel` command. Until it is
+installed, `npx` looks for a different, unscoped package with that name.
 
 Never print secret values. Never put AWS keys in `.env` files. Never deploy to
 `production` unless the user said so.
@@ -25,9 +31,11 @@ const app = new LaravelService("MyApp", {
 return { url: app.url };
 ```
 
-`new sst.aws.Vpc("MyVpc")` with no options is cheapest (~$0.50/mo). Only add
-`nat: "ec2"` (~$6/mo) when private resources need internet. Avoid
-`nat: "managed"` (~$65/mo) unless you need the scale.
+`new sst.aws.Vpc("MyVpc")` with no options is cheapest (~$0.50/mo). Without
+NAT, containers run in public subnets with a public IP (~$3.65/mo each);
+inbound traffic still only comes through the load balancer. Add `nat: "ec2"`
+(~$13/mo) to keep containers private, e.g. for a fixed outbound IP. Avoid
+`nat: "managed"` (~$73/mo) unless you need the scale.
 
 ## Add only what the app needs
 

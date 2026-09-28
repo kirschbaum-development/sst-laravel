@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildServiceArgs,
+  composeTransform,
   findDeprecatedTopLevelKeys,
   resolveAdvancedArgs,
 } from '../src/service-args';
@@ -91,5 +92,49 @@ describe('findDeprecatedTopLevelKeys', () => {
         loadBalancer: {},
       }),
     ).toEqual(['architecture', 'loadBalancer']);
+  });
+});
+
+describe('composeTransform', () => {
+  const internal = (args: Record<string, unknown>) => {
+    args.networkConfiguration = 'internal';
+  };
+
+  it('runs only the internal transform when the user has none', () => {
+    const args: Record<string, unknown> = {};
+    composeTransform(internal)(args, {}, 'Web');
+
+    expect(args).toEqual({ networkConfiguration: 'internal' });
+  });
+
+  it('runs a user function after the internal transform', () => {
+    const args: Record<string, unknown> = {};
+    const user = (a: Record<string, unknown>, _opts: unknown, name: string) => {
+      a.seen = a.networkConfiguration;
+      a.name = name;
+    };
+
+    composeTransform(internal, user)(args, {}, 'Web');
+
+    expect(args).toEqual({
+      networkConfiguration: 'internal',
+      seen: 'internal',
+      name: 'Web',
+    });
+  });
+
+  it('merges a user object over the internal changes', () => {
+    const args: Record<string, unknown> = { desiredCount: 1 };
+
+    composeTransform(internal, {
+      networkConfiguration: 'user',
+      enableExecuteCommand: true,
+    })(args, {}, 'Web');
+
+    expect(args).toEqual({
+      desiredCount: 1,
+      networkConfiguration: 'user',
+      enableExecuteCommand: true,
+    });
   });
 });

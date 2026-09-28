@@ -33,18 +33,20 @@ npm install @kirschbaum-development/sst-laravel --save
 
 ## Deploy with an AI agent
 
-You can let your coding agent handle the full setup. Start in your Laravel application and paste this prompt — no install needed first:
+You can let your coding agent handle the full setup. Start in your Laravel application and paste this prompt:
 
 ```text
 Set up SST Laravel in this Laravel app and deploy it to AWS until /up is healthy.
 
 Steps:
-1. Run `npx -y @kirschbaum-development/sst-laravel doctor` and show me what it finds.
-2. Run `npx sst-laravel init` if there is no sst.config.ts.
-3. Keep the first deploy small: web only, no domain, health check at /up, env file .env.dev.
-4. Before you deploy, tell me in plain words: AWS account, region, stage, what will be created, and what it costs per month. Wait for my yes.
-5. Deploy with `npx sst-laravel deploy --stage dev`, then check it with `npx sst-laravel status --stage dev --url <the-url-from-the-deploy>` and show me the URL.
-6. Never print secret values. Do not put AWS keys in .env files. Do not deploy to production unless I say so.
+1. Install the package: `npm install @kirschbaum-development/sst-laravel --save`.
+2. Read the deploy guide with `npx sst-laravel guide` and follow it.
+3. Run `npx sst-laravel doctor` and show me what it finds.
+4. Run `npx sst-laravel init` if there is no sst.config.ts.
+5. Keep the first deploy small: web only, no domain, health check at /up, env file .env.dev.
+6. Before you deploy, tell me in plain words: AWS account, region, stage, what will be created, and what it costs per month. Wait for my yes.
+7. Deploy with `npx sst-laravel deploy --stage dev`, then check it with `npx sst-laravel status --stage dev --url <the-url-from-the-deploy>` and show me the URL.
+8. Never print secret values. Do not put AWS keys in .env files. Do not deploy to production unless I say so.
 
 If you get stuck, show the exact error and what you checked (running tasks, health endpoint, recent logs).
 ```
@@ -592,7 +594,9 @@ Before deploying, check that the machine and app are ready:
 npx sst-laravel doctor
 ```
 
-It checks tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+It checks that the package is installed, tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+
+AI agents can print the full deploy guide with `npx sst-laravel guide`, or the short config reference with `npx sst-laravel guide --reference`.
 
 After deploying, check everything in one view (running tasks plus the `/up` health endpoint):
 

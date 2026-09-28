@@ -11,7 +11,8 @@
  * - large:  2 vCPU / 4 GB   — about $72/month
  *
  * The load balancer (~$16/month) and VPC (~$0.50/month) are extra and shared
- * by all services.
+ * by all services. Without NAT, each task also gets a public IP
+ * (~$3.65/month).
  */
 export const SERVICE_SIZES = {
   small: { cpu: '0.5 vCPU', memory: '1 GB' },

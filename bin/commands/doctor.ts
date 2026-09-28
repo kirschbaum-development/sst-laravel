@@ -107,6 +107,19 @@ export const doctorCommand = new Command('doctor')
       detail: isLaravel ? 'laravel/framework found in composer.json' : 'no laravel/framework in composer.json — run this in your Laravel folder',
     });
 
+    // sst.config.ts imports the package, and `npx sst-laravel` only runs this
+    // CLI once it is installed in the project.
+    const packageInstalled = fs.existsSync(
+      path.join(cwd, 'node_modules', '@kirschbaum-development', 'sst-laravel', 'package.json'),
+    );
+    results.push({
+      label: 'SST Laravel package',
+      ok: packageInstalled,
+      detail: packageInstalled
+        ? 'installed in this project'
+        : 'not installed — run `npm install @kirschbaum-development/sst-laravel --save`',
+    });
+
     const envExample = readFileIfExists(path.join(cwd, '.env.example'));
     if (envExample) {
       const drivers = [

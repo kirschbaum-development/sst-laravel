@@ -88,7 +88,7 @@ export function buildServiceArgs<
  * Values in `advanced` win over the same key set directly on the block.
  */
 export function resolveAdvancedArgs<
-  T extends { advanced?: Record<string, unknown> } & Partial<
+  T extends { advanced?: LaravelAdvancedArgs } & Partial<
     Record<DeprecatedTopLevelKey, unknown>
   >,
 >(config?: T): Record<string, unknown> {
@@ -127,4 +127,27 @@ export function findDeprecatedTopLevelKeys<
   return DEPRECATED_TOP_LEVEL_KEYS.filter(
     (key) => (config as Record<string, unknown>)[key] !== undefined,
   );
+}
+
+/**
+ * Combines an internal resource transform with the user's own transform from
+ * `advanced.transform`. The internal one runs first, so the user's function or
+ * object still has the last word. Objects are shallow-merged into the args,
+ * the same way SST applies an object transform.
+ */
+export function composeTransform<T extends object>(
+  internal: (args: T, opts: unknown, name: string) => void,
+  user?: unknown,
+): (args: T, opts: unknown, name: string) => undefined {
+  return (args, opts, name) => {
+    internal(args, opts, name);
+
+    if (typeof user === 'function') {
+      user(args, opts, name);
+    } else if (user && typeof user === 'object') {
+      Object.assign(args, user);
+    }
+
+    return undefined;
+  };
 }

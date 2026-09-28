@@ -31,6 +31,7 @@ import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import { buildWebServerEnvironment } from './src/web-server';
 import {
   buildServiceArgs,
+  composeTransform,
   findDeprecatedTopLevelKeys,
   LaravelAdvancedArgs,
   resolveAdvancedArgs,
@@ -45,6 +46,9 @@ import {
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
 export type { PlanetScaleProperties } from './src/planetscale-env.js';
+
+/** The `transform.service` hook of `sst.aws.Service` (the ECS service). */
+type ServiceResourceTransform = NonNullable<ServiceArgs['transform']>['service'];
 
 enum ImageType {
     Web = 'web',
@@ -632,9 +636,38 @@ export class LaravelService extends Component {
             return undefined;
         };
 
+        const clusterNetwork = normalizeClusterVpc(args.vpc);
         const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
-            vpc: normalizeClusterVpc(args.vpc),
+            vpc: clusterNetwork.vpc,
         });
+
+        /**
+         * SST only gives containers a public IP when the cluster gets the
+         * `sst.aws.Vpc` itself. We pass a plain object so we can choose the
+         * subnets, so set the public IP on the ECS service to match. The
+         * user's `advanced.transform.service` still runs after this.
+         */
+        const withContainerNetwork = (
+            userTransform: unknown,
+        ): ServiceResourceTransform => {
+            const assignPublicIp = clusterNetwork.assignPublicIp;
+
+            if (!assignPublicIp) {
+                return userTransform as ServiceResourceTransform;
+            }
+
+            return composeTransform<{
+                networkConfiguration?: PulumiInput<object>;
+            }>((serviceArgs) => {
+                serviceArgs.networkConfiguration = all([
+                    serviceArgs.networkConfiguration,
+                    assignPublicIp,
+                ]).apply(([networkConfiguration, publicIp]) => ({
+                    ...networkConfiguration,
+                    assignPublicIp: publicIp,
+                }));
+            }, userTransform) as ServiceResourceTransform;
+        };
 
         const addWebService = () => {
             const webBuildPath = path.resolve(pluginBuildPath, 'web');
@@ -699,6 +732,7 @@ export class LaravelService extends Component {
 
                     transform: {
                         ...((webTransform as Record<string, unknown>) ?? {}),
+                        service: withContainerNetwork(webTransform?.service),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (
@@ -776,6 +810,7 @@ export class LaravelService extends Component {
 
                     transform: {
                         ...((workerTransform as Record<string, unknown>) ?? {}),
+                        service: withContainerNetwork(workerTransform?.service),
                         image: addEnvironmentFileImageDependency,
                         taskDefinition: (args) => {
                             args.containerDefinitions = (
@@ -819,15 +854,16 @@ export class LaravelService extends Component {
                 advanced: {
                     ...reverbConfig.advanced,
                     loadBalancer: reverbAdvanced.loadBalancer ?? {
-                    domain: reverbConfig.domain,
-                    ports: buildDefaultPublicPorts({
-                        hasDomain: Boolean(reverbConfig.domain),
-                        forwardPort: reverbConfig.port,
-                    }),
-                    health: {
-                        [reverbPort]: {
-                            path: '/apps',
-                            successCodes: '200-499',
+                        domain: reverbConfig.domain,
+                        ports: buildDefaultPublicPorts({
+                            hasDomain: Boolean(reverbConfig.domain),
+                            forwardPort: reverbConfig.port,
+                        }),
+                        health: {
+                            [reverbPort]: {
+                                path: '/apps',
+                                successCodes: '200-499',
+                            },
                         },
                     },
                 },
@@ -876,31 +912,56 @@ export class LaravelService extends Component {
             addReverbService();
         }
 
-        function normalizeClusterVpc(
-            vpc: LaravelArgs['vpc'],
-        ): LaravelArgs['vpc'] {
+        /**
+         * Picks the subnets the containers run in when `vpc` is an
+         * `sst.aws.Vpc`.
+         *
+         * With NAT, containers stay in the private subnets and reach the
+         * internet through it. Without NAT, private subnets have no route
+         * out, so containers could not even pull their image from ECR. They
+         * run in the public subnets with a public IP instead, which is what
+         * SST does by default. The VPC security group still only accepts
+         * inbound traffic from inside the VPC (the load balancer).
+         */
+        function normalizeClusterVpc(vpc: LaravelArgs['vpc']): {
+            vpc: LaravelArgs['vpc'];
+            assignPublicIp?: Output<boolean>;
+        } {
             if (
                 !vpc ||
                 typeof vpc !== 'object' ||
                 !('publicSubnets' in vpc) ||
                 !('nodes' in vpc)
             ) {
-                return vpc;
+                return { vpc };
             }
 
             const cloudmapNamespace = vpc.nodes?.cloudmapNamespace;
 
             if (!cloudmapNamespace) {
-                return vpc;
+                return { vpc };
             }
 
+            const hasNat = all([
+                vpc.nodes.natGateways,
+                vpc.nodes.natInstances,
+            ]).apply(
+                ([natGateways, natInstances]) =>
+                    natGateways.length > 0 || natInstances.length > 0,
+            );
+
             return {
-                id: vpc.id,
-                securityGroups: vpc.securityGroups,
-                containerSubnets: vpc.privateSubnets,
-                loadBalancerSubnets: vpc.publicSubnets,
-                cloudmapNamespaceId: cloudmapNamespace.id,
-                cloudmapNamespaceName: cloudmapNamespace.name,
+                vpc: {
+                    id: vpc.id,
+                    securityGroups: vpc.securityGroups,
+                    containerSubnets: hasNat.apply((nat) =>
+                        nat ? vpc.privateSubnets : vpc.publicSubnets,
+                    ),
+                    loadBalancerSubnets: vpc.publicSubnets,
+                    cloudmapNamespaceId: cloudmapNamespace.id,
+                    cloudmapNamespaceName: cloudmapNamespace.name,
+                },
+                assignPublicIp: hasNat.apply((nat) => !nat),
             };
         }
 

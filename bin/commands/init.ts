@@ -6,7 +6,8 @@ import { confirm } from '@inquirer/prompts';
 import { getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
 import { resolveBin } from '../utils/process.js';
 
-const SKILL_DIRECTORY_PATH = path.join(getPackageRoot(), 'resources', 'boost', 'skills', 'sst-laravel');
+const PACKAGE_NAME = '@kirschbaum-development/sst-laravel';
+const SKILL_DIRECTORY_PATH =path.join(getPackageRoot(), 'resources', 'boost', 'skills', 'sst-laravel');
 const SKILL_FILE_PATH = path.join(SKILL_DIRECTORY_PATH, 'SKILL.md');
 
 const runProcess = (command: string, args: string[], cwd: string) => {
@@ -161,6 +162,21 @@ export const initCommand = new Command('init')
         });
       } else {
         console.log('SST is already installed');
+      }
+
+      // sst.config.ts imports this package, so it must be installed in the
+      // project even when `init` runs through `npx -y`.
+      const hasSstLaravel =
+        packageJson.dependencies?.[PACKAGE_NAME] || packageJson.devDependencies?.[PACKAGE_NAME];
+
+      if (!hasSstLaravel) {
+        const { version } = JSON.parse(
+          fs.readFileSync(path.join(getPackageRoot(), 'package.json'), 'utf-8'),
+        );
+
+        console.log('SST Laravel not found in project. Installing SST Laravel...');
+        await runProcess('npm', ['install', '--save', `${PACKAGE_NAME}@^${version}`], cwd);
+        console.log('SST Laravel installed successfully');
       }
 
       const initTemplatePath = getTemplatePath('sst.config.init.template');

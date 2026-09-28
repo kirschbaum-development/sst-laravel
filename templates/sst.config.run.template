@@ -3,9 +3,14 @@
     /**
      * A VPC is required — containers (Fargate) can only run inside one.
      * This default has no NAT gateway, so it stays cheap (about $0.50/month
-     * for service discovery). Only add `nat: "ec2"` (~$6/month, cheapest NAT
-     * option) if resources in private subnets (like a database) need internet
-     * access. Avoid `nat: "managed"` (~$65/month) unless you need the scale.
+     * for service discovery). Without NAT, containers run in the public
+     * subnets with a public IP (~$3.65/month each); inbound traffic still
+     * only comes through the load balancer.
+     *
+     * Add `nat: "ec2"` (~$13/month for the default 2 zones) to keep
+     * containers in private subnets, for example when a third party needs a
+     * fixed outbound IP. Avoid `nat: "managed"` (~$73/month) unless you need
+     * the scale.
      *
      * To reuse an existing VPC instead of creating one:
      * const vpc = sst.aws.Vpc.get("MyVpc", "vpc-12345678901234567");
@@ -53,8 +58,8 @@
 
       // Add these only when the app needs them:
       //
-      // Database (Postgres). Needs `nat: "ec2"` on the VPC above if the
-      // database must reach the internet.
+      // Database (Postgres). It sits in the VPC's private subnets, and the
+      // containers reach it with or without NAT.
       // const database = new sst.aws.Postgres('MyDB', { vpc });
       // link: [database],
       //

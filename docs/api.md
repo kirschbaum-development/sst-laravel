@@ -87,6 +87,15 @@ sst-laravel env:pull --stage production
 sst-laravel env:pull --stage staging --output .env.local
 ```
 
+#### `guide`
+
+Print the step-by-step deploy guide for AI agents (the SST Laravel skill). Use `--reference` for the short config reference (`docs/llms.txt`).
+
+```bash
+sst-laravel guide
+sst-laravel guide --reference
+```
+
 #### `doctor`
 
 Check that the machine and Laravel app are ready to deploy. Covers tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.
@@ -226,6 +235,8 @@ permissions: [
 ### `vpc`
 - **Type:** `ClusterArgs["vpc"]`
 - **Description:** VPC configuration for the ECS cluster. Inherited from SST's Cluster component.
+
+With an `sst.aws.Vpc`, containers run in the private subnets when the VPC has NAT (`nat: "ec2"` or `nat: "managed"`). Without NAT, private subnets have no route to the internet, so containers could not pull their image. They run in the public subnets with a public IP instead (~$3.65/month per task). Either way, the VPC security group only accepts inbound traffic from inside the VPC, so requests still come through the load balancer.
 
 ### `web`
 - **Type:** `LaravelWebArgs`

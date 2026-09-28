@@ -14,17 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `envFrom` as the preferred name for the per-link environment callback (`environment` still works).
 - `sst-laravel doctor` command: one readiness check for tools, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
 - `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary.
+- `sst-laravel guide` command: prints the agent deploy guide (the skill), or the short config reference with `--reference`.
 - `docs/llms.txt`: short agent quick reference (minimal config, common recipes, failure checklist).
 
 ### Changed
 
-- `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$6/month) is documented as the cheapest NAT when private resources need internet.
+- `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$13/month) is documented for keeping containers in private subnets.
 - SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set.
 - Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
-- README agent prompt is self-contained (no `node_modules` reading) and the skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
+- README agent prompt is self-contained: it installs the package, then reads the guide with `sst-laravel guide` (no `node_modules` reading). The skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
+- `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.
+- `doctor` checks that the package is installed in the project.
 
 ### Fixed
 
+- Containers in an `sst.aws.Vpc` without NAT now run in the public subnets with a public IP, like SST's default. They were placed in private subnets with no route to the internet, so they could not pull their image and never started. VPCs with NAT keep their containers in private subnets.
 - `app.url` and `app.reverbUrl` return `undefined` instead of throwing when the `web`/`reverb` service is not configured.
 - `config.php` type corrected from `Input<Number>` to `Input<number>`.
 - Aurora database detection no longer reads the async `port` into a sync variable (always `undefined`); it uses the engine name when available and an async port check otherwise.

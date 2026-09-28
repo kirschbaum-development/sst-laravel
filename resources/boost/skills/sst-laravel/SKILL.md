@@ -21,7 +21,7 @@ If the user requests the overview, explain these points in plain words:
 - A normal setup creates: a private network (VPC), a load balancer (the front door that sends web traffic to the box), the running container itself, and logs you can read.
 - The package also supports background workers (queues, scheduler, Horizon), WebSockets (Reverb), custom domains, stages (dev, production), and scaling.
 - Good parts: you own the infrastructure, deploys repeat the same way every time, the box is isolated, and updates happen without downtime.
-- Costs and trade-offs: you pay while things run — roughly $12/month for a small container, $16/month for the load balancer, $0.50/month for the network. A database or extra services add more. Builds take a few minutes.
+- Costs and trade-offs: you pay while things run — roughly $18/month for a small container plus $3.65/month for its public IP, $16/month for the load balancer, $0.50/month for the network. A database or extra services add more. Builds take a few minutes.
 
 Keep the overview short. After it, continue with the inspection below unless the user asks you to stop.
 
@@ -31,7 +31,7 @@ If the user selects `Start setup`, continue immediately. The initial request alr
 
 Read the documentation for the installed package version before you change the application:
 
-- In an application, read `docs/llms.txt` first (short), then `docs/api.md` only for the options you need, plus the installed `package.json` version.
+- In an application, run `npx sst-laravel guide --reference` first (short), then read `node_modules/@kirschbaum-development/sst-laravel/docs/api.md` only for the options you need, plus the `package.json` version in that folder.
 - In the SST Laravel package repository, read `docs/llms.txt`, `README.md`, `docs/api.md`, and `package.json`.
 - Run `npx sst-laravel --help` and the relevant subcommand help before use. Do not invent options that the installed CLI does not show.
 
@@ -60,7 +60,13 @@ Find the Laravel root. Inspect `composer.json`, `package.json`, `.env.example`, 
 - mail and external services;
 - a custom domain and DNS provider.
 
-Then run the readiness check — it covers tools, AWS login, region, drivers, trusted proxies, and git-ignored secrets in one go:
+Install the package if `package.json` does not list it yet. `sst.config.ts` imports it, and `npx sst-laravel` only runs this CLI once it is installed — before that, `npx` looks for a different, unscoped package:
+
+```bash
+npm install @kirschbaum-development/sst-laravel --save
+```
+
+Then run the readiness check — it covers the install, tools, AWS login, region, drivers, trusted proxies, and git-ignored secrets in one go:
 
 ```bash
 npx sst-laravel doctor
@@ -70,7 +76,7 @@ Fix anything marked `FIX` before continuing. Do not change an AWS profile or reg
 
 ## 2. Prepare the smallest valid first deployment
 
-Install `@kirschbaum-development/sst-laravel` if it is missing. If no SST config exists, run:
+If no SST config exists, run:
 
 ```bash
 npx sst-laravel init
@@ -106,7 +112,7 @@ Do not replace an existing environment strategy only to follow this baseline. Fo
 
 After the baseline is clear, add or import resources that the application needs. Use `docs/llms.txt` and `docs/api.md` for the exact `LaravelService` options.
 
-- The default VPC has no NAT gateway (cheapest). Only add `nat: "ec2"` to the VPC when private resources need internet access. Avoid `nat: "managed"` unless scale demands it.
+- The default VPC has no NAT gateway (cheapest). Containers then run in public subnets with a public IP, and inbound traffic still only comes through the load balancer. Add `nat: "ec2"` only when containers must stay in private subnets, for example for a fixed outbound IP. Avoid `nat: "managed"` unless scale demands it.
 - Link a database, Redis, bucket, or SST secret when SST manages it.
 - Import an existing resource only after you verify its identifiers and ownership.
 - Add a worker for Horizon, the scheduler, or another long-running process only when the application uses it.
