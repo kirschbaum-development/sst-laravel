@@ -164,6 +164,8 @@ Supported resources with automatic environment variable injection:
 - `Postgres` - Sets `DB_CONNECTION`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_PORT`
 - `Mysql` - Sets `DB_CONNECTION`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_PORT`
 - `Aurora` - Sets database variables based on port (5432 for Postgres, 3306 for MySQL)
+- PlanetScale MySQL (Vitess) `sst.Linkable` - Sets `DB_CONNECTION=mysql`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_PORT`, and `MYSQL_ATTR_SSL_CA`
+- PlanetScale Postgres `sst.Linkable` - Sets `DB_CONNECTION=pgsql`, `DB_HOST`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`, `DB_PORT`, `DB_SSLMODE=verify-full`, and `DB_URL` with TLS settings
 - `Redis` - Sets `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - `Email` - Sets `MAIL_MAILER` to 'ses'
 - `Queue` - Sets `SQS_QUEUE`
@@ -183,6 +185,29 @@ link: [
 ```
 
 (The older `environment` name for this callback still works but `envFrom` is preferred.)
+
+#### PlanetScale link properties
+
+For automatic PlanetScale injection, pass an `sst.Linkable` with these `properties`. The package exports the `PlanetScaleProperties` interface for this object.
+
+| Property | Type | Required | Default |
+| --- | --- | --- | --- |
+| `provider` | `'planetscale'` | Yes | — |
+| `engine` | `'mysql' \| 'postgres'` | No | `'mysql'` |
+| `host` | `Input<string>` | Yes | — |
+| `database` | `Input<string>` | Yes | — |
+| `username` | `Input<string>` | Yes | — |
+| `password` | `Input<string>` | Yes | — |
+| `port` | `Input<number \| string>` | No | `3306` for MySQL; `5432` for Postgres |
+| `sslCa` | `Input<string>` | No | `/etc/ssl/certs/ca-certificates.crt` |
+
+The marker and engine must be literal strings. Connection values can be plain values, promises, or Pulumi outputs. The password and Postgres connection URL remain Pulumi secrets. An incomplete marked link or an invalid engine raises an error without including credential values. For Postgres, `database` is the logical database name, usually `postgres`, not the PlanetScale project name.
+
+MySQL uses `MYSQL_ATTR_SSL_CA` for certificate verification. Postgres uses `DB_URL` with `sslmode=verify-full` and `sslrootcert` so the TLS settings work with Laravel's configuration cache. Laravel must retain the standard MySQL SSL option or Postgres `DB_URL` option in `config/database.php`.
+
+Postgres URL values take precedence over individual `DB_*` values. Change connection values in the link properties, or override the full `DB_URL` with an `envFrom` callback. Use `sslCa` to change the CA bundle for either engine.
+
+Both environment file and `RemoteEnvVault` injection use this mapping. `config.environment.autoInject: false` disables it. Unmarked links are not detected as PlanetScale databases. See the [PlanetScale setup examples](../README.md#planetscale).
 
 ### `permissions`
 - **Type:** `Array<{ actions: string[]; resources: string[] }>`

@@ -8,15 +8,18 @@ import { Queue } from "../../../../.sst/platform/src/components/aws/queue.js";
 import { Aurora } from "../../../../.sst/platform/src/components/aws/aurora.js";
 import { Bucket } from "../../../../.sst/platform/src/components/aws/bucket.js";
 import { Secret } from "../../../../.sst/platform/src/components/secret.js";
+import type { Link } from "../../../../.sst/platform/src/components/link.js";
+import { applyPlanetScaleEnv, getPlanetScaleProperties } from './planetscale-env.js';
 
 type EnvType = Record<string, string | Output<string>>|Record<string, string | Output<string | undefined> | undefined>;
 type Database = Postgres | Mysql | Aurora | pulumiAws.rds.Instance;
-type LinkSupportedTypes = Database | Email | Queue | Redis | Bucket | Secret;
+type LinkSupportedTypes = Database | Email | Queue | Redis | Bucket | Secret | Link.Linkable;
 
 export type EnvCallback = (resource: any) => EnvType;
 export type EnvCallbacks = {
   postgres?: EnvCallback;
   mysql?: EnvCallback;
+  planetscale?: EnvCallback;
   redis?: EnvCallback;
   email?: EnvCallback;
   queue?: EnvCallback;
@@ -26,6 +29,23 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
   let environment: EnvType  = {};
 
   links.forEach((link: LinkSupportedTypes) => {
+    const planetscale = getPlanetScaleProperties(link);
+    if (planetscale || link instanceof Postgres) {
+      // A later database must not inherit another database's URL or TLS settings.
+      delete environment.DB_URL;
+      delete environment.DB_SSLMODE;
+      delete environment.MYSQL_ATTR_SSL_CA;
+    }
+
+    if (planetscale) {
+      environment = {
+        ...environment,
+        ...applyPlanetScaleEnv(planetscale),
+        ...(callbacks?.planetscale ? callbacks.planetscale(link) : {}),
+      };
+      return;
+    }
+
     if (link instanceof Postgres) {
       const defaultEnv = applyDatabaseEnv(link);
 

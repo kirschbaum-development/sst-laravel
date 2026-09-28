@@ -31,6 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updating `.dockerignore` for the Docker build is now reported via the component messages.
 - Corrected `sst deploy` to `sst-laravel deploy` in `RemoteEnvVault` docs and the `init` success message.
 
+## [0.5.2]
+
+### Added
+
+- Automatic Laravel database environment variables and TLS certificate verification for PlanetScale MySQL (Vitess) and Postgres credentials in an `sst.Linkable` with `provider: 'planetscale'`.
+
+## [0.5.0]
+
+### Changed
+
+- **Breaking:** Require SST `^4.17.1`. New projects created with `sst-laravel init` install the same supported version range.
+
 ## [0.3.9]
 
 ### Added

@@ -44,6 +44,7 @@ import {
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
+export type { PlanetScaleProperties } from './src/planetscale-env.js';
 
 enum ImageType {
     Web = 'web',
