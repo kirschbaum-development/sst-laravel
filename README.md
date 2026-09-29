@@ -56,7 +56,7 @@ Start in your Laravel application and paste this into your coding agent:
 Fetch and follow the instructions at https://raw.githubusercontent.com/kirschbaum-development/sst-laravel/main/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
 ```
 
-The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and prepares the smallest working configuration. Before the first deploy, it shows you what will be created and the monthly cost, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
+The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and looks at what your app needs. Before it changes anything, it shows you a plan: what it will create in AWS and the monthly cost, how the deploy works, and how to remove it. It asks what only you can decide, such as whether to add a database, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
 
 To install or update only the skill:
 

@@ -20,7 +20,7 @@ Before deploying, check that the machine and app are ready:
 npx sst-laravel doctor
 ```
 
-It checks that the package is installed, tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+It checks that the package is installed, tool versions, that Docker is running, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
 
 After deploying, check everything in one view (running tasks plus the `/up` health endpoint):
 

@@ -22,7 +22,7 @@ installed, `npx` looks for a different, unscoped package with that name.
 Never print secret values. Never put AWS keys in `.env` files. Never deploy to
 `production` unless the user said so.
 
-## Minimal config (first deploy: web only, no domain, no database)
+## Minimal config (web only, no domain, no database)
 
 ```ts
 const app = new LaravelService("MyApp", {
@@ -39,14 +39,24 @@ inbound traffic still only comes through the load balancer. Add `nat: "ec2"`
 (~$13/mo) to keep containers private, e.g. for a fixed outbound IP. Avoid
 `nat: "managed"` (~$73/mo) unless you need the scale.
 
-## Add only what the app needs
+Rough monthly cost of this setup in us-east-1: ~$46 (small container $18 +
+its public IP $3.65, load balancer $16 + its 2 public IPs $7.30, VPC $0.50).
+
+## Add what the user agreed to
+
+Before any config, show the user a plan: what the app needs, questions
+(database? background work?), what gets created and the monthly cost, how the
+deploy works, and how to remove it (`npx sst remove --stage <stage>`).
 
 ```ts
+const database = new sst.aws.Postgres("MyDatabase", { vpc }); // or sst.aws.Mysql, ~$14/mo
+config: { deployment: { script: "infra/deploy.sh" } },  // runs on each start: put `php artisan migrate --force` in it
 link: [database],                       // auto-injects DB_*/REDIS_*/AWS_* vars
 link: [{ resource: db, envFrom: (db) => ({ CUSTOM: db.host }) }], // extra vars
 web: { domain: "app.example.com" },     // custom domain (https)
 web: { size: "medium", scaling: { min: 1, max: 3 } },  // small|medium|large; cpu/memory win
-workers: [{ horizon: true, scheduler: true }],         // queues / scheduler
+web: { scheduler: true, tasks: { queue: { command: "php artisan queue:work" } } }, // in the web container, no extra cost
+workers: [{ horizon: true, scheduler: true }],         // queues / scheduler in a worker (~$22/mo)
 reverb: { domain: "ws.example.com" },   // WebSockets (or `reverb: true`)
 config: { environment: { secrets: env } },  // RemoteEnvVault instead of file
 web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
@@ -79,7 +89,10 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 - `.env.<stage>` exists, `APP_KEY` set, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`.
 - Stage env file is git-ignored (`git check-ignore .env.dev`).
 - `bootstrap/app.php` has `$middleware->trustProxies(at: "*")`.
-- No migrations at startup until a persistent database exists.
+- Docker is running (the image builds on this machine).
+- No migrations at startup until a persistent database exists. Without a
+  database, set `SESSION_DRIVER=cookie`, `CACHE_STORE=file`,
+  `QUEUE_CONNECTION=sync` so pages still load.
 
 ## If /up is not healthy
 

@@ -71,6 +71,20 @@ export const doctorCommand = new Command('doctor')
       detail: awsVersion ?? 'not found — install it to deploy (https://docs.aws.amazon.com/cli/)',
     });
 
+    // The deploy builds the container image on this machine, so the Docker
+    // daemon must be running, not just installed.
+    const dockerVersion = runCommand('docker --version');
+    const dockerServer = dockerVersion ? runCommand('docker info --format "{{.ServerVersion}}"') : null;
+    results.push({
+      label: 'Docker',
+      ok: dockerServer !== null,
+      detail: dockerServer
+        ? `running (server ${dockerServer})`
+        : dockerVersion
+          ? 'installed but the daemon is not reachable — start Docker (and check your user can access it); the deploy builds the image on this machine'
+          : 'not found — install Docker; the deploy builds the image on this machine (https://docs.docker.com/get-docker/)',
+    });
+
     // AWS identity (never prints secrets, only the account/ARN names)
     const identity = runCommand('aws sts get-caller-identity');
     if (identity) {

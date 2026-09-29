@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `size` option (`small` | `medium` | `large`) on `web`, `workers[]`, and `reverb` mapping to valid Fargate cpu/memory pairs. Explicit `cpu`/`memory` still win over `size`.
 - `advanced` block on `web`, `workers[]`, and `reverb` as the escape hatch for SST experts (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`).
 - `envFrom` as the preferred name for the per-link environment callback (`environment` still works).
-- `sst-laravel doctor` command: one readiness check for tools, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
+- `sst-laravel doctor` command: one readiness check for tools, a running Docker, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
 - `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary.
 - `sst-laravel skill:install` command: installs or updates the agent skill. With Laravel Boost 2.0+ set up, it adds the skill to `.ai/skills` and runs `boost:update`; otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
 - `sst-laravel guide` command: prints the agent deploy guide (the skill), or the short config reference with `--reference`.
@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set. The exception is `loadBalancer`, which has no top-level alias (see above).
 - Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
 - The README agent prompt is now one line that points the agent to `docs/agent-setup.md`. The skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
+- Before writing any config, the agent now shows a plan and waits for a yes: what it found in the app, questions only the user can answer (a database, background work, a domain), what will be created with the monthly cost, how the deploy works, and how to remove it. It no longer leaves out a database silently when the app uses one.
 - `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.
 - `doctor` checks that the package is installed in the project.
 - `init` installs the skill the same way as `skill:install`. It only uses Laravel Boost when `boost.json` lists agents (`boost:update` fails otherwise), and the skills CLI now installs from GitHub so `npx skills update` works.

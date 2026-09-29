@@ -41,10 +41,10 @@ Without Boost, the skill comes from the latest code on GitHub. If the installed 
 
 ## 4. Follow the skill
 
-The skill covers the full flow: `doctor`, `init`, the first deploy, and checking it with `status`. On top of the skill:
+The skill covers the full flow: `doctor`, the plan, `init`, the first deploy, and checking it with `status`. On top of the skill:
 
-- Keep the first deploy small: stage `dev`, web only, no domain, health check at `/up`, env file `.env.dev`.
-- Before the first deploy, tell the user in plain words: AWS account, region, stage, what will be created, and the monthly cost. Wait for their yes. This replaces the skill's rule that a deploy request is approval enough.
+- Show the plan before you write any config: what you found in the app, the questions only the user can answer (a database, background work), what will be created with the monthly cost, how the deploy works, and how to remove it. Wait for their yes.
+- Suggest a small first deploy: stage `dev`, no domain, health check at `/up`, env file `.env.dev`. When the app uses a database, ask whether to add one. Don't leave it out silently.
 - Never print secret values. Don't put AWS keys in `.env` files. Don't deploy to `production` unless the user says so.
 
 ## 5. Report back

@@ -42,7 +42,7 @@ npx sst-laravel install
 
 ## `doctor`
 
-Checks that the machine and Laravel app are ready to deploy. Covers the installed package, tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.
+Checks that the machine and Laravel app are ready to deploy. Covers the installed package, tool versions, whether Docker is running, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets. Never prints secret values.
 
 ```bash
 npx sst-laravel doctor

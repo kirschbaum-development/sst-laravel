@@ -7,6 +7,7 @@ This guide takes a Laravel application to a running `dev` stage on AWS. To let a
 1. Node.js.
 1. SST 4.17.1 or later within version 4. The `init` command installs SST if it is missing.
 1. The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), installed and configured. See the SST guide on [setting up IAM credentials](https://sst.dev/docs/iam-credentials/).
+1. [Docker](https://docs.docker.com/get-docker/), running. The deploy builds the container image on your machine.
 
 ## Install the package
 
@@ -92,7 +93,7 @@ SST Laravel puts the containers behind a load balancer, so Laravel must trust it
 npx sst-laravel doctor
 ```
 
-It checks that the package is installed, tool versions, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+It checks that the package is installed, tool versions, that Docker is running, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
 
 ## Deploy
 
