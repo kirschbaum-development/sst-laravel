@@ -51,8 +51,15 @@ git commit -m "chore: bump version to ${VERSION}"
 echo -e "${GREEN}Pushing commit...${NC}"
 git push
 
-# Create GitHub release
+# Pre-releases (e.g. 0.6.0-beta.1) are not marked as the latest release
+if [[ "$VERSION" == *-* ]]; then
+    RELEASE_FLAG="--prerelease"
+else
+    RELEASE_FLAG="--latest"
+fi
+
+# Create GitHub release, tagging the commit just pushed (not the default branch)
 echo -e "${GREEN}Creating GitHub release v${VERSION}...${NC}"
-gh release create "${VERSION}" --latest --generate-notes
+gh release create "${VERSION}" --target "$(git rev-parse HEAD)" "$RELEASE_FLAG" --generate-notes
 
 echo -e "${GREEN}Successfully published version ${VERSION}!${NC}"

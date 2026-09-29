@@ -25,4 +25,13 @@ jobs:
 
       - run: npm install
       - run: npm run build
-      - run: npm publish --provenance
+      # Pre-releases publish under their own dist-tag (0.6.0-beta.1 -> beta) so `latest` stays on the stable version
+      - run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
+            TAG=${VERSION#*-}
+            TAG=${TAG%%.*}
+          else
+            TAG=latest
+          fi
+          npm publish --provenance --tag "$TAG"
