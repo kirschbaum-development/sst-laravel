@@ -2,26 +2,33 @@ import { Command } from 'commander';
 import { ECSClient, DescribeTaskDefinitionCommand } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
 import { findClusterArn, findTask } from '../utils/ecs.js';
+import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface LogsOptions {
   stage?: string;
   cluster?: string;
-  region: string;
+  region?: string;
   follow: boolean;
   since?: string;
+  filter?: string;
 }
 
+/** Drops ANSI color codes so the output reads cleanly in a terminal log or an agent transcript. */
+export const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+
 export const logsCommand = new Command('logs')
-  .description('Stream CloudWatch logs from a running ECS task')
+  .description('Print or stream the CloudWatch logs of a running ECS task')
   .argument('[service]', 'Service to stream logs from (web, worker, or worker name) - optional')
   .option('-s, --stage <stage>', 'SST stage name (required)')
   .option('-c, --cluster <cluster>', 'ECS cluster name (optional, auto-detected from SST config)')
-  .option('-r, --region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
-  .option('-f, --follow', 'Follow log output (like tail -f)', true)
+  .option('-r, --region <region>', REGION_OPTION_HELP)
+  .option('-f, --follow', 'Keep streaming new log lines (like tail -f)', true)
+  .option('--no-follow', 'Print the recent logs and exit (for scripts and agents)')
   .option('--since <time>', 'Start time for logs (e.g., 5m, 1h, 2d)', '10m')
+  .option('--filter <pattern>', 'Only show lines matching a CloudWatch filter pattern, e.g. "ERROR" or "?migrat ?Exception"')
   .action(async (service: string | undefined, options: LogsOptions) => {
     try {
-      const region = options.region;
+      const region = resolveRegion(options.region);
       const stage = options.stage;
 
       if (!stage) {
@@ -63,24 +70,39 @@ export const logsCommand = new Command('logs')
       }
 
       const containerName = matchingTask.containers?.[0]?.name || 'unknown';
-      console.log(`Streaming logs from: ${containerName}`);
+      console.log(`${options.follow ? 'Streaming' : 'Recent'} logs from: ${containerName}`);
       console.log(`Log group: ${logGroup}`);
+      if (options.follow) {
+        console.log('Press Ctrl+C to stop. Use --no-follow to print the recent logs and exit.');
+      }
       console.log('');
 
       const awsArgs = [
         'logs',
         'tail',
         logGroup,
-        '--since', options.since || '10m'
+        '--since', options.since || '10m',
+        '--format', 'short',
+        '--color', 'off',
       ];
 
       if (options.follow) {
         awsArgs.push('--follow');
       }
 
+      if (options.filter) {
+        awsArgs.push('--filter-pattern', options.filter);
+      }
+
+      // The container itself prints colored lines (e.g. the PHP image banner at
+      // startup), so the output is piped through here and stripped.
       const awsCommand = spawn('aws', awsArgs, {
-        stdio: 'inherit',
+        stdio: ['inherit', 'pipe', 'inherit'],
         env: { ...process.env, AWS_REGION: region }
+      });
+
+      awsCommand.stdout.on('data', (chunk: Buffer) => {
+        process.stdout.write(stripAnsi(chunk.toString()));
       });
 
       awsCommand.on('exit', (code) => {

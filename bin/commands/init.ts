@@ -6,6 +6,7 @@ import { confirm } from '@inquirer/prompts';
 import { getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
 import { resolveBin, runProcess } from '../utils/process.js';
 import { installSkill } from '../utils/skill.js';
+import { ensureGitIgnore, resolveAppName, resolvePhpVersion } from '../utils/project.js';
 
 const PACKAGE_NAME = '@kirschbaum-development/sst-laravel';
 
@@ -102,18 +103,14 @@ export const initCommand = new Command('init')
 
       let initTemplateContent = fs.readFileSync(initTemplatePath, 'utf-8');
 
-      const envPath = path.join(cwd, '.env');
-      let appName = 'my-laravel-app';
+      const app = resolveAppName(cwd);
+      const appName = app.name;
 
-      if (fs.existsSync(envPath)) {
-        const envContent = fs.readFileSync(envPath, 'utf-8');
-        const appNameMatch = envContent.match(/^APP_NAME=(.+)$/m);
-
-        if (appNameMatch && appNameMatch[1]) {
-          const rawAppName = appNameMatch[1].trim().replace(/^["']|["']$/g, '');
-          appName = rawAppName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-          console.log(`Using APP_NAME from .env: ${rawAppName}`);
-        }
+      console.log(`Using app name "${appName}" (from ${app.source}).`);
+      if (app.generic) {
+        console.warn(
+          `Warning: "${appName}" is a generic name. SST keys its state by app name and stage, so another project with the same name deploying to this AWS account would overwrite it. Change \`name\` in sst.config.ts to something unique.`,
+        );
       }
 
       initTemplateContent = initTemplateContent.replace('my-laravel-app', appName);
@@ -151,12 +148,22 @@ export const initCommand = new Command('init')
         process.exit(1);
       }
 
-      const runTemplateContent = fs.readFileSync(runTemplatePath, 'utf-8');
+      // The image copies the local vendor folder, so it needs the PHP it was installed with.
+      const phpVersion = resolvePhpVersion();
+      const runTemplateContent = fs
+        .readFileSync(runTemplatePath, 'utf-8')
+        .replace('php: 8.4,', `php: ${phpVersion},`);
+      console.log(`Containers will run PHP ${phpVersion}.`);
 
       let finalConfig = fs.readFileSync(targetPath, 'utf-8');
       finalConfig = finalConfig.replace('  async run() {\n  },', `  async run() {\n${runTemplateContent}\n  },`);
 
       fs.writeFileSync(targetPath, finalConfig, 'utf-8');
+
+      const ignored = ensureGitIgnore(cwd, ['.sst']);
+      if (ignored.length > 0) {
+        console.log(`Added ${ignored.join(', ')} to .gitignore`);
+      }
 
       const deployTemplatePath = getTemplatePath('deploy.template');
 

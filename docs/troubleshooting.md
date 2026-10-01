@@ -2,10 +2,26 @@
 
 ## The app isn't healthy after a deploy
 
-1. Run `npx sst-laravel status --stage <stage> --url <url>` to see the running tasks and the `/up` health check in one view.
-1. Run `npx sst-laravel logs web --stage <stage>` to see recent errors.
+1. Run `npx sst-laravel status --stage <stage> --url <url> --wait` to see the running tasks and the `/up` health check in one view. The deploy returns before the new tasks pass the health check, so a 502 or 503 in the first minutes only means they are still starting.
+1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors.
 
 The usual causes are a missing `APP_KEY`, wrong environment variable names, a database the containers can't reach, a wrong health check path, or AWS keys in the environment file (see [below](#cd-aws-credentials-are-not-configured)).
+
+## https:// times out on the load balancer address
+
+Without a domain, the load balancer only listens on port 80, so `https://<load-balancer>` times out. Use `http://`, or add a domain (`web.domain`) to get HTTPS.
+
+## "failed to configure registry cache importer" during the build
+
+```
+ERROR: failed to configure registry cache importer: ...: not found
+```
+
+This shows on the first deploy of a stage. SST points Docker at a build cache in your registry, and the cache doesn't exist until a build has run. The build continues without it, and the message goes away on the next deploy.
+
+## The deploy says "not logged in" or uses the wrong account
+
+The commands use the AWS CLI's credentials. With several named profiles, export `AWS_PROFILE=<name>` so `sst-laravel doctor`, `deploy`, `status`, and `sst` itself all use the same one, and log in with `aws sso login --profile <name>`. `npx sst-laravel doctor` shows the account and profile in use.
 
 ## Assets load over HTTP instead of HTTPS
 

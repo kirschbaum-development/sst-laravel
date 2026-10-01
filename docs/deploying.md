@@ -1,8 +1,21 @@
 # Deploying
 
+## What goes into the image
+
+The deploy builds a Docker image of your project folder on your machine and uploads it to a private registry (ECR) in your AWS account. The Dockerfile copies the folder as it is: it doesn't run `composer install` or `npm run build`. Before you deploy:
+
+```bash
+composer install
+npm run build
+```
+
+`vendor/` comes from your machine, dev packages included, and needs the PHP version it was installed with (`config.php`, which `init` sets to your local version). To ship a smaller image, build in CI with `composer install --no-dev --optimize-autoloader` (see [Deploying from GitHub Actions](#deploying-from-github-actions)).
+
+The first deploy writes a `.dockerignore` when the project has none, so the image skips `.git`, `node_modules`, every `.env*` file (the containers get their own `.env`), local SQLite databases, uploads in `storage/app`, logs, and tests. Review it and commit it. Remove `node_modules` from it if the app needs it at runtime, for example for Inertia SSR. An existing `.dockerignore` is kept as it is; only the `.sst` lines are added.
+
 ## Deploy
 
-To deploy your application, use the `sst-laravel deploy` command. You must be authenticated with AWS in your terminal session to deploy.
+To deploy your application, use the `sst-laravel deploy` command. You must be authenticated with AWS in your terminal session to deploy. With several named profiles, export `AWS_PROFILE=<name>` first.
 
 ```bash
 npx sst-laravel deploy --stage {stage}
@@ -20,13 +33,29 @@ Before deploying, check that the machine and app are ready:
 npx sst-laravel doctor
 ```
 
-It checks that the package is installed, tool versions, that Docker is running, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+It checks the tools (including a reachable Docker daemon), the AWS login and region, the app and its dependencies and built assets, `sst.config.ts`, the stage env file, trusted proxies, and that git ignores the env files. It never prints secret values. See [`doctor`](cli.md#doctor) for the full list.
 
-After deploying, check everything in one view (running tasks plus the `/up` health endpoint):
+After deploying, check everything in one view (running tasks plus the `/up` health endpoint). The deploy returns before the new tasks pass the health check, so use `--wait` to keep checking:
 
 ```bash
-npx sst-laravel status --stage production --url https://app.example.com
+npx sst-laravel status --stage production --url https://app.example.com --wait
 ```
+
+`/up` doesn't touch the database. To check the database and the migrations:
+
+```bash
+npx sst-laravel command:run migrate:status --stage production
+```
+
+Without a domain, the app URL is the load balancer address and serves `http://` only. `https://` times out until you add a domain.
+
+## Removing a stage
+
+```bash
+npx sst remove --stage dev
+```
+
+It deletes everything SST created for the stage. With the config from `init`, a database and its data go too, except on `production`, where `removal: "retain"` keeps them. See the [SST docs](https://sst.dev/docs/reference/cli/#remove).
 
 ## PHP version and OPcache
 

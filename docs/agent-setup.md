@@ -26,32 +26,30 @@ If the package is already installed, keep its version. Upgrading can change depl
 npx sst-laravel skill:install
 ```
 
-It puts the `sst-laravel` skill where this project manages skills:
+It copies the `sst-laravel` skill from the installed package, so it matches the commands and options of that version, and puts it where this project manages skills:
 
-- **Laravel Boost 2.0+ set up for at least one agent** (`boost.json` lists `agents`): it copies the skill from the installed package into `.ai/skills/sst-laravel/` and runs `php artisan boost:update`, so Boost installs it for those agents.
-- **Otherwise:** it installs the latest skill from GitHub with the [skills CLI](https://github.com/vercel-labs/skills), for every agent it detects (`.agents/skills/`, agent folders such as `.claude/skills/`, and `skills-lock.json`).
+- **Laravel Boost 2.0+ set up for at least one agent** (`boost.json` lists `agents`): into `.ai/skills/sst-laravel/`, then it runs `php artisan boost:update`, so Boost installs it for those agents.
+- **Otherwise:** into `.agents/skills/sst-laravel/` and into the `skills` folder of every agent set up in the project (`.claude`, `.cursor`, `.gemini`, `.windsurf`, `.codex`).
 
-Run the same command to update the skill later. Commit the skill files so teammates get the same skill (with Boost, `.ai/skills/sst-laravel/`; Boost regenerates the agent folders). If Boost is installed but not set up, don't run `boost:install` yourself; it asks the user which agents to configure.
+Run the same command to update the skill after upgrading the package. Commit the skill files so teammates get the same skill (with Boost, `.ai/skills/sst-laravel/`; Boost regenerates the agent folders). If Boost is installed but not set up, don't run `boost:install` yourself; it asks the user which agents to configure.
 
-Then load the `sst-laravel` skill. If your agent doesn't see it without a restart, read the installed `SKILL.md` directly (the command prints its folder) and follow it now.
-
-If the command fails, for example without network access to GitHub, run `npx sst-laravel guide` instead. It prints the same instructions from the installed package.
-
-Without Boost, the skill comes from the latest code on GitHub. If the installed package is older, trust `npx sst-laravel --help` and the package docs in `node_modules/@kirschbaum-development/sst-laravel/docs/` over the skill for option and command names.
+Then load the `sst-laravel` skill. If your agent doesn't see it without a restart, read the installed `SKILL.md` directly (the command prints its folders) and follow it now. `npx sst-laravel guide` prints the same instructions.
 
 ## 4. Follow the skill
 
 The skill covers the full flow: `doctor`, the plan, `init`, the first deploy, and checking it with `status`. On top of the skill:
 
-- Show the plan before you write any config: what you found in the app, the questions only the user can answer (a database, background work), what will be created with the monthly cost, how the deploy works, and how to remove it. Wait for their yes.
+- Show the plan before you write any config. Start with a few short bullets on why SST Laravel, from [Why SST Laravel](why-sst-laravel.md): infrastructure as code in their own AWS account, auto-scaling, linking AWS resources, and no long-lived AWS keys. Then cover what you found in the app, the questions only the user can answer (a database, background work), what will be created with the monthly cost, how the deploy works, and how to remove it. Wait for their yes.
 - Suggest a small first deploy: stage `dev`, no domain, health check at `/up`, env file `.env.dev`. When the app uses a database, ask whether to add one. Don't leave it out silently.
+- With several AWS profiles on the machine, ask the user which one to use and export `AWS_PROFILE=<name>` for every command.
 - Never print secret values. Don't put AWS keys in `.env` files. Don't deploy to `production` unless the user says so.
 
 ## 5. Report back
 
-You're done when `npx sst-laravel status --stage dev --url <app-url>` passes, or when a blocker needs the user. Tell the user:
+You're done when `npx sst-laravel status --stage dev --url <app-url> --wait` passes, or when a blocker needs the user. Tell the user:
 
 - the app URL, stage, and region;
 - the health check result;
-- the files you created or changed, including the skill files;
+- the files you created or changed, including the skill files and the `.dockerignore` the first deploy writes;
+- how to deploy again and how to remove the stage (`npx sst remove --stage dev`);
 - if you got stuck: the exact error and what you checked (running tasks, health endpoint, recent logs).

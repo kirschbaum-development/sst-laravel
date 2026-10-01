@@ -14,6 +14,8 @@ This package deploys a full-blown infrastructure in AWS, with zero downtime depl
 
 Behind the scenes, we use the powerful PHP containers from [Serverside Up](https://serversideup.net/open-source/docker-php/).
 
+[Why SST Laravel](docs/why-sst-laravel.md) explains what this setup gives you: infrastructure as code, auto-scaling, linked AWS resources, and security without long-lived AWS keys.
+
 ![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/diagram.png)
 
 ## Quick start
@@ -23,6 +25,7 @@ In your Laravel application:
 ```bash
 npm install @kirschbaum-development/sst-laravel --save
 npx sst-laravel init
+npm run build   # the image copies vendor/ and public/build as they are
 npx sst-laravel deploy --stage dev
 ```
 
@@ -56,7 +59,7 @@ Start in your Laravel application and paste this into your coding agent:
 Fetch and follow the instructions at https://raw.githubusercontent.com/kirschbaum-development/sst-laravel/main/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
 ```
 
-The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and looks at what your app needs. Before it changes anything, it shows you a plan: what it will create in AWS and the monthly cost, how the deploy works, and how to remove it. It asks what only you can decide, such as whether to add a database, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
+The agent installs the package and the [SST Laravel skill](resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and looks at what your app needs. Before it changes anything, it shows you a plan: why SST Laravel, what it will create in AWS and the monthly cost, how the deploy works, and how to remove it. It asks what only you can decide, such as whether to add a database, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
 
 To install or update only the skill:
 
@@ -64,7 +67,7 @@ To install or update only the skill:
 npx sst-laravel skill:install
 ```
 
-With [Laravel Boost](https://laravel.com/docs/boost) set up, this adds the skill to `.ai/skills` and runs `php artisan boost:update`. Otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
+It copies the skill from the installed package, so it matches your version. With [Laravel Boost](https://laravel.com/docs/boost) set up, it goes to `.ai/skills` and `php artisan boost:update` runs. Otherwise it goes to `.agents/skills` and the folder of each agent set up in the project.
 
 ## Documentation
 
@@ -72,6 +75,7 @@ Read the full documentation at [docs.kirschbaumdevelopment.com](https://docs.kir
 
 | Page | What it covers |
 | --- | --- |
+| [Why SST Laravel](docs/why-sst-laravel.md) | What SST is, and what the setup gives you: infrastructure as code, auto-scaling, linked AWS resources, and security. |
 | [Getting Started](docs/getting-started.md) | Requirements, installation, the generated `sst.config.ts`, the first deploy, and checking it. |
 | [Web](docs/web.md) | The HTTP service: domain, container size, scaling, health check, HTTPS redirect, and access logs. |
 | [Workers](docs/workers.md) | Horizon, the scheduler, and custom commands in worker containers or in the web container. |
@@ -89,6 +93,7 @@ Read the full documentation at [docs.kirschbaumdevelopment.com](https://docs.kir
 - Node.js.
 - SST 4.17.1 or later within version 4. The `init` command installs SST if it is missing.
 - The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), installed and configured. See the SST guide on [setting up IAM credentials](https://sst.dev/docs/iam-credentials/).
+- [Docker](https://docs.docker.com/get-docker/), running. The deploy builds the container image on your machine.
 
 ## Roadmap
 

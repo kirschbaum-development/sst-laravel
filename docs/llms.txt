@@ -10,14 +10,20 @@ Deploy Laravel on AWS Fargate (containers). Full docs:
 npm install @kirschbaum-development/sst-laravel --save  # required: sst.config.ts imports it
 npx sst-laravel skill:install            # install/update the skill (.ai/skills with Laravel Boost)
 npx sst-laravel guide                    # same guide as the skill, from the installed package
-npx sst-laravel doctor                   # readiness check
+npx sst-laravel doctor                   # readiness check (tools, Docker, AWS, deps, assets, env, git)
 npx sst-laravel init                     # creates sst.config.ts (minimal)
+composer install && npm run build        # the image copies vendor/ and public/build as they are
 npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy)
-npx sst-laravel status --stage dev --url https://<url-from-deploy>  # verify tasks + /up
+npx sst-laravel status --stage dev --url http://<url-from-deploy> --wait  # tasks + /up, keeps checking while tasks start
+npx sst-laravel command:run migrate:status --stage dev   # checks the database (/up does not)
+npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming
+npx sst remove --stage dev               # deletes everything in the stage
 ```
 
 Install the package before any `npx sst-laravel` command. Until it is
 installed, `npx` looks for a different, unscoped package with that name.
+With several AWS profiles, `export AWS_PROFILE=<name>` before every command.
+Without a domain the URL is http only; https:// on the load balancer times out.
 
 Never print secret values. Never put AWS keys in `.env` files. Never deploy to
 `production` unless the user said so.
@@ -44,7 +50,9 @@ its public IP $3.65, load balancer $16 + its 2 public IPs $7.30, VPC $0.50).
 
 ## Add what the user agreed to
 
-Before any config, show the user a plan: what the app needs, questions
+Before any config, show the user a plan: why SST Laravel in a few bullets
+(`why-sst-laravel.md`: infrastructure as code, auto-scaling, linking AWS
+resources, IAM roles instead of AWS keys), what the app needs, questions
 (database? background work?), what gets created and the monthly cost, how the
 deploy works, and how to remove it (`npx sst remove --stage <stage>`).
 
@@ -90,13 +98,20 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 - Stage env file is git-ignored (`git check-ignore .env.dev`).
 - `bootstrap/app.php` has `$middleware->trustProxies(at: "*")`.
 - Docker is running (the image builds on this machine).
+- `vendor/` installed and `public/build` current; the first deploy writes a
+  `.dockerignore` (git, node_modules, .env*, sqlite, uploads, logs): commit it.
+- App `name` in sst.config.ts is unique in the AWS account (SST keys its
+  state by app name + stage).
 - No migrations at startup until a persistent database exists. Without a
   database, set `SESSION_DRIVER=cookie`, `CACHE_STORE=file`,
   `QUEUE_CONNECTION=sync` so pages still load.
 
 ## If /up is not healthy
 
-1. `npx sst-laravel status --stage <stage> --url <url>` — tasks + health in one view.
-2. `npx sst-laravel logs web --stage <stage>` — recent errors (stop it after reading).
+1. `npx sst-laravel status --stage <stage> --url <url> --wait` — tasks + health in
+   one view; 502/503 right after a deploy means the tasks are still starting.
+2. `npx sst-laravel logs web --stage <stage> --no-follow` — recent errors.
 3. Usual causes: missing `APP_KEY`, wrong env names, DB unreachable, wrong health
    path, AWS keys committed in the env file (use the IAM role instead).
+4. `failed to configure registry cache importer ... not found` on the first
+   build is expected.

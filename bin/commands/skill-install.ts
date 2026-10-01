@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { installSkill } from '../utils/skill.js';
 
 export const skillInstallCommand = new Command('skill:install')
-  .description('Install or update the SST Laravel agent skill (in .ai/skills when Laravel Boost is set up, otherwise with the skills CLI)')
+  .description('Install or update the SST Laravel agent skill (in .ai/skills when Laravel Boost is set up, otherwise in .agents/skills and each agent folder)')
   .action(async () => {
     try {
       await installSkill(process.cwd());

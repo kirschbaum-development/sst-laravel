@@ -16,6 +16,7 @@ Everything else can be read as you need it.
 
 | Page | What it covers |
 | --- | --- |
+| [Why SST Laravel](why-sst-laravel.md) | What SST is, and what the setup gives you: infrastructure as code, auto-scaling, linked AWS resources, and security. |
 | [Getting Started](getting-started.md) | Requirements, installation, the generated `sst.config.ts`, the first deploy, and checking it. |
 | [Web](web.md) | The HTTP service: domain, container size, scaling, health check, HTTPS redirect, and access logs. |
 | [Workers](workers.md) | Horizon, the scheduler, and custom commands in worker containers or in the web container. |

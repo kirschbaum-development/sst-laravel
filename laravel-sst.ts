@@ -27,6 +27,7 @@ import { getPackagePath } from './src/config';
 import { RemoteEnvFile } from './src/remote-env-file';
 import { buildReverbEnvironmentVariables } from './src/reverb';
 import { getSecretsFingerprint } from './src/secrets-manager';
+import { ensureDockerIgnore } from './src/docker-ignore';
 import { buildDefaultPublicPorts, Port } from './src/load-balancer';
 import {
   assertLoadBalancerArgs,
@@ -1435,41 +1436,9 @@ export class LaravelService extends Component {
                     ? 'Dockerfile'
                     : (img as { dockerfile: string }).dockerfile;
 
-            // add .sst/laravel to .dockerignore if not exist
-            const dockerIgnore = (() => {
-                let filePath = path.join(context, `${dockerfile}.dockerignore`);
-                if (fs.existsSync(filePath)) return filePath;
-
-                return path.join(context, '.dockerignore');
-            })();
-
-            const content = fs.existsSync(dockerIgnore)
-                ? fs.readFileSync(dockerIgnore).toString()
-                : '';
-
-            const lines = content.split('\n');
-
-            const normalizedLines = [
-                ...lines.filter(
-                    (line) =>
-                        line !== '.sst' &&
-                        line !== '!.sst/laravel' &&
-                        line !== '# sst' &&
-                        line !== '# sst-laravel',
-                ),
-                '',
-                '# sst',
-                '.sst',
-                '',
-                '# sst-laravel',
-                '!.sst/laravel',
-            ];
-
-            if (normalizedLines.join('\n') !== lines.join('\n')) {
-                fs.writeFileSync(dockerIgnore, normalizedLines.join('\n'));
-                componentMessages.push(
-                    `Updated ${dockerIgnore} to exclude .sst but keep .sst/laravel for the Docker build.`,
-                );
+            const dockerIgnoreMessage = ensureDockerIgnore(context, dockerfile);
+            if (dockerIgnoreMessage) {
+                componentMessages.push(dockerIgnoreMessage);
             }
 
             return img;

@@ -5,14 +5,21 @@ import { getPackageRoot } from './sst-config.js';
 import { runProcess } from './process.js';
 
 export const SKILL_NAME = 'sst-laravel';
-export const SKILL_REPOSITORY = 'kirschbaum-development/sst-laravel';
+
+/**
+ * Where the skill goes without Laravel Boost: the shared `.agents/skills`
+ * folder that Codex and the Agent Skills spec read, plus the folder of every
+ * agent already set up in the project.
+ */
+export const SHARED_SKILLS_DIR = path.join('.agents', 'skills');
+export const AGENT_FOLDERS = ['.claude', '.cursor', '.gemini', '.windsurf', '.codex'];
 
 // Custom skills in `.ai/skills` arrived in Laravel Boost 2.0.
 const MIN_BOOST_VERSION = '2.0.0';
 
 export type SkillTarget =
   | { type: 'boost'; version: string }
-  | { type: 'skills-cli'; reason?: string };
+  | { type: 'package'; reason?: string };
 
 export const isVersionAtLeast = (version: string, minimum: string) => {
   const normalize = (input: string) => input.split('.').map((segment) => parseInt(segment, 10) || 0);
@@ -82,25 +89,25 @@ const readBoostAgents = (cwd: string): string[] => {
 /**
  * Laravel Boost manages the skill when it is installed (2.0+) and set up.
  * `boost:update` refuses to run unless `boost.json` lists at least one agent.
- * Everything else goes through the skills CLI.
+ * Everything else gets a copy of the skill from the installed package.
  */
 export const resolveSkillTarget = (cwd: string): SkillTarget => {
   const boostVersion = detectLaravelBoostVersion(cwd);
 
   if (!boostVersion) {
-    return { type: 'skills-cli' };
+    return { type: 'package' };
   }
 
   if (!isVersionAtLeast(boostVersion, MIN_BOOST_VERSION)) {
     return {
-      type: 'skills-cli',
+      type: 'package',
       reason: `Laravel Boost ${boostVersion} does not support custom skills (needs ${MIN_BOOST_VERSION}+).`,
     };
   }
 
   if (readBoostAgents(cwd).length === 0) {
     return {
-      type: 'skills-cli',
+      type: 'package',
       reason: 'Laravel Boost is installed but not set up for any agents (no agents in boost.json). Run `php artisan boost:install` to manage skills with Boost.',
     };
   }
@@ -108,16 +115,20 @@ export const resolveSkillTarget = (cwd: string): SkillTarget => {
   return { type: 'boost', version: boostVersion };
 };
 
+const skillSource = () => path.join(getPackageRoot(), 'resources', 'boost', 'skills', SKILL_NAME);
+
+const copySkill = (target: string) => {
+  fs.mkdirSync(target, { recursive: true });
+  fs.cpSync(skillSource(), target, { recursive: true });
+};
+
 /**
  * Copies the skill from this package into `.ai/skills/` and runs
  * `boost:update`, which installs it for every agent Boost is set up for.
  */
 export const installSkillWithBoost = async (cwd: string) => {
-  const source = path.join(getPackageRoot(), 'resources', 'boost', 'skills', SKILL_NAME);
   const target = path.join(cwd, '.ai', 'skills', SKILL_NAME);
-
-  fs.mkdirSync(target, { recursive: true });
-  fs.cpSync(source, target, { recursive: true });
+  copySkill(target);
 
   console.log(`Copied the skill to ${path.relative(cwd, target)}`);
   console.log('Running boost:update so Boost installs it for your agents...');
@@ -125,18 +136,24 @@ export const installSkillWithBoost = async (cwd: string) => {
 };
 
 /**
- * Installs (or refreshes) the skill from GitHub with the skills CLI
- * (https://github.com/vercel-labs/skills). Interactive terminals get the
- * CLI's agent picker; everything else installs for the detected agents.
+ * Copies the skill from the installed package into `.agents/skills/` and
+ * into the skills folder of every agent set up in the project. The copy
+ * matches the installed package version, so the commands and options it
+ * describes are the ones the CLI has.
  */
-export const installSkillWithSkillsCli = async (cwd: string) => {
-  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+export const installSkillFromPackage = (cwd: string): string[] => {
+  const targets = [
+    path.join(cwd, SHARED_SKILLS_DIR, SKILL_NAME),
+    ...AGENT_FOLDERS.filter((folder) => fs.existsSync(path.join(cwd, folder))).map((folder) =>
+      path.join(cwd, folder, 'skills', SKILL_NAME),
+    ),
+  ];
 
-  await runProcess(
-    'npx',
-    ['--yes', 'skills', 'add', SKILL_REPOSITORY, '--skill', SKILL_NAME, ...(interactive ? [] : ['-y'])],
-    cwd,
-  );
+  for (const target of targets) {
+    copySkill(target);
+  }
+
+  return targets.map((target) => path.relative(cwd, target));
 };
 
 export const installSkill = async (cwd: string) => {
@@ -152,6 +169,6 @@ export const installSkill = async (cwd: string) => {
     console.log(target.reason);
   }
 
-  console.log('Installing the skill with the skills CLI...');
-  await installSkillWithSkillsCli(cwd);
+  const installed = installSkillFromPackage(cwd);
+  console.log(`Copied the skill from the installed package to ${installed.join(', ')}`);
 };

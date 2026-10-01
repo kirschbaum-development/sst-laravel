@@ -48,25 +48,33 @@ Install the package if `package.json` does not list it yet. `sst.config.ts` impo
 npm install @kirschbaum-development/sst-laravel --save
 ```
 
-Then run the readiness check — it covers the install, tools, Docker, AWS login, region, drivers, trusted proxies, and git-ignored secrets in one go:
+The image copies the project folder as it is, so the dependencies and the built assets must be there before a deploy:
+
+```bash
+composer install
+npm run build
+```
+
+Then run the readiness check — it covers the install, tools, Docker, AWS login, region, dependencies and assets, drivers, trusted proxies, and git-ignored secrets in one go:
 
 ```bash
 npx sst-laravel doctor
 ```
 
-Fix anything marked `FIX` before continuing. Docker must be running, because the deploy builds the container image on this machine. Do not change an AWS profile or region without user agreement. Keep your questions for the plan, unless one blocks the inspection (for example, which AWS profile to use).
+Fix anything marked `FIX` before continuing; `warn` items are worth a look. Docker must be running, because the deploy builds the container image on this machine. When the machine has several AWS profiles, ask the user which one to use and export `AWS_PROFILE=<name>` for every command; do not change a profile or region without user agreement. Keep your other questions for the plan, unless one blocks the inspection.
 
 ## 2. Agree on a plan with the user
 
 Before you write any configuration, send the user one message with the plan. Use plain words, and explain each AWS piece in one short line. Cover:
 
-1. **What you found.** The needs from step 1, for example: "stores users and sessions in a database", "has queued jobs", "runs scheduled tasks", "saves uploads to the local disk".
-2. **Questions.** Only the decisions you can't make yourself. Give your recommendation and its monthly cost for each, and ask them all at once (with your question or choice tool when you have one). Usually:
+1. **Why SST Laravel.** Three to five short bullets from `why-sst-laravel.md`: SST and infrastructure as code (the whole setup lives in `sst.config.ts` and runs in the user's own AWS account), auto-scaling, linking any AWS resource in a few lines, and the security it brings (an IAM role instead of long-lived AWS keys, a private network for the database). Point to `node_modules/@kirschbaum-development/sst-laravel/docs/why-sst-laravel.md` for more. Skip this when the project already uses SST Laravel.
+2. **What you found.** The needs from step 1, for example: "stores users and sessions in a database", "has queued jobs", "runs scheduled tasks", "saves uploads to the local disk".
+3. **Questions.** Only the decisions you can't make yourself. Give your recommendation and its monthly cost for each, and ask them all at once (with your question or choice tool when you have one). Usually:
    - **Database**, whenever the app uses one. See [Database choices](#database-choices).
    - **Background work**, when the app has queued jobs or scheduled tasks. For a first deploy, recommend running the scheduler and a queue worker inside the web container (no extra cost, see `workers.md`). A separate worker container costs about $22/month. Without either, jobs need `QUEUE_CONNECTION=sync` and scheduled tasks don't run.
    - **Domain.** Recommend none for the first deploy: the app gets a load balancer address (http only). A domain can come later.
    - **AWS account, region, and stage**, unless the user already chose them. Recommend the `dev` stage.
-3. **What will be created** in their AWS account, with the rough monthly cost (on-demand prices in us-east-1; other regions cost a bit more):
+4. **What will be created** in their AWS account, with the rough monthly cost (on-demand prices in us-east-1; other regions cost a bit more):
 
    | Piece | What it does | About |
    | --- | --- | --- |
@@ -77,8 +85,8 @@ Before you write any configuration, send the user one message with the plan. Use
    | Logs and image registry | Container logs (CloudWatch) and the stored app images (ECR) | Small, grows with traffic and deploys |
 
    That is about $46/month for the web-only setup. Add what the user picks: a database (about $14), Redis (about $12, or $9 with Valkey), a worker container (about $22), a NAT gateway (`nat: "ec2"`, about $13). A `medium` container costs $36 instead of $18, a `large` one $72.
-4. **How the deploy works.** `npx sst-laravel deploy` builds a Docker image of the app on this machine, uploads it to a private image registry in the user's AWS account, and creates or updates the resources above. The first deploy takes the longest (on an ARM machine, the x86 image builds under emulation, which is slower). Later deploys roll out the new image without downtime.
-5. **How to undo it.** `npx sst remove --stage <stage>` deletes everything in the stage. With the config from `init`, that includes a database and its data on every stage except `production`.
+5. **How the deploy works.** `npx sst-laravel deploy` builds a Docker image of the app on this machine, uploads it to a private image registry in the user's AWS account, and creates or updates the resources above. The first deploy takes the longest (on an ARM machine, the x86 image builds under emulation, which is slower). Later deploys roll out the new image without downtime.
+6. **How to undo it.** `npx sst remove --stage <stage>` deletes everything in the stage. With the config from `init`, that includes a database and its data on every stage except `production`.
 
 Wait for the answers. The user's yes to the plan approves the first deploy of that plan (see the safety rules).
 
@@ -102,7 +110,7 @@ npx sst-laravel init
 
 If `init` asks to install this skill and the skill is already active, decline the duplicate installation.
 
-`init` generates a minimal config: one `LaravelService`, web only, no domain, no database, health check at `/up`. Start from it and add only what the user agreed to in the plan. For the first `dev` deploy, an environment file is the shortest path unless the repository already uses `RemoteEnvVault` or SST secrets:
+`init` generates a minimal config: one `LaravelService`, web only, no domain, no database, health check at `/up`. It names the app after the composer project or the folder, and warns when the name is generic; SST keys its state by app name and stage, so the name must be unique in the AWS account. Start from the generated config and add only what the user agreed to in the plan. For the first `dev` deploy, an environment file is the shortest path unless the repository already uses `RemoteEnvVault` or SST secrets:
 
 ```ts
 config: {
@@ -151,22 +159,27 @@ Tell the user that the deploy is starting, with the AWS identity, region, and st
 npx sst-laravel deploy --stage <stage>
 ```
 
-Use this command instead of direct `sst deploy` so that `RemoteEnvVault` works when configured. Keep the full error output if deployment fails.
+Use this command instead of direct `sst deploy` so that `RemoteEnvVault` works when configured. Keep the full error output if deployment fails. A `failed to configure registry cache importer ... not found` line during the first build is expected: the build cache does not exist yet.
+
+The first deploy writes a `.dockerignore` when the project has none, so the image skips `.git`, `node_modules`, `.env*` files, local databases, uploads, and logs. Tell the user, and commit it with the other files.
 
 ## 5. Verify and repair
 
-A successful infrastructure command is not enough. Check tasks and the health endpoint together:
+A successful infrastructure command is not enough. The deploy returns before the new tasks pass the health check, so check tasks and the health endpoint together and keep checking while they start:
 
 ```bash
-npx sst-laravel status --stage <stage> --url <app-url-from-deploy-output>
+npx sst-laravel status --stage <stage> --url <app-url-from-deploy-output> --wait
 ```
+
+Use the URL as the deploy printed it. Without a domain it is `http://`; `https://` on the load balancer address times out.
 
 Confirm all of these items:
 
 - the deploy command exited successfully;
 - at least one web task is running and stable;
 - `GET /up`, or the configured health route, returns a successful HTTP response;
-- the task does not enter a restart loop after the first request.
+- the task does not enter a restart loop after the first request;
+- when a database is linked, `npx sst-laravel command:run migrate:status --stage <stage>` lists the migrations as run. `/up` never touches the database.
 
 If verification fails, the usual causes in order are:
 
@@ -176,7 +189,7 @@ If verification fails, the usual causes in order are:
 4. wrong health path (Laravel ships `/up` on recent versions — confirm the route exists);
 5. AWS keys committed in the env file (remove them and rely on the container role instead).
 
-Read recent errors with `npx sst-laravel logs web --stage <stage>` (it follows logs continuously, so stop it after you collect the useful error). Make one focused fix, redeploy, and verify again.
+Read recent errors with `npx sst-laravel logs web --stage <stage> --no-follow` (add `--since 30m` to go further back, or `--filter "?ERROR ?Exception"` to narrow it down). Make one focused fix, redeploy, and verify again.
 
 Do not ask the user to diagnose an error that you can inspect with the available CLI tools. Stop only when the same blocker needs credentials, a business choice, or permission for a destructive action.
 

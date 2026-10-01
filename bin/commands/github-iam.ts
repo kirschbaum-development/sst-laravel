@@ -8,11 +8,12 @@ import {
 import { findSstConfig, extractSstProjectName } from '../utils/sst-config.js';
 import { detectGitHubRepo } from '../utils/git.js';
 import { ensureGithubOidcProvider, buildTrustPolicy } from '../utils/iam.js';
+import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface GithubIamOptions {
   repo?: string;
   branch: string;
-  region: string;
+  region?: string;
   roleName?: string;
 }
 
@@ -20,11 +21,12 @@ export const githubIamCommand = new Command('github-iam')
   .description('Create an IAM Role on AWS for GitHub Actions OIDC authentication for deployments')
   .option('-r, --repo <repo>', 'GitHub repository in format owner/repo (auto-detected from git remote)')
   .option('-b, --branch <branch>', 'Branch to allow deployments from (use * for all branches)', '*')
-  .option('--region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
+  .option('--region <region>', REGION_OPTION_HELP)
   .option('--role-name <name>', 'Name for the IAM role (defaults to github-actions-{project}-sst-deploy)')
   .action(async (options: GithubIamOptions) => {
     try {
-      const { branch, region } = options;
+      const { branch } = options;
+      const region = resolveRegion(options.region);
       let repo = options.repo;
       let roleName = options.roleName;
 

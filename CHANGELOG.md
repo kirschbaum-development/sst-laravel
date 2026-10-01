@@ -5,18 +5,22 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0]
 
 ### Added
 
 - `size` option (`small` | `medium` | `large`) on `web`, `workers[]`, and `reverb` mapping to valid Fargate cpu/memory pairs. Explicit `cpu`/`memory` still win over `size`.
 - `advanced` block on `web`, `workers[]`, and `reverb` as the escape hatch for SST experts (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`).
 - `envFrom` as the preferred name for the per-link environment callback (`environment` still works).
-- `sst-laravel doctor` command: one readiness check for tools, a running Docker, AWS login/region, Laravel drivers, trusted proxies, `sst.config.ts`, and git-ignored secrets.
-- `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary.
-- `sst-laravel skill:install` command: installs or updates the agent skill. With Laravel Boost 2.0+ set up, it adds the skill to `.ai/skills` and runs `boost:update`; otherwise it uses the [skills CLI](https://github.com/vercel-labs/skills).
+- `sst-laravel doctor` command: one readiness check for tools, a reachable Docker daemon, AWS login (with the profile in use) and region, the installed dependencies and built assets, `sst.config.ts` (app name, PHP version), the stage env file (`--stage`, default `dev`) and its drivers, trusted proxies, and git-ignored secrets. It asks `git check-ignore` about each real env file instead of pattern-matching `.gitignore`, which passed `.env.production` for `.env.dev`. Warnings (`warn`) don't block; `FIX` items do.
+- `sst-laravel status` command: running tasks plus an optional `/up` health check in one non-interactive summary. `--wait` keeps checking while the tasks start, since the deploy returns before they pass the health check. It points out that the load balancer address serves http only.
+- `sst-laravel logs`: `--no-follow` prints the recent logs and exits, `--filter` narrows them with a CloudWatch filter pattern, and the output has no color codes.
+- `sst-laravel deploy` prints the `status --wait` command when it finishes, and a note when the app runs on the http-only load balancer address.
+- `sst-laravel skill:install` command: installs or updates the agent skill from the installed package, so it matches the version in use. With Laravel Boost 2.0+ set up, it adds the skill to `.ai/skills` and runs `boost:update`; otherwise it copies it to `.agents/skills` and the folder of each agent set up in the project.
+- The first deploy writes a `.dockerignore` when the project has none, so the image skips `.git`, `node_modules`, every `.env*` file, local SQLite databases, uploads, logs, and tests. An existing file only gets the `.sst` lines, as before (and no longer grows a blank line on every deploy).
 - `sst-laravel guide` command: prints the agent deploy guide (the skill), or the short config reference with `--reference`.
 - `docs/llms.txt`: short agent quick reference (minimal config, common recipes, failure checklist).
+- `docs/why-sst-laravel.md`: what SST is, and what the setup gives you (infrastructure as code, auto-scaling, linked AWS resources, security without long-lived AWS keys).
 - `docs/agent-setup.md`: setup instructions for agents to fetch. They install the package, install or update the skill with `skill:install`, and follow it.
 - `loadBalancer` options on `web`, `reverb`, and workers with a load balancer, so hardening it no longer needs hand-written `transform` callbacks (#7). Documented in `docs/load-balancer.md`:
   - `loadBalancer.sslPolicy` sets the SSL security policy on the HTTPS/TLS listeners only. HTTP listeners, which reject an SSL policy, are left untouched.
@@ -32,13 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The security group only opens the ports the load balancer listens on, instead of every port and protocol. New connections can fail for a moment while the rules are replaced.
   - Application load balancers drop HTTP headers with an invalid name (anything other than letters, digits, and hyphens). Set `dropInvalidHeaderFields` to `false` in `advanced.transform.loadBalancer` to keep them.
 - `init` now generates a minimal config (web only, env file, no domain/database/workers) with cheapest-VPC guidance. The default VPC has no NAT (~$0.50/month); `nat: "ec2"` (~$13/month) is documented for keeping containers in private subnets.
+- `init` names the app after the composer project or the folder instead of `APP_NAME`, which turned every fresh app into `laravel`, and warns when the name is still generic: SST keys its state by app name and stage, so two projects with the same name in one AWS account overwrite each other. It sets `config.php` to the local PHP version, because the image copies the local `vendor/` folder, and adds `.sst` to `.gitignore`.
+- `status`, `logs`, `ssh`, `command:run`, and `github-iam` take the region from the active AWS profile when `AWS_REGION` is not set, instead of falling back to `us-east-1`.
 - SST passthroughs (`architecture`, `storage`, `logging`, `health`, `executionRole`, `loadBalancer`, `transform`) moved behind `advanced`. The old top-level keys still work but log a deprecation warning; `advanced` wins when both are set. The exception is `loadBalancer`, which has no top-level alias (see above).
 - Per-service `permissions` now override the top-level `permissions` instead of being silently dropped.
 - The README agent prompt is now one line that points the agent to `docs/agent-setup.md`. The skill (`SKILL.md`) uses plain words with `doctor`/`status` wired into every phase.
-- Before writing any config, the agent now shows a plan and waits for a yes: what it found in the app, questions only the user can answer (a database, background work, a domain), what will be created with the monthly cost, how the deploy works, and how to remove it. It no longer leaves out a database silently when the app uses one.
+- Before writing any config, the agent now shows a plan and waits for a yes: a few bullets on why SST Laravel, what it found in the app, questions only the user can answer (a database, background work, a domain), what will be created with the monthly cost, how the deploy works, and how to remove it. It no longer leaves out a database silently when the app uses one.
 - `init` installs `@kirschbaum-development/sst-laravel` in the project when it is missing, since `sst.config.ts` imports it.
 - `doctor` checks that the package is installed in the project.
-- `init` installs the skill the same way as `skill:install`. It only uses Laravel Boost when `boost.json` lists agents (`boost:update` fails otherwise), and the skills CLI now installs from GitHub so `npx skills update` works.
+- `init` installs the skill the same way as `skill:install`. It only uses Laravel Boost when `boost.json` lists agents (`boost:update` fails otherwise).
 - Documentation moved from the README into topic pages in `docs/` (getting started, web, workers, Reverb, environment variables, linking resources, deploying, CLI, troubleshooting), published at [docs.kirschbaumdevelopment.com](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/). The README is now a short overview. The CLI reference now also covers `command:run`, `install`, and `github-iam`.
 
 ### Fixed

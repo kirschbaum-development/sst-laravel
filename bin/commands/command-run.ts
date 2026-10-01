@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
 import { findClusterArn, findTask } from '../utils/ecs.js';
+import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface CommandRunOptions {
   stage?: string;
   cluster?: string;
-  region: string;
+  region?: string;
   service: string;
   container?: string;
   raw: boolean;
@@ -28,13 +29,13 @@ export const commandRunCommand = new Command('command:run')
   .allowUnknownOption(true)
   .option('-s, --stage <stage>', 'SST stage name (required)')
   .option('-c, --cluster <cluster>', 'ECS cluster name (optional, auto-detected from SST config)')
-  .option('-r, --region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
+  .option('-r, --region <region>', REGION_OPTION_HELP)
   .option('--service <service>', 'Service to run the command against (web, worker, or worker name)', 'web')
   .option('--container <container>', 'Container name override')
   .option('--raw', 'Run the provided command instead of prefixing it with "php artisan"', false)
   .action(async (commandParts: string[], options: CommandRunOptions) => {
     try {
-      const region = options.region;
+      const region = resolveRegion(options.region);
       const stage = options.stage;
 
       if (!stage) {

@@ -25,7 +25,9 @@ Install it before any `npx sst-laravel` command. Until it is installed, `npx` lo
 npx sst-laravel init
 ```
 
-`init` creates `sst.config.ts` with the smallest working setup: a VPC and one small web container that reads its environment from `.env.<stage>`. The command also offers to install the bundled `sst-laravel` skill for later agent sessions. It uses Laravel Boost when available. Otherwise, it uses the open `skills` installer.
+`init` creates `sst.config.ts` with the smallest working setup: a VPC and one small web container that reads its environment from `.env.<stage>`. The app name comes from `composer.json` or the folder name, and the PHP version from your machine. It adds `.sst` to `.gitignore`. The command also offers to install the bundled `sst-laravel` skill for later agent sessions, with Laravel Boost when it's set up, otherwise in `.agents/skills` and your agent's folder.
+
+Keep the app name unique within your AWS account: SST keys its state by app name and stage, so two projects with the same name deploying the same stage would overwrite each other.
 
 The generated configuration comes down to this:
 
@@ -87,31 +89,50 @@ SST Laravel puts the containers behind a load balancer, so Laravel must trust it
 })
 ```
 
+## Build the app
+
+The image copies your project folder as it is, so install the dependencies and build the assets first:
+
+```bash
+composer install
+npm run build
+```
+
+See [What goes into the image](deploying.md#what-goes-into-the-image) for what the image includes and leaves out.
+
 ## Check that you're ready
 
 ```bash
 npx sst-laravel doctor
 ```
 
-It checks that the package is installed, tool versions, that Docker is running, AWS login and region, Laravel drivers, trusted proxies, `sst.config.ts`, and that stage env files are ignored by git. It never prints secret values.
+It checks the tools (including a reachable Docker daemon), the AWS login and region, the dependencies and built assets, `sst.config.ts`, the stage env file, trusted proxies, and that git ignores the env files. It never prints secret values. Fix what it marks `FIX`, then run it again.
 
 ## Deploy
 
-You must be authenticated with AWS in your terminal session to deploy.
+You must be authenticated with AWS in your terminal session to deploy. With several named profiles, export `AWS_PROFILE=<name>` so every command uses the same one.
 
 ```bash
 npx sst-laravel deploy --stage dev
 ```
 
-When it finishes, the deploy prints the app URL. Without a domain, this is the load balancer address (http only).
+The first deploy takes several minutes: it builds the image, uploads it, and creates the resources. When it finishes, the deploy prints the app URL. Without a domain, this is the load balancer address, which serves `http://` only; `https://` times out until you add a domain.
 
 ## Check the deployment
 
-Check the running tasks and Laravel's `/up` health endpoint in one view:
+The deploy returns before the new tasks pass the health check. Check the running tasks and Laravel's `/up` health endpoint in one view, and keep checking while they start:
 
 ```bash
-npx sst-laravel status --stage dev --url <url-from-deploy>
+npx sst-laravel status --stage dev --url <url-from-deploy> --wait
 ```
+
+To see what the app logged:
+
+```bash
+npx sst-laravel logs web --stage dev --no-follow
+```
+
+To remove everything the stage created: `npx sst remove --stage dev`.
 
 ## Next steps
 

@@ -2,11 +2,12 @@ import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
 import { findClusterArn, findTask } from '../utils/ecs.js';
+import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface SshOptions {
   stage?: string;
   cluster?: string;
-  region: string;
+  region?: string;
 }
 
 export const sshCommand = new Command('ssh')
@@ -14,10 +15,10 @@ export const sshCommand = new Command('ssh')
   .argument('[service]', 'Service to connect to (web, worker, or worker name) - optional')
   .option('-s, --stage <stage>', 'SST stage name (required)')
   .option('-c, --cluster <cluster>', 'ECS cluster name (optional, auto-detected from SST config)')
-  .option('-r, --region <region>', 'AWS region', process.env.AWS_REGION || 'us-east-1')
+  .option('-r, --region <region>', REGION_OPTION_HELP)
   .action(async (service: string | undefined, options: SshOptions) => {
     try {
-      const region = options.region;
+      const region = resolveRegion(options.region);
       const stage = options.stage;
 
       if (!stage) {
