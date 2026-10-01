@@ -4,7 +4,7 @@
 
 ![](images/deploy.png)
 
-SST Laravel is an unofficial extension of [SST](https://sst.dev), created by [Kirschbaum Development](https://kirschbaumdevelopment.com), for deploying Laravel applications to AWS Fargate in your own AWS account.
+SST Laravel uses [SST](https://sst.dev) to deploy Laravel applications to AWS Fargate in your own AWS account. It is developed by [Kirschbaum Development](https://kirschbaumdevelopment.com).
 
 Define your web service, queue workers, scheduler, Reverb, and linked AWS resources in code. SST Laravel builds the Docker images and deploys the infrastructure for you.
 

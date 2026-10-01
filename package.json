@@ -2,7 +2,7 @@
   "name": "@kirschbaum-development/sst-laravel",
   "version": "0.6.0",
   "type": "module",
-  "description": "An unofficial extension of SST to deploy containerized Laravel applications to AWS Fargate.",
+  "description": "Deploy Laravel applications to AWS Fargate in your own AWS account using SST.",
   "main": "laravel-sst.ts",
   "types": "laravel-sst.ts",
   "exports": {
