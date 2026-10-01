@@ -16,6 +16,8 @@ Everything else can be read as you need it.
 
 | Page | What it covers |
 | --- | --- |
+| [Overview](overview.md) | What gets deployed, the quick start, requirements, and roadmap. |
+| [Onboard your agent](overview.md#onboard-your-agent) | Set up your coding agent with the SST Laravel skill and deployment instructions. |
 | [Why SST Laravel](why-sst-laravel.md) | What SST is, and what the setup gives you: infrastructure as code, auto-scaling, linked AWS resources, and security. |
 | [Getting Started](getting-started.md) | Requirements, installation, the generated `sst.config.ts`, the first deploy, and checking it. |
 | [Web](web.md) | The HTTP service: domain, container size, scaling, health check, HTTPS redirect, and access logs. |

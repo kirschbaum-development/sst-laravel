@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide takes a Laravel application to a running `dev` stage on AWS. To let a coding agent do it for you, see [Deploy with an AI agent](../README.md#deploy-with-an-ai-agent).
+This guide takes a Laravel application to a running `dev` stage on AWS. To let a coding agent do it for you, see [Onboard your agent](overview.md#onboard-your-agent).
 
 ## Requirements
 
