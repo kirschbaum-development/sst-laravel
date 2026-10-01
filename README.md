@@ -1,5 +1,7 @@
 # SST Laravel
 
+[Read the documentation](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/)
+
 ![](https://github.com/kirschbaum-development/sst-laravel/raw/main/images/deploy.png)
 
 SST Laravel is an unofficial extension of [SST](https://sst.dev) created by [Kirschbaum Development](https://kirschbaumdevelopment.com) to deploy your Laravel application to AWS behind a robust, reliable and scalable infrastructure, with all the power of SST.
@@ -71,7 +73,7 @@ It copies the skill from the installed package, so it matches your version. With
 
 ## Documentation
 
-Read the full documentation at [docs.kirschbaumdevelopment.com](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/). The same pages live in [`docs/`](docs/README.md) and ship with the npm package:
+The documentation also lives in [`docs/`](docs/README.md) and ships with the npm package:
 
 | Page | What it covers |
 | --- | --- |
