@@ -2,9 +2,11 @@
 
 ![](../images/deploy.png)
 
+SST Laravel makes it easy to deploy secure, reliable, and scalable Laravel applications to AWS.
+
 SST Laravel uses [SST](https://sst.dev) to deploy Laravel applications to AWS Fargate in your own AWS account. It is developed by [Kirschbaum Development](https://kirschbaumdevelopment.com).
 
-SST is a framework that makes it easy to build modern full-stack applications on your own infrastructure.
+Secure defaults, support for auto-scaling, and deployments with health checks and automatic rollbacks are built in.
 
 ## What gets deployed
 
