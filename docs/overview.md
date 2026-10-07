@@ -1,6 +1,6 @@
 # SST Laravel
 
-![](../images/deploy.png)
+![SST Laravel infrastructure: your Laravel app on Fargate, a load balancer, linked resources, and your AWS account](../images/infrastructure.png)
 
 SST Laravel makes it easy to deploy secure, reliable, and scalable Laravel applications to AWS.
 
