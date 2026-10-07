@@ -1,8 +1,6 @@
-# SST Laravel
+![SST Laravel](images/banner.png "SST Laravel")
 
 [Read the documentation](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/)
-
-![SST Laravel infrastructure: your Laravel app on Fargate, a load balancer, linked resources, and your AWS account](images/infrastructure.png)
 
 SST Laravel makes it easy to deploy secure, reliable, and scalable Laravel applications to AWS.
 
@@ -11,6 +9,8 @@ SST Laravel uses [SST](https://sst.dev) to deploy Laravel applications to AWS Fa
 Secure defaults, support for auto-scaling, and deployments with health checks and automatic rollbacks are built in.
 
 Define your web service, queue workers, scheduler, Reverb, and linked AWS resources in code. SST Laravel builds the Docker images and deploys the infrastructure for you.
+
+![SST Laravel infrastructure: your Laravel app on Fargate, a load balancer, linked resources, and your AWS account](images/infrastructure.png)
 
 ## Documentation
 
