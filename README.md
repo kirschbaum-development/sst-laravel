@@ -1,12 +1,8 @@
 ![SST Laravel](images/banner.png "SST Laravel")
 
-[Read the documentation](https://docs.kirschbaumdevelopment.com/projects/sst-laravel/)
+SST Laravel makes it easy to deploy secure, reliable, and scalable Laravel applications to AWS using all the best practices. It's an extension of [SST](https://sst.dev), which means you get all the power and features of using a good IaC which runs on top of Pulumi.
 
-SST Laravel makes it easy to deploy secure, reliable, and scalable Laravel applications to AWS.
-
-SST Laravel uses [SST](https://sst.dev) to deploy Laravel applications to AWS Fargate in your own AWS account. It is developed by [Kirschbaum Development](https://kirschbaumdevelopment.com).
-
-Secure defaults, support for auto-scaling, and deployments with health checks and automatic rollbacks are built in.
+Secure defaults, support for auto-scaling, role-based permissions with no access keys hanging around, and deployments with health checks and automatic rollbacks are built in.
 
 Define your web service, queue workers, scheduler, Reverb, and linked AWS resources in code. SST Laravel builds the Docker images and deploys the infrastructure for you.
 
