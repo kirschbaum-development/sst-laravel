@@ -30,7 +30,7 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
 
   links.forEach((link: LinkSupportedTypes) => {
     const planetscale = getPlanetScaleProperties(link);
-    if (planetscale || link instanceof Postgres) {
+    if (planetscale || isDatabase(link)) {
       // A later database must not inherit another database's URL or TLS settings.
       delete environment.DB_URL;
       delete environment.DB_SSLMODE;
@@ -46,13 +46,14 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
       return;
     }
 
-    if (link instanceof Postgres) {
+    if (isDatabase(link)) {
       const defaultEnv = applyDatabaseEnv(link);
+      const callback = link instanceof Mysql ? callbacks?.mysql : callbacks?.postgres;
 
       environment = {
         ...environment,
         ...defaultEnv,
-        ...(callbacks?.postgres ? callbacks.postgres(link) : {}),
+        ...(callback ? callback(link) : {}),
       };
     }
 
@@ -98,6 +99,10 @@ export function applyLinkedResourcesEnv(links: LinkSupportedTypes[], callbacks?:
   });
 
   return environment;
+}
+
+function isDatabase(link: unknown): link is Postgres | Mysql | Aurora {
+  return link instanceof Postgres || link instanceof Mysql || link instanceof Aurora;
 }
 
 export function extractSecrets(links: LinkSupportedTypes[]): Secret[] {

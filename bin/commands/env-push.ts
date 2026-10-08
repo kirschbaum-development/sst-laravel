@@ -2,15 +2,16 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
-import { findSstConfig, extractSstProjectName } from '../utils/sst-config.js';
-import { pushSecrets, getSecretInfo, getSecretPath, parseEnvFile, needsChunking, listAvailableStages } from '../utils/secrets-manager.js';
+import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
+import { pushSecrets, getSecretInfo, parseEnvFile, needsChunking, listAvailableStages } from '../utils/secrets-manager.js';
 
 export const envPushCommand = new Command('env:push')
   .description('Push environment variables to AWS Secrets Manager')
   .option('-s, --stage <stage>', 'SST stage name')
+  .option('-p, --path <path>', 'Secrets Manager path (default: the RemoteEnvVault path in sst.config.ts, or /{app}/{stage}/env)')
   .option('-i, --input <file>', 'Input file path (default: .env)')
   .option('-f, --force', 'Push without confirmation')
-  .action(async (options: { stage?: string; input?: string; force?: boolean }) => {
+  .action(async (options: { stage?: string; path?: string; input?: string; force?: boolean }) => {
     try {
       const configPath = findSstConfig();
 
@@ -29,6 +30,12 @@ export const envPushCommand = new Command('env:push')
       // Determine stage
       let stage = options.stage;
       if (!stage) {
+        // Stages can only be listed under the default /{app}/{stage}/env path.
+        if (options.path || extractVaultPathOptions(configPath).some(Boolean)) {
+          console.error('Error: The secrets use a custom path. Pass the stage with --stage <stage>.');
+          process.exit(1);
+        }
+
         const availableStages = await listAvailableStages(appName);
 
         if (availableStages.length === 0) {
@@ -52,7 +59,7 @@ export const envPushCommand = new Command('env:push')
         process.exit(1);
       }
 
-      const secretPath = getSecretPath(appName, stage);
+      const secretPath = options.path || resolveVaultSecretPath(configPath, appName, stage);
 
       // Parse the .env file
       const content = fs.readFileSync(inputPath, 'utf-8');

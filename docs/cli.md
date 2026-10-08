@@ -171,6 +171,7 @@ npx sst-laravel env:push [options]
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name
+- `-p, --path <path>` - Secrets Manager path (default: the `RemoteEnvVault` `path` in `sst.config.ts`, or `/{app}/{stage}/env`)
 - `-i, --input <file>` - Input file path (default: `.env`)
 - `-f, --force` - Push without confirmation
 
@@ -193,6 +194,7 @@ npx sst-laravel env:pull [options]
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name
+- `-p, --path <path>` - Secrets Manager path (default: the `RemoteEnvVault` `path` in `sst.config.ts`, or `/{app}/{stage}/env`)
 - `-o, --output <file>` - Output file path (default: `.env.{stage}`)
 - `-f, --force` - Overwrite existing file without confirmation
 

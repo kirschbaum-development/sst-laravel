@@ -10,6 +10,7 @@ import {
     Output,
     all,
     output,
+    rootStackResource,
     runtime,
 } from '@pulumi/pulumi';
 import { Input } from '../../../.sst/platform/src/components/input.js';
@@ -57,6 +58,7 @@ import {
     buildBackgroundTasks,
     writeS6TaskFiles,
 } from './src/background-tasks';
+import { stageWorkerConf } from './src/worker-conf';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
@@ -745,6 +747,7 @@ export class LaravelService extends Component {
         this.services = {};
 
         // Captured for `function` declarations below, where `this` is unbound.
+        const component = this;
         const componentMessages = this._messages;
 
         args.config = args.config ?? {};
@@ -826,6 +829,7 @@ export class LaravelService extends Component {
         }
 
         const envFilePath = path.resolve(pluginBuildPath, 'deploy', '.env');
+        const workerConfPath = path.resolve(pluginBuildPath, 'conf');
 
         const envFileHasVariable = (variableName: string): boolean => {
             const content = fs.readFileSync(envFilePath, 'utf-8');
@@ -1119,12 +1123,11 @@ export class LaravelService extends Component {
             const webBuildPath = path.resolve(pluginBuildPath, 'web');
             writeS6TaskFiles(buildBackgroundTasks(args.web ?? {}), webBuildPath);
 
-            const envVariables = {
-                ...getEnvironmentVariables(),
-                ...buildWebServerEnvironment({
+            const envVariables = getEnvironmentVariables(
+                buildWebServerEnvironment({
                     accessLogs: args.web?.accessLogs,
                 }),
-            };
+            );
 
             const webResolved = resolveBlockServiceArgs(
                 'web',
@@ -1222,9 +1225,7 @@ export class LaravelService extends Component {
             writeS6TaskFiles(buildBackgroundTasks(workerConfig), workerBuildPath);
 
             const imgBuildArgs = {
-                CONF_PATH: path
-                    .resolve(nodeModulePath, 'conf')
-                    .replace(absSitePath, ''),
+                CONF_PATH: workerConfPath.replace(absSitePath, ''),
                 CUSTOM_CONF_PATH: workerBuildPath.replace(absSitePath, ''),
             };
 
@@ -1361,6 +1362,10 @@ export class LaravelService extends Component {
             addWebService();
         }
 
+        if (args.workers?.length || reverbConfig) {
+            stageWorkerConf(nodeModulePath, workerConfPath);
+        }
+
         if (args.workers) {
             addWorkerServices();
         }
@@ -1444,20 +1449,22 @@ export class LaravelService extends Component {
             return img;
         }
 
+        /**
+         * Every build arg here must have a matching `ARG` in the Dockerfile,
+         * or Docker drops it.
+         */
         function getDefaultImage(imageType: ImageType, extraArgs: object = {}) {
             return {
                 context: sitePath,
                 dockerfile: path
                     .resolve(nodeModulePath, `Dockerfile.${imageType}`)
                     .replace(absSitePath, '.'),
+                target: 'deploy',
                 args: {
                     PHP_VERSION: getPhpVersion().toString(),
-                    PHP_OPCACHE_ENABLE: args.config?.opcache ? '1' : '0',
-                    AUTORUN_LARAVEL_MIGRATION:
-                        imageType === ImageType.Web ? 'true' : 'false',
-                    CONTAINER_TYPE: imageType,
-                    stage: 'deploy',
-                    platform: 'linux/amd64',
+                    PHP_OPCACHE_ENABLE: output(args.config?.opcache).apply(
+                        (opcache) => (opcache === false ? '0' : '1'),
+                    ),
                     ...extraArgs,
                 },
             };
@@ -1467,15 +1474,29 @@ export class LaravelService extends Component {
             return args.config?.php ?? 8.4;
         }
 
-        function getEnvironmentVariables() {
-            const env = args.config?.environment?.vars || {};
-
-            return {
-                ...(shouldAutoInjectEnvironment()
+        /**
+         * The container environment: the Reverb variables, then
+         * `config.environment.vars`, then the given overrides. `vars` may be
+         * an Output, so the result is one. Variables without a value are
+         * left out.
+         */
+        function getEnvironmentVariables(
+            overrides: Record<string, string> = {},
+        ): Output<Record<string, string>> {
+            return all([
+                shouldAutoInjectEnvironment()
                     ? getReverbEnvironmentVariables()
-                    : {}),
-                ...env,
-            };
+                    : {},
+                args.config?.environment?.vars ?? {},
+                overrides,
+            ]).apply(([reverb, vars, extra]) =>
+                Object.fromEntries(
+                    Object.entries({ ...reverb, ...vars, ...extra }).filter(
+                        (entry): entry is [string, string] =>
+                            entry[1] !== undefined,
+                    ),
+                ),
+            );
         }
 
         function getLinkedEnvironmentData() {
@@ -1630,7 +1651,10 @@ export class LaravelService extends Component {
                     linkedSecrets,
                 },
                 {
-                    parent: this,
+                    parent: component,
+                    // Created without a parent before, so it moves under the
+                    // component instead of being replaced.
+                    aliases: [{ parent: rootStackResource }],
                 },
             );
         }

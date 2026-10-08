@@ -2,7 +2,7 @@
 
 # This script runs during container deployment
 # Add your deployment commands here (migrations, cache clearing, etc.)
-# You can use the CONTAINER_TYPE variable to determine the type of container ("web" or "worker")
+# You can use the CONTAINER_TYPE variable to determine the type of container ("web" for the web service, "cli" for workers and Reverb)
 
 # Exit on error
 set -e

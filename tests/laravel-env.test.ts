@@ -1,15 +1,19 @@
 import { all, isSecret, Output, output, secret } from '@pulumi/pulumi';
 import { describe, expect, it, vi } from 'vitest';
 
-const { Postgres } = vi.hoisted(() => ({ Postgres: class {} }));
+const { Postgres, Mysql, Aurora } = vi.hoisted(() => ({
+  Postgres: class {},
+  Mysql: class {},
+  Aurora: class {},
+}));
 
 // SST installs these modules in the consuming app's .sst directory.
 vi.mock('../../../../.sst/platform/src/components/aws/email.js', () => ({ Email: class {} }));
-vi.mock('../../../../.sst/platform/src/components/aws/mysql.js', () => ({ Mysql: class {} }));
+vi.mock('../../../../.sst/platform/src/components/aws/mysql.js', () => ({ Mysql }));
 vi.mock('../../../../.sst/platform/src/components/aws/postgres.js', () => ({ Postgres }));
 vi.mock('../../../../.sst/platform/src/components/aws/redis.js', () => ({ Redis: class {} }));
 vi.mock('../../../../.sst/platform/src/components/aws/queue.js', () => ({ Queue: class {} }));
-vi.mock('../../../../.sst/platform/src/components/aws/aurora.js', () => ({ Aurora: class {} }));
+vi.mock('../../../../.sst/platform/src/components/aws/aurora.js', () => ({ Aurora }));
 vi.mock('../../../../.sst/platform/src/components/aws/bucket.js', () => ({ Bucket: class {} }));
 vi.mock('../../../../.sst/platform/src/components/secret.js', () => ({ Secret: class {} }));
 
@@ -226,5 +230,55 @@ describe('PlanetScale linked environment', () => {
 
     expect((await resolve(all(env))).DB_URL).toBe('postgresql://custom.example.com/custom-db?sslmode=require');
     expect(await isSecret(output(env.DB_URL))).toBe(true);
+  });
+});
+
+function awsDatabase(type: { prototype: object }, port: number) {
+  return Object.assign(Object.create(type.prototype), {
+    host: output('db.example.com'),
+    port: output(port),
+    database: output('app'),
+    username: output('app-user'),
+    password: secret('test-password'),
+  });
+}
+
+describe('AWS database linked environment', () => {
+  const expected = {
+    DB_HOST: 'db.example.com',
+    DB_DATABASE: 'app',
+    DB_USERNAME: 'app-user',
+    DB_PASSWORD: 'test-password',
+  };
+
+  it('injects the database variables for a linked sst.aws.Postgres', async () => {
+    const env = applyLinkedResourcesEnv([awsDatabase(Postgres, 5432)]);
+
+    expect(await resolve(all(env))).toEqual({ DB_CONNECTION: 'pgsql', DB_PORT: '5432', ...expected });
+  });
+
+  it('injects the database variables for a linked sst.aws.Mysql', async () => {
+    const env = applyLinkedResourcesEnv([awsDatabase(Mysql, 3306)]);
+
+    expect(await resolve(all(env))).toEqual({ DB_CONNECTION: 'mysql', DB_PORT: '3306', ...expected });
+    expect(await isSecret(output(env.DB_PASSWORD))).toBe(true);
+  });
+
+  it.each([
+    [3306, 'mysql'],
+    [5432, 'pgsql'],
+  ])('injects the database variables for a linked sst.aws.Aurora on port %i', async (port, connection) => {
+    const env = applyLinkedResourcesEnv([awsDatabase(Aurora, port)]);
+
+    expect(await resolve(all(env))).toEqual({ DB_CONNECTION: connection, DB_PORT: String(port), ...expected });
+  });
+
+  it('does not carry a PlanetScale Postgres URL into a later AWS MySQL link', async () => {
+    const env = await resolve(all(applyLinkedResourcesEnv([
+      databaseLink({ ...credentials, engine: 'postgres' }),
+      awsDatabase(Mysql, 3306),
+    ])));
+
+    expect(env).toEqual({ DB_CONNECTION: 'mysql', DB_PORT: '3306', ...expected });
   });
 });

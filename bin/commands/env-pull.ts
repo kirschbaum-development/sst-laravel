@@ -2,15 +2,16 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
-import { findSstConfig, extractSstProjectName } from '../utils/sst-config.js';
-import { pullSecrets, getSecretPath, getSecretInfo, toEnvFileContent, listAvailableStages } from '../utils/secrets-manager.js';
+import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
+import { pullSecrets, getSecretInfo, toEnvFileContent, listAvailableStages } from '../utils/secrets-manager.js';
 
 export const envPullCommand = new Command('env:pull')
   .description('Pull environment variables from AWS Secrets Manager')
   .option('-s, --stage <stage>', 'SST stage name')
+  .option('-p, --path <path>', 'Secrets Manager path (default: the RemoteEnvVault path in sst.config.ts, or /{app}/{stage}/env)')
   .option('-o, --output <file>', 'Output file path (default: .env.{stage})')
   .option('-f, --force', 'Overwrite existing file without confirmation')
-  .action(async (options: { stage?: string; output?: string; force?: boolean }) => {
+  .action(async (options: { stage?: string; path?: string; output?: string; force?: boolean }) => {
     try {
       const configPath = findSstConfig();
 
@@ -29,6 +30,12 @@ export const envPullCommand = new Command('env:pull')
       // Determine stage
       let stage = options.stage;
       if (!stage) {
+        // Stages can only be listed under the default /{app}/{stage}/env path.
+        if (options.path || extractVaultPathOptions(configPath).some(Boolean)) {
+          console.error('Error: The secrets use a custom path. Pass the stage with --stage <stage>.');
+          process.exit(1);
+        }
+
         const availableStages = await listAvailableStages(appName);
 
         if (availableStages.length === 0) {
@@ -43,7 +50,7 @@ export const envPullCommand = new Command('env:pull')
         });
       }
 
-      const secretPath = getSecretPath(appName, stage);
+      const secretPath = options.path || resolveVaultSecretPath(configPath, appName, stage);
       const outputFile = options.output || `.env.${stage}`;
       const outputPath = path.resolve(process.cwd(), outputFile);
 

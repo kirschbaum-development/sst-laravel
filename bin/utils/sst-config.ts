@@ -248,3 +248,105 @@ export function extractSecretsConfig(configPath: string): { path?: string } | nu
     path: pathMatch ? pathMatch[1] : undefined,
   };
 }
+
+const VAULT_PATH_HINT = 'Pass the Secrets Manager path with --path.';
+
+export interface VaultPathOption {
+  value: string;
+  /** Written as a template literal, so `${$app.stage}` is interpolated. */
+  template: boolean;
+}
+
+/**
+ * The `path` option of every active `new RemoteEnvVault(...)` in the config,
+ * as written, or `undefined` when the vault uses the default path. Throws
+ * when the arguments can't be read from the file, so the CLI never guesses.
+ */
+export function extractVaultPathOptions(configPath: string): Array<VaultPathOption | undefined> {
+  const content = stripTsComments(fs.readFileSync(configPath, 'utf-8'));
+  const constructor = /new\s+RemoteEnvVault\s*\(/g;
+  const paths: Array<VaultPathOption | undefined> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = constructor.exec(content)) !== null) {
+    const args = readCallArguments(content, match.index + match[0].length);
+    // Drop the component name, the first argument.
+    const options = args.replace(/^\s*(?:(['"`])(?:\\.|(?!\1)[^\\])*\1|[\w$.]+)\s*,?/, '').trim();
+
+    if (!options || !/\bpath\b/.test(options)) {
+      if (options && !options.startsWith('{')) {
+        throw new Error(`Could not read the RemoteEnvVault options in ${path.basename(configPath)}. ${VAULT_PATH_HINT}`);
+      }
+
+      paths.push(undefined);
+      continue;
+    }
+
+    const literal = options.match(/\bpath\s*:\s*(?:'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`)\s*[,}]/);
+
+    if (!literal) {
+      throw new Error(`The RemoteEnvVault path in ${path.basename(configPath)} is not a plain string. ${VAULT_PATH_HINT}`);
+    }
+
+    paths.push(
+      literal[3] !== undefined
+        ? { value: literal[3], template: true }
+        : { value: literal[1] ?? literal[2], template: false },
+    );
+  }
+
+  return paths;
+}
+
+/**
+ * The Secrets Manager path the deploy reads the environment from: the
+ * `RemoteEnvVault` `path` option with `$app.name` and `$app.stage` filled
+ * in, or the default `/{app}/{stage}/env`.
+ */
+export function resolveVaultSecretPath(configPath: string, appName: string, stage: string): string {
+  const resolved = new Set(
+    extractVaultPathOptions(configPath).map((option) => {
+      if (option === undefined) {
+        return `/${appName}/${stage}/env`;
+      }
+
+      if (!option.template) {
+        return option.value;
+      }
+
+      const value = option.value
+        .replace(/\$\{\s*\$app\.stage\s*\}/g, stage)
+        .replace(/\$\{\s*\$app\.name\s*\}/g, appName);
+
+      if (value.includes('${')) {
+        throw new Error(`The RemoteEnvVault path \`${option.value}\` uses values other than $app.name and $app.stage. ${VAULT_PATH_HINT}`);
+      }
+
+      return value;
+    }),
+  );
+
+  if (resolved.size > 1) {
+    throw new Error(`The SST config has RemoteEnvVaults with different paths (${[...resolved].join(', ')}). ${VAULT_PATH_HINT}`);
+  }
+
+  return resolved.values().next().value ?? `/${appName}/${stage}/env`;
+}
+
+/**
+ * The text between the parentheses of a call, starting right after `(`.
+ */
+function readCallArguments(content: string, start: number): string {
+  let depth = 1;
+
+  for (let i = start; i < content.length; i++) {
+    if (content[i] === '(') depth++;
+    if (content[i] === ')') depth--;
+
+    if (depth === 0) {
+      return content.substring(start, i);
+    }
+  }
+
+  return content.substring(start);
+}

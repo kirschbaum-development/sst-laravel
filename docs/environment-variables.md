@@ -94,9 +94,11 @@ The secrets are stored in AWS Secrets Manager at the path `/{app-name}/{stage}/e
 
 ```js
 const env = new RemoteEnvVault("Env", {
-  path: "/custom/path/env"
+  path: `/custom/${$app.stage}/env`
 });
 ```
+
+`env:push` and `env:pull` read the path from `sst.config.ts`, filling in `$app.name` and `$app.stage`. When the path is built some other way, pass it with `--path`.
 
 ### Pushing secrets
 

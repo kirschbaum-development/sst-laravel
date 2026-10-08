@@ -59,13 +59,13 @@ It deletes everything SST created for the stage. With the config from `init`, a 
 
 ## PHP version and OPcache
 
-The containers run PHP 8.4 unless you set `config.php`. The available versions are 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5. Set `config.opcache` to `true` to enable OPcache:
+The containers run PHP 8.4 unless you set `config.php`. The available versions are 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5. OPcache is on in every container. Set `config.opcache` to `false` to turn it off:
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
   config: {
     php: 8.4,
-    opcache: true,
+    opcache: false,
   },
 });
 ```

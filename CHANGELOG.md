@@ -5,6 +5,18 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1]
+
+### Fixed
+
+- Linking an `sst.aws.Mysql` or `sst.aws.Aurora` database injects the `DB_*` variables, as documented. Only `sst.aws.Postgres` did before.
+- `env:pull` writes values the way the deploy does, and `env:push` reads quoted values the way Laravel does (escapes, multi-line values, comments after the closing quote, `export`). Before, every pull and push added a backslash to values containing `"`.
+- `env:push` and `env:pull` use the `path` of the `RemoteEnvVault` in `sst.config.ts`, filling in `$app.name` and `$app.stage`. They used the default path even when the vault set another one. The new `--path` option sets it when it can't be read from the config.
+- `config.opcache` takes effect. The Dockerfiles ignored it: web containers always had OPcache on and workers always off. OPcache is now on in every container unless `config.opcache` is `false`. Unused build args are no longer passed.
+- Worker and Reverb images build when the project's `.dockerignore` excludes `node_modules`, as the one the first deploy writes does. The image copied its s6 config from the package in `node_modules`; it is now copied into `.sst/laravel` first.
+- `config.environment.vars` can be an Output. Before, the Reverb variables and `NGINX_ACCESS_LOG` were dropped when it was.
+- The `RemoteEnvFile` resource is created under the `LaravelService` component, as intended, so resource options on the component apply to it. An alias moves the existing one instead of replacing it.
+
 ## [0.6.0]
 
 ### Added
