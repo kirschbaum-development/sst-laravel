@@ -5,6 +5,29 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0]
+
+### Added
+
+- `nodes` on `LaravelService`: the ECS cluster and the `sst.aws.Service` of web, Reverb, and each worker (by worker name), to add alarms, permissions, or outputs of your own.
+- `php artisan sst-laravel:status`, `sst-laravel:doctor`, `sst-laravel:guide`, and `sst-laravel:skill:install`, so every CLI command has an Artisan command.
+
+### Changed
+
+- The cluster and the services are created under the `LaravelService` component, so resource options passed to it (`provider`, `protect`, `dependsOn`) apply to them too. Aliases move the existing resources on the next deploy instead of replacing them.
+- The env file from `config.environment.file` is written by a resource the images wait for, the same one `RemoteEnvVault` uses, instead of while the config runs. The variables SST Laravel adds are quoted, so values with `$`, `#`, or spaces work, and `APP_URL` is added when `web.domain` is an object too. The file is readable by its owner only.
+- A missing `config.environment.file` prints a warning instead of deploying an empty env file silently.
+- Each `LaravelService` has its own build folder, `.sst/laravel/<name>`, so two components in one app no longer overwrite each other's env file and background processes. The images are rebuilt once on the next deploy.
+- The images get the app without the `.sst` folder. They carried the files the component generates there, including a second copy of the env file, and in an app with several components the other components' env files. The Dockerfiles declare `# syntax=docker/dockerfile:1` for `COPY --exclude`, so the first build fetches that Dockerfile syntax from Docker Hub.
+- Worker images copy their background processes last, so the layers before them (system packages, PHP extensions) are the same for every worker and come from the build cache.
+- `ssh`, `logs`, `command:run`, and `status` find the cluster by its exact name, including the app name, and the tasks by their ECS service. A stage named `dev` could match `development` before, and two apps with the same component name could match each other's cluster. `status` lists the services by their names.
+- Two workers with the same name fail with a clear message.
+- The CLI reads the app name from what the `app()` function of `sst.config.ts` returns, ignoring comments. It took the first `name:` in the file, which could be a worker's or a commented-out one, and `env:push` and `env:pull` then used the wrong secret path.
+
+### Fixed
+
+- `transform` and `forceUpgrade` on `LaravelService` reach the ECS cluster, as on SST's Cluster component. They were accepted but ignored.
+
 ## [0.6.2]
 
 ### Added

@@ -173,4 +173,6 @@ SST Laravel fills in some variables for you, with both environment files and `Re
 - **`APP_URL`.** If your environment doesn't set it, SST Laravel adds it with the value of the `web.domain` property.
 - **Reverb.** With `reverb.domain` set, SST Laravel adds the `REVERB_*` variables. See [Reverb](reverb.md#environment-variables).
 
+SST Laravel adds them after your variables. Laravel reads the last value of a variable, so the values of linked resources win over the same variables in your environment, such as `DB_CONNECTION=sqlite` copied from `.env.example`. `LOG_CHANNEL` and `APP_URL` are only added when your environment doesn't set them.
+
 To stop SST Laravel from injecting variables for linked resources, set `config.environment.autoInject` to `false`. See [Disabling the auto-inject of environment variables](linking-resources.md#disabling-the-auto-inject-of-environment-variables).

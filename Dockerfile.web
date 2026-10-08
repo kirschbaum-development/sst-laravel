@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1
+# COPY --exclude needs Dockerfile syntax 1.19 or later.
+
 ARG PHP_VERSION=8.4
 FROM serversideup/php:${PHP_VERSION}-fpm-nginx as base
 
@@ -42,6 +45,7 @@ USER www-data
 FROM base as deploy
 
 ARG CUSTOM_CONF_PATH
+ARG DEPLOY_PATH=/.sst/laravel/deploy
 ARG PHP_OPCACHE_ENABLE=1
 
 ENV CONTAINER_TYPE=web
@@ -49,11 +53,13 @@ ENV CONTAINER_TYPE=web
 # OPcache, on unless `config.opcache` is false
 ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
-COPY --chown=www-data:www-data . /var/www/html
-COPY --chown=www-data:www-data .sst/laravel/deploy/.env /var/www/html/.env
+# The app, without .sst: the files the component generates there are copied
+# where they belong below, and one of them is the env file.
+COPY --chown=www-data:www-data --exclude=.sst . /var/www/html
+COPY --chown=www-data:www-data $DEPLOY_PATH/.env /var/www/html/.env
 
-# Copy deploy script generated into .sst/laravel by the build step
-COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
+# Copy the deployment script the component writes into .sst/laravel
+COPY --chmod=755 $DEPLOY_PATH/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
 
 # Copy generated s6-overlay background task definitions (no-op when none are configured)
 COPY --chmod=755 $CUSTOM_CONF_PATH /

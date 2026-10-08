@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
 import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
-import { pushSecrets, getSecretInfo, parseEnvFile, needsChunking, listAvailableStages } from '../utils/secrets-manager.js';
+import { pushSecrets, getSecretInfo, needsChunking, listAvailableStages } from '../../src/secrets-manager.js';
+import { parseEnvFile } from '../../src/dotenv.js';
 
 export const envPushCommand = new Command('env:push')
   .description('Push environment variables to AWS Secrets Manager')

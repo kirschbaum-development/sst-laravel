@@ -69,8 +69,10 @@ In case you get the following error when running SST commands, run `npx sst-lara
 
 ```bash
 ✕  Failed to build sst.config.ts
-   - node_modules/@kirschbaum-development/sst-laravel/laravel-sst.ts:6:26 Could not resolve "../../../.sst/platform/src/components/component.js"
+   - node_modules/@kirschbaum-development/sst-laravel/src/sst-platform.ts:11:26 Could not resolve "../../../../.sst/platform/src/components/component.js"
 ```
+
+The package loads SST's components from the app's `.sst/platform`, which `sst install` creates. It expects to be installed in the app's own `node_modules`.
 
 ## CD: AWS credentials are not configured
 

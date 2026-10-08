@@ -8,6 +8,7 @@ const { Postgres, Mysql, Aurora } = vi.hoisted(() => ({
 }));
 
 // SST installs these modules in the consuming app's .sst directory.
+vi.mock('../../../../.sst/platform/src/components/component.js', () => ({ Component: class {} }));
 vi.mock('../../../../.sst/platform/src/components/aws/email.js', () => ({ Email: class {} }));
 vi.mock('../../../../.sst/platform/src/components/aws/mysql.js', () => ({ Mysql }));
 vi.mock('../../../../.sst/platform/src/components/aws/postgres.js', () => ({ Postgres }));

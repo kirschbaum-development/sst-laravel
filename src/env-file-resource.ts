@@ -1,23 +1,29 @@
 import { CustomResourceOptions, Input, dynamic } from '@pulumi/pulumi';
+import { parseEnvFile, toEnvFileContent } from './dotenv.js';
 
-export interface RemoteEnvFileLinkedSecret {
-  name: Input<string>;
-  value: Input<string>;
-}
+// The provider runs in Pulumi's dynamic provider host, which gets it
+// serialized: everything it uses must be in this file or in `./dotenv`, and
+// modules are imported inside the functions.
 
-export interface RemoteEnvFileInputs {
-  secretPath: Input<string>;
+export interface EnvFileInputs {
+  /** Where to write the env file. */
   envFilePath: Input<string>;
+  /** The env file to start from (`config.environment.file`), copied as written. */
+  sourcePath?: Input<string>;
+  /** The Secrets Manager path of a `RemoteEnvVault` to start from. */
+  secretPath?: Input<string>;
+  /** Changes with the source, so the file is rewritten when the source changes. */
   fingerprint: Input<string>;
   autoInject?: Input<boolean>;
   appUrl?: Input<string | undefined>;
   linkedEnvironment?: Input<Record<string, Input<string | undefined> | undefined>>;
-  linkedSecrets?: Input<RemoteEnvFileLinkedSecret[]>;
+  linkedSecrets?: Input<Array<{ name: Input<string>; value: Input<string> }>>;
 }
 
-interface ResolvedRemoteEnvFileInputs {
-  secretPath: string;
+export interface ResolvedEnvFileInputs {
   envFilePath: string;
+  sourcePath?: string;
+  secretPath?: string;
   fingerprint: string;
   autoInject?: boolean;
   appUrl?: string;
@@ -28,80 +34,89 @@ interface ResolvedRemoteEnvFileInputs {
   }>;
 }
 
-const provider: dynamic.ResourceProvider<ResolvedRemoteEnvFileInputs, ResolvedRemoteEnvFileInputs> = {
+/** The variables an env file starts from, and how they are written. */
+export interface EnvFileSource {
+  content: string;
+  variables: Record<string, string>;
+}
+
+export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, ResolvedEnvFileInputs> = {
   async create(inputs) {
-    const outs = await writeRemoteEnvironmentFile(inputs);
+    await writeEnvironmentFile(inputs);
 
     return {
-      id: `${inputs.secretPath}:${inputs.envFilePath}`,
-      outs,
+      id: `${inputs.secretPath ?? inputs.sourcePath ?? ''}:${inputs.envFilePath}`,
+      outs: { ...inputs },
     };
   },
 
   async diff(_, olds, news) {
     return {
-      changes:
-        stableStringify(olds) !== stableStringify(news) ||
-        !(await matchesEnvironmentFile(news)),
+      changes: stableStringify(olds) !== stableStringify(news) || !(await matchesEnvironmentFile(news)),
     };
   },
 
   async update(_, __, news) {
-    const outs = await writeRemoteEnvironmentFile(news);
+    await writeEnvironmentFile(news);
 
     return {
-      outs,
+      outs: { ...news },
     };
   },
 };
 
-export class RemoteEnvFile extends dynamic.Resource {
-  constructor(
-    name: string,
-    args: RemoteEnvFileInputs,
-    opts?: CustomResourceOptions,
-  ) {
-    super(provider, `${name}.sst.aws.RemoteEnvFile`, args, opts);
+/**
+ * Writes the `.env` the images copy into the app: the env file or the
+ * `RemoteEnvVault` it starts from, then the variables the package adds.
+ * The images depend on it, so they are built after it is written.
+ */
+export class EnvFile extends dynamic.Resource {
+  constructor(name: string, args: EnvFileInputs, opts?: CustomResourceOptions) {
+    super(envFileProvider, `${name}.sst.aws.EnvFile`, args, opts);
   }
 }
 
-async function writeRemoteEnvironmentFile(inputs: ResolvedRemoteEnvFileInputs) {
+async function readSource(inputs: ResolvedEnvFileInputs): Promise<EnvFileSource> {
+  if (inputs.secretPath) {
+    const secrets = await pullSecretsFromAws(inputs.secretPath);
+
+    if (!secrets) {
+      throw new Error(`RemoteEnvVault secret not found at ${inputs.secretPath}.`);
+    }
+
+    return { content: toEnvFileContent(secrets), variables: secrets };
+  }
+
+  const fs = await import('node:fs');
+  const content = inputs.sourcePath && fs.existsSync(inputs.sourcePath) ? fs.readFileSync(inputs.sourcePath, 'utf8') : '';
+
+  return { content, variables: parseEnvFile(content) };
+}
+
+async function writeEnvironmentFile(inputs: ResolvedEnvFileInputs) {
   const fs = await import('node:fs');
   const path = await import('node:path');
-  const secrets = await pullSecretsFromAws(inputs.secretPath);
-
-  if (!secrets) {
-    throw new Error(`RemoteEnvVault secret not found at ${inputs.secretPath}.`);
-  }
-
-  const envContent = buildEnvFileContent(secrets, inputs);
+  const content = buildEnvFileContent(await readSource(inputs), inputs);
 
   fs.mkdirSync(path.dirname(inputs.envFilePath), { recursive: true });
-  fs.writeFileSync(inputs.envFilePath, envContent + '\n');
-  fs.chmodSync(inputs.envFilePath, 0o755);
-
-  return {
-    ...inputs,
-  };
+  fs.writeFileSync(inputs.envFilePath, content);
+  fs.chmodSync(inputs.envFilePath, 0o600);
 }
 
-async function matchesEnvironmentFile(inputs: ResolvedRemoteEnvFileInputs) {
+async function matchesEnvironmentFile(inputs: ResolvedEnvFileInputs) {
   const fs = await import('node:fs');
 
   if (!fs.existsSync(inputs.envFilePath)) {
     return false;
   }
 
-  const secrets = await pullSecretsFromAws(inputs.secretPath);
+  try {
+    const expected = buildEnvFileContent(await readSource(inputs), inputs);
 
-  if (!secrets) {
+    return fs.readFileSync(inputs.envFilePath, 'utf8') === expected;
+  } catch {
     return false;
   }
-
-  const expected = buildEnvFileContent(secrets, inputs) + '\n';
-  const actual = fs.readFileSync(inputs.envFilePath, 'utf8');
-
-  return actual === expected;
 }
 
 async function pullSecretsFromAws(secretPath: string): Promise<Record<string, string> | null> {
@@ -172,23 +187,27 @@ function getChunkPath(basePath: string, chunkIndex: number): string {
   return `${basePath}/${chunkIndex}`;
 }
 
-function buildEnvFileContent(
-  secrets: Record<string, string>,
-  inputs: ResolvedRemoteEnvFileInputs,
-) {
-  const baseEnv = toEnvFileContent(secrets);
+/**
+ * The env file: the source as written, then the variables the package adds
+ * (`APP_URL` and `LOG_CHANNEL` when the source has none, the linked
+ * resources, and the linked secrets), unless `autoInject` is off. Laravel
+ * reads the last value of a variable, so the linked resources' values win
+ * over the same variables in the source.
+ */
+export function buildEnvFileContent(source: EnvFileSource, inputs: ResolvedEnvFileInputs): string {
+  const content = source.content.replace(/\s+$/, '');
 
   if (inputs.autoInject === false) {
-    return baseEnv;
+    return content + '\n';
   }
 
   const autoInjected: Record<string, string> = {};
 
-  if (!hasOwnVariable(secrets, 'APP_URL') && inputs.appUrl) {
+  if (!hasOwnVariable(source.variables, 'APP_URL') && inputs.appUrl) {
     autoInjected.APP_URL = inputs.appUrl;
   }
 
-  if (!hasOwnVariable(secrets, 'LOG_CHANNEL')) {
+  if (!hasOwnVariable(source.variables, 'LOG_CHANNEL')) {
     autoInjected.LOG_CHANNEL = 'stderr';
   }
 
@@ -203,50 +222,12 @@ function buildEnvFileContent(
   });
 
   if (Object.keys(autoInjected).length === 0) {
-    return baseEnv;
+    return content + '\n';
   }
 
-  return [
-    baseEnv,
-    '# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---',
-    toEnvFileContent(autoInjected),
-  ].filter(Boolean).join('\n\n');
-}
-
-export function toEnvFileContent(vars: Record<string, string>): string {
-  const sortedKeys = Object.keys(vars).sort();
-
-  return sortedKeys
-    .map((key) => {
-      const value = vars[key];
-      const needsQuoting =
-        value.includes(' ') ||
-        value.includes('"') ||
-        value.includes("'") ||
-        value.includes('\n') ||
-        value.includes('$') ||
-        value.includes('\\') ||
-        value.includes('#');
-
-      if (!needsQuoting) {
-        return `${key}=${value}`;
-      }
-
-      // Single quotes are phpdotenv "raw literal" mode — no $ expansion, no escapes.
-      // Use them whenever possible so randomly-generated secrets round-trip safely.
-      if (!value.includes("'") && !value.includes('\n')) {
-        return `${key}='${value}'`;
-      }
-
-      // Fall back to double quotes when the value itself contains a single quote
-      // or newline. Escape \, $, and " so phpdotenv reads the literal value.
-      const escaped = value
-        .replace(/\\/g, '\\\\')
-        .replace(/\$/g, '\\$')
-        .replace(/"/g, '\\"');
-      return `${key}="${escaped}"`;
-    })
-    .join('\n');
+  return [content, '# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---', toEnvFileContent(autoInjected)]
+    .filter(Boolean)
+    .join('\n\n') + '\n';
 }
 
 function hasOwnVariable(vars: Record<string, string>, key: string) {

@@ -47,9 +47,18 @@ export function findSstConfig(): string | null {
   return null;
 }
 
+/**
+ * The app name: the `name` the `app()` function of the config returns,
+ * ignoring comments. Falls back to the first `name:` in the file.
+ */
 export function extractSstProjectName(configPath: string): string | null {
-  const content = fs.readFileSync(configPath, 'utf-8');
-  const match = content.match(/name\s*:\s*['"`]([^'"`]+)['"`]/);
+  const content = stripTsComments(fs.readFileSync(configPath, 'utf-8'));
+  const namePattern = /\bname\s*:\s*['"`]([^'"`]+)['"`]/;
+  const appFunction = content.match(/\bapp\s*(?::\s*(?:async\s+)?(?:function\s*)?)?\([^)]*\)\s*(?:=>\s*)?\(?\s*\{/);
+  const match =
+    (appFunction ? content.slice(appFunction.index! + appFunction[0].length).match(namePattern) : null) ??
+    content.match(namePattern);
+
   return match ? match[1] : null;
 }
 

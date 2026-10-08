@@ -5,13 +5,17 @@ namespace Kirschbaum\SST;
 use Illuminate\Support\ServiceProvider;
 use Kirschbaum\SST\Console\Commands\CommandRunCommand;
 use Kirschbaum\SST\Console\Commands\DeployCommand;
+use Kirschbaum\SST\Console\Commands\DoctorCommand;
 use Kirschbaum\SST\Console\Commands\EnvPullCommand;
 use Kirschbaum\SST\Console\Commands\EnvPushCommand;
 use Kirschbaum\SST\Console\Commands\GithubIamCommand;
+use Kirschbaum\SST\Console\Commands\GuideCommand;
 use Kirschbaum\SST\Console\Commands\InitCommand;
 use Kirschbaum\SST\Console\Commands\InstallCommand;
 use Kirschbaum\SST\Console\Commands\LogsCommand;
+use Kirschbaum\SST\Console\Commands\SkillInstallCommand;
 use Kirschbaum\SST\Console\Commands\SshCommand;
+use Kirschbaum\SST\Console\Commands\StatusCommand;
 
 /**
  * @property \Illuminate\Contracts\Foundation\Application $app
@@ -40,6 +44,10 @@ class SstLaravelServiceProvider extends ServiceProvider
                 InstallCommand::class,
                 EnvPullCommand::class,
                 EnvPushCommand::class,
+                StatusCommand::class,
+                DoctorCommand::class,
+                GuideCommand::class,
+                SkillInstallCommand::class,
             ]);
         }
     }

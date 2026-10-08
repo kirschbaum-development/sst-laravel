@@ -1,3 +1,5 @@
+import { Input, output } from '@pulumi/pulumi';
+
 /**
  * Escape hatch for SST experts. Everything in here is passed straight to the
  * underlying `sst.aws.Service` without changes. You only need this when the
@@ -194,4 +196,36 @@ export function composeTransforms(
   }
 
   return result;
+}
+
+/**
+ * A transform that makes the resource wait for another one, when given.
+ */
+export function dependOn(resource?: unknown) {
+  return (_args: unknown, opts: { dependsOn?: unknown }, _name: string): undefined => {
+    if (resource) {
+      opts.dependsOn = [resource];
+    }
+
+    return undefined;
+  };
+}
+
+/**
+ * The `taskDefinition` transform of every service. It turns off the ECS init
+ * process: the images run s6-overlay, which has to be PID 1.
+ */
+export function disableInitProcess(args: { containerDefinitions: Input<string> }): undefined {
+  args.containerDefinitions = output(args.containerDefinitions).apply((definitions) =>
+    JSON.stringify([
+      {
+        ...JSON.parse(definitions)[0],
+        linuxParameters: {
+          initProcessEnabled: false,
+        },
+      },
+    ]),
+  );
+
+  return undefined;
 }

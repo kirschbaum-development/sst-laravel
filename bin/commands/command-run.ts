@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
-import { findClusterArn, findTask } from '../utils/ecs.js';
+import { findCluster, findTask } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface CommandRunOptions {
@@ -44,10 +44,11 @@ export const commandRunCommand = new Command('command:run')
       }
 
       const ecsClient = new ECSClient({ region });
-      const clusterArn = await findClusterArn(ecsClient, stage, options.cluster);
+      const cluster = await findCluster(ecsClient, stage, options.cluster);
+      const clusterArn = cluster.clusterArn;
       const matchingTask = await findTask(
         ecsClient,
-        clusterArn,
+        cluster,
         options.service,
         'Select a task to run the command in:',
       );

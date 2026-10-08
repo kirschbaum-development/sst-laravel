@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toEnvFileContent } from '../src/remote-env-file';
+import { parseEnvFile, toEnvFileContent } from '../src/dotenv';
 
 describe('toEnvFileContent', () => {
   it('renders plain alphanumeric values without quotes', () => {
@@ -64,5 +64,75 @@ describe('toEnvFileContent', () => {
   it('sorts keys alphabetically and joins with newlines', () => {
     const out = toEnvFileContent({ B: '2', A: '1', C: '3' });
     expect(out).toBe('A=1\nB=2\nC=3');
+  });
+});
+
+const trickyValues: Record<string, string> = {
+  PLAIN: 'Laravel',
+  SPACE: 'My App',
+  DOUBLE_QUOTE: 'pa"ss',
+  SINGLE_QUOTE: "it's",
+  DOLLAR: 'abc$def',
+  REFERENCE: '${APP_NAME}',
+  HASH: 'a#b',
+  BACKSLASH: 'a\\b',
+  LITERAL_BACKSLASH_N: 'line1\\nline2',
+  NEWLINE: 'line1\nline2',
+  EVERYTHING: 'a\\b$c"d\'e#f g\nh',
+  EMPTY: '',
+};
+
+describe('parseEnvFile and toEnvFileContent', () => {
+  it('reads back every value it writes', () => {
+    expect(parseEnvFile(toEnvFileContent(trickyValues))).toEqual(trickyValues);
+  });
+
+  it('keeps values unchanged over repeated env:pull and env:push round trips', () => {
+    let vars = trickyValues;
+
+    for (let i = 0; i < 3; i++) {
+      vars = parseEnvFile(toEnvFileContent(vars));
+    }
+
+    expect(vars).toEqual(trickyValues);
+  });
+
+});
+
+describe('parseEnvFile', () => {
+  it('unescapes double-quoted values the way phpdotenv does', () => {
+    expect(parseEnvFile('A="q\\"s\\\\b\\$d\\n"')).toEqual({ A: 'q"s\\b$d\n' });
+  });
+
+  it('keeps the backslash of an unknown escape sequence', () => {
+    expect(parseEnvFile('A="x\\q"')).toEqual({ A: 'x\\q' });
+  });
+
+  it('reads single-quoted values literally', () => {
+    expect(parseEnvFile("A='a\\nb$c\"d'")).toEqual({ A: 'a\\nb$c"d' });
+  });
+
+  it('reads a double-quoted value spanning several lines', () => {
+    expect(parseEnvFile('A="line1\nline2"\nB=2')).toEqual({ A: 'line1\nline2', B: '2' });
+  });
+
+  it('ignores a comment after a quoted value', () => {
+    expect(parseEnvFile('A="x" # comment\nB=\'y\' # comment')).toEqual({ A: 'x', B: 'y' });
+  });
+
+  it('reads the export prefix and Windows line endings', () => {
+    expect(parseEnvFile('export A=1\r\nB="2"\r\n')).toEqual({ A: '1', B: '2' });
+  });
+
+  it('keeps unquoted values as written', () => {
+    expect(parseEnvFile('A=a#b\nB=My App  \nC=  spaced')).toEqual({ A: 'a#b', B: 'My App', C: 'spaced' });
+  });
+
+  it('takes an unterminated quote as written instead of reading the rest of the file', () => {
+    expect(parseEnvFile('A="abc\nB=2')).toEqual({ A: '"abc', B: '2' });
+  });
+
+  it('skips comments and blank lines', () => {
+    expect(parseEnvFile('# comment\n\n  # indented\nA=1')).toEqual({ A: '1' });
   });
 });

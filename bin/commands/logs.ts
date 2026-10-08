@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { ECSClient, DescribeTaskDefinitionCommand } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
-import { findClusterArn, findTask } from '../utils/ecs.js';
+import { findCluster, findTask } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface LogsOptions {
@@ -38,9 +38,10 @@ export const logsCommand = new Command('logs')
 
       const ecsClient = new ECSClient({ region });
 
-      const clusterArn = await findClusterArn(ecsClient, stage, options.cluster);
+      const cluster = await findCluster(ecsClient, stage, options.cluster);
+      const clusterArn = cluster.clusterArn;
 
-      const matchingTask = await findTask(ecsClient, clusterArn, service, 'Select a task to stream logs from:');
+      const matchingTask = await findTask(ecsClient, cluster, service, 'Select a task to stream logs from:');
 
       const taskDefinitionArn = matchingTask.taskDefinitionArn;
 

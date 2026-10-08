@@ -3,7 +3,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
 import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
-import { pullSecrets, getSecretInfo, toEnvFileContent, listAvailableStages } from '../utils/secrets-manager.js';
+import { pullSecrets, getSecretInfo, listAvailableStages } from '../../src/secrets-manager.js';
+import { toEnvFileContent } from '../../src/dotenv.js';
 
 export const envPullCommand = new Command('env:pull')
   .description('Pull environment variables from AWS Secrets Manager')
