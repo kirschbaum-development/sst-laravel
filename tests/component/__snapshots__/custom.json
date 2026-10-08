@@ -1,0 +1,429 @@
+[
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Custom-apiAutoScalingCpuPolicy",
+    "parent": "Custom-api",
+    "inputs": {
+      "name": "app-dev-CustomapiAutoScalingCpuPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-CustomClusterCluster-<random>/Custom-api",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageCPUUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Custom-apiAutoScalingMemoryPolicy",
+    "parent": "Custom-api",
+    "inputs": {
+      "name": "app-dev-CustomapiAutoScalingMemoryPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-CustomClusterCluster-<random>/Custom-api",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageMemoryUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/target:Target",
+    "name": "Custom-apiAutoScalingTarget",
+    "parent": "Custom-api",
+    "inputs": {
+      "maxCapacity": 1,
+      "minCapacity": 1,
+      "resourceId": "service/app-dev-CustomClusterCluster-<random>/Custom-api",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Custom-apiLogGroupCustom-api",
+    "parent": "Custom-api",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-CustomClusterCluster-<random>/app-dev-Customapi-<random>/Custom-api",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "name": "Custom-apiLoadBalancerSecurityGroup",
+    "parent": "Custom-api",
+    "inputs": {
+      "description": "Managed by SST",
+      "egress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "ingress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "description": "Managed by SST Laravel",
+          "fromPort": 80,
+          "protocol": "tcp",
+          "toPort": 80
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-CustomapiLoadBalancerSecurityGroup"
+      },
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:ecs/cluster:Cluster",
+    "name": "Custom-ClusterCluster",
+    "parent": "Custom-Cluster",
+    "inputs": {
+      "name": "app-dev-CustomClusterCluster-<random>",
+      "tags": {
+        "sst:ref:version": "2.0"
+      }
+    }
+  },
+  {
+    "type": "aws:ecs/clusterCapacityProviders:ClusterCapacityProviders",
+    "name": "Custom-ClusterCapacityProviders",
+    "parent": "Custom-Cluster",
+    "inputs": {
+      "capacityProviders": [
+        "FARGATE",
+        "FARGATE_SPOT"
+      ],
+      "clusterName": "app-dev-CustomClusterCluster-<random>"
+    }
+  },
+  {
+    "type": "aws:ecs/service:Service",
+    "name": "Custom-apiService",
+    "parent": "Custom-api",
+    "inputs": {
+      "cluster": "arn:aws:mock:us-east-1:123456789012:Custom-ClusterCluster",
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true
+      },
+      "desiredCount": 1,
+      "enableExecuteCommand": true,
+      "launchType": "FARGATE",
+      "loadBalancers": [
+        {
+          "containerName": "Custom-api",
+          "containerPort": 8080,
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiTargetCustom-apiHTTP8080"
+        }
+      ],
+      "name": "Custom-api",
+      "networkConfiguration": {
+        "assignPublicIp": false,
+        "securityGroups": [
+          "sg-1"
+        ],
+        "subnets": [
+          "subnet-private"
+        ]
+      },
+      "serviceRegistries": {
+        "registryArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiCloudmapService"
+      },
+      "taskDefinition": "arn:aws:mock:us-east-1:123456789012:Custom-apiTask",
+      "waitForSteadyState": false
+    }
+  },
+  {
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "name": "Custom-apiTask",
+    "parent": "Custom-api",
+    "inputs": {
+      "containerDefinitions": {
+        "secret": [
+          {
+            "environment": [
+              {
+                "name": "SST_RESOURCE_App",
+                "value": {
+                  "name": "app",
+                  "stage": "dev"
+                }
+              }
+            ],
+            "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
+            "linuxParameters": {
+              "initProcessEnabled": false
+            },
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/sst/cluster/app-dev-CustomClusterCluster-<random>/app-dev-Customapi-<random>/Custom-api",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "/service"
+              }
+            },
+            "name": "Custom-api",
+            "portMappings": [
+              {
+                "containerPortRange": "1-65535"
+              }
+            ],
+            "pseudoTerminal": true,
+            "secrets": []
+          }
+        ]
+      },
+      "cpu": "256",
+      "executionRoleArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiExecutionRole",
+      "family": "app-dev-CustomClusterCluster-<random>-Custom-api",
+      "memory": "512",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": [
+        "FARGATE"
+      ],
+      "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+      },
+      "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiTaskRole",
+      "trackLatest": true,
+      "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Custom-apiExecutionRole",
+    "parent": "Custom-api",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [
+        {
+          "name": "inline",
+          "policy": {}
+        }
+      ],
+      "managedPolicyArns": [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      ],
+      "name": "app-dev-CustomapiExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Custom-apiTaskRole",
+    "parent": "Custom-api",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [],
+      "name": "app-dev-CustomapiTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lb/listener:Listener",
+    "name": "Custom-apiListenerHTTP80",
+    "parent": "Custom-api",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/listener:Listener\"}"
+    ],
+    "inputs": {
+      "defaultActions": [
+        {
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiTargetCustom-apiHTTP8080",
+          "type": "forward"
+        }
+      ],
+      "loadBalancerArn": "arn:aws:mock:us-east-1:123456789012:Custom-apiLoadBalancer",
+      "port": 80,
+      "protocol": "HTTP"
+    }
+  },
+  {
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "name": "Custom-apiLoadBalancer",
+    "parent": "Custom-api",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/loadBalancer:LoadBalancer\"}"
+    ],
+    "inputs": {
+      "dropInvalidHeaderFields": true,
+      "enableCrossZoneLoadBalancing": true,
+      "internal": false,
+      "loadBalancerType": "application",
+      "name": "CustomapiLoadBa-<random>",
+      "securityGroups": [
+        "Custom-apiLoadBalancerSecurityGroup-id"
+      ],
+      "subnets": [
+        "subnet-public"
+      ]
+    }
+  },
+  {
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "name": "Custom-apiTargetCustom-apiHTTP8080",
+    "parent": "Custom-api",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/targetGroup:TargetGroup\"}"
+    ],
+    "inputs": {
+      "namePrefix": "HTTP",
+      "port": 8080,
+      "protocol": "HTTP",
+      "targetType": "ip",
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/service:Service",
+    "name": "Custom-apiCloudmapService",
+    "parent": "Custom-api",
+    "inputs": {
+      "dnsConfig": {
+        "dnsRecords": [
+          {
+            "ttl": 60,
+            "type": "A"
+          }
+        ],
+        "namespaceId": "ns-1"
+      },
+      "forceDestroy": true,
+      "name": "Custom-api.dev.app",
+      "namespaceId": "ns-1"
+    }
+  },
+  {
+    "type": "docker-build:index:Image",
+    "name": "Custom-apiImageCustom-api",
+    "parent": "Custom-api",
+    "inputs": {
+      "buildArgs": {
+        "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Custom/conf",
+        "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Custom/worker-api",
+        "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Custom/deploy",
+        "PHP_OPCACHE_ENABLE": "0",
+        "PHP_VERSION": "8.4"
+      },
+      "buildOnPreview": true,
+      "cacheFrom": [
+        {
+          "registry": {
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Custom-api-cache"
+          }
+        }
+      ],
+      "cacheTo": [
+        {
+          "registry": {
+            "imageManifest": true,
+            "mode": "max",
+            "ociMediaTypes": true,
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Custom-api-cache"
+          }
+        }
+      ],
+      "context": {
+        "location": "<root>"
+      },
+      "dockerfile": {
+        "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.worker"
+      },
+      "network": "default",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "push": true,
+      "registries": [
+        {
+          "address": "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
+          "password": "test",
+          "username": "AWS"
+        }
+      ],
+      "secrets": {
+        "SST_RESOURCE_App": {
+          "name": "app",
+          "stage": "dev"
+        }
+      },
+      "tags": [
+        "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Custom-api"
+      ],
+      "target": "deploy"
+    }
+  },
+  {
+    "type": "sst:aws:Cluster",
+    "name": "Custom-Cluster",
+    "parent": "Custom",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:LaravelService",
+    "name": "Custom",
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Service",
+    "name": "Custom-api",
+    "parent": "Custom",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:DevCommand",
+    "name": "Custom-apiDev",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:Version",
+    "name": "Custom-ClusterVersion",
+    "parent": "Custom-Cluster",
+    "inputs": {}
+  }
+]

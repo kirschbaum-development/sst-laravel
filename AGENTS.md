@@ -4,8 +4,10 @@ This project is an NPM package, and it is an extension of SST to add some functi
 
 ## Build/Test Commands
 - **Release**: ALWAYS use `npm run release` when publishing a new release. Do not publish directly with `npm publish` or `npm run publish`.
-- No test suite or linting configured in this project
-- No build step required (TypeScript consumed directly by SST)
+- **Unit tests**: `npm test` (vitest) covers `src/` and `bin/`.
+- **Build**: `npm run build` compiles the CLI (`bin/`) to `dist/`. The component (`laravel-sst.ts`, `src/`) ships as TypeScript, which SST compiles.
+- **Component tests**: `npm run test:component` type-checks `laravel-sst.ts` (strict) and runs mock deploys of it against an installed SST platform. Point `SST_PLATFORM_DIR` at an app's `.sst/platform`, or it installs one in `tests/component/fixture`. Run it for any change to `laravel-sst.ts` or what it deploys. The deployed resources are compared to the snapshots in `tests/component/__snapshots__`: when a change to them is intended, update them with `npm run test:component -- -u` and review the diff.
+- No linting is configured.
 
 ## Code Style & Conventions
 - **Formatting**: 2-space indentation, LF line endings, UTF-8 charset (see `.editorconfig`)
@@ -19,7 +21,7 @@ This project is an NPM package, and it is an extension of SST to add some functi
 - Use `all()` and `.apply()` for Pulumi Output transformations
 - File system operations use Node.js `fs` and `path` modules synchronously
 - Configuration defaults: PHP 8.4, opcache enabled, auto-inject env vars
-- Build artifacts go to `.sst/laravel` directory (managed via `pluginBuildPath`)
+- Build artifacts go to `.sst/laravel/<component name>` (the `buildPath` in `laravel-sst.ts`). The Dockerfiles copy them through build args (`DEPLOY_PATH`, `CONF_PATH`, `CUSTOM_CONF_PATH`), which `src/image.ts` sets; `tests/dockerfiles.test.ts` checks every build arg is declared.
 
 ## Error Handling & Security
 - Validate paths with `path.resolve()` before file operations

@@ -162,6 +162,18 @@ permissions: [
 
 With an `sst.aws.Vpc`, containers run in the private subnets when the VPC has NAT (`nat: "ec2"` or `nat: "managed"`). Without NAT, private subnets have no route to the internet, so containers could not pull their image. They run in the public subnets with a public IP instead (~$3.65/month per task). Either way, the VPC security group only accepts inbound traffic from inside the VPC, so requests still come through the load balancer.
 
+### `transform`
+- **Type:** `ClusterArgs["transform"]`
+- **Description:** Transform the ECS cluster, as on SST's Cluster component. The services have their own `transform` under `advanced`.
+
+```js
+transform: {
+  cluster: (args) => {
+    args.settings = [{ name: 'containerInsights', value: 'enhanced' }];
+  },
+},
+```
+
 ### `web`
 - **Type:** `LaravelWebArgs`
 - **Description:** Configuration for the web service that handles HTTP traffic.
@@ -757,6 +769,19 @@ console.log(app.url); // https://example.com or https://xyz.elb.amazonaws.com
 ```typescript
 const app = new LaravelService("MyApp", { ... });
 console.log(app.reverbUrl); // https://ws.example.com or https://xyz.elb.amazonaws.com
+```
+
+### `nodes`
+- **Type:** `{ cluster: sst.aws.Cluster; web?: sst.aws.Service; reverb?: sst.aws.Service; workers: Record<string, sst.aws.Service> }`
+- **Description:** The underlying resources: the ECS cluster and the `sst.aws.Service` of web, Reverb, and each worker (by worker name). Use them to add alarms, permissions, or outputs of your own. Resource options passed to `LaravelService` (such as `provider` or `protect`) apply to all of them.
+
+**Example:**
+```typescript
+const app = new LaravelService("MyApp", { ... });
+
+return {
+  queue: app.nodes.workers.queue.service,
+};
 ```
 
 ## Complete Example

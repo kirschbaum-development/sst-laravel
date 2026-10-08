@@ -1,0 +1,946 @@
+[
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Net-queueAutoScalingCpuPolicy",
+    "parent": "Net-queue",
+    "inputs": {
+      "name": "app-dev-NetqueueAutoScalingCpuPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-queue",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageCPUUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Net-queueAutoScalingMemoryPolicy",
+    "parent": "Net-queue",
+    "inputs": {
+      "name": "app-dev-NetqueueAutoScalingMemoryPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-queue",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageMemoryUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Net-WebAutoScalingCpuPolicy",
+    "parent": "Net-Web",
+    "inputs": {
+      "name": "app-dev-NetWebAutoScalingCpuPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageCPUUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Net-WebAutoScalingMemoryPolicy",
+    "parent": "Net-Web",
+    "inputs": {
+      "name": "app-dev-NetWebAutoScalingMemoryPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageMemoryUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/target:Target",
+    "name": "Net-queueAutoScalingTarget",
+    "parent": "Net-queue",
+    "inputs": {
+      "maxCapacity": 1,
+      "minCapacity": 1,
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-queue",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs"
+    }
+  },
+  {
+    "type": "aws:appautoscaling/target:Target",
+    "name": "Net-WebAutoScalingTarget",
+    "parent": "Net-Web",
+    "inputs": {
+      "maxCapacity": 1,
+      "minCapacity": 1,
+      "resourceId": "service/app-dev-NetClusterCluster-<random>/Net-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Net-queueLogGroupNet-queue",
+    "parent": "Net-queue",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-NetClusterCluster-<random>/app-dev-Netqueue-<random>/Net-queue",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Net-WebLogGroupNet-Web",
+    "parent": "Net-Web",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-NetClusterCluster-<random>/app-dev-NetWeb-<random>/Net-Web",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:ec2/defaultSecurityGroup:DefaultSecurityGroup",
+    "name": "NetVpcSecurityGroup",
+    "parent": "NetVpc",
+    "inputs": {
+      "egress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "ingress": [
+        {
+          "cidrBlocks": [
+            "10.0.0.0/16"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-NetVpcSecurityGroup"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/internetGateway:InternetGateway",
+    "name": "NetVpcInternetGateway",
+    "parent": "NetVpc",
+    "inputs": {
+      "tags": {
+        "Name": "app-dev-NetVpcInternetGateway"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTable:RouteTable",
+    "name": "NetVpcPrivateRouteTable1",
+    "parent": "NetVpc",
+    "inputs": {
+      "routes": [],
+      "tags": {
+        "Name": "app-dev-NetVpcPrivateRouteTable1"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTable:RouteTable",
+    "name": "NetVpcPrivateRouteTable2",
+    "parent": "NetVpc",
+    "inputs": {
+      "routes": [],
+      "tags": {
+        "Name": "app-dev-NetVpcPrivateRouteTable2"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTable:RouteTable",
+    "name": "NetVpcPublicRouteTable1",
+    "parent": "NetVpc",
+    "inputs": {
+      "routes": [
+        {
+          "cidrBlock": "0.0.0.0/0",
+          "gatewayId": "NetVpcInternetGateway-id"
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-NetVpcPublicRouteTable1"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTable:RouteTable",
+    "name": "NetVpcPublicRouteTable2",
+    "parent": "NetVpc",
+    "inputs": {
+      "routes": [
+        {
+          "cidrBlock": "0.0.0.0/0",
+          "gatewayId": "NetVpcInternetGateway-id"
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-NetVpcPublicRouteTable2"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "name": "NetVpcPrivateRouteTableAssociation1",
+    "parent": "NetVpc",
+    "inputs": {
+      "routeTableId": "NetVpcPrivateRouteTable1-id",
+      "subnetId": "NetVpcPrivateSubnet1-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "name": "NetVpcPrivateRouteTableAssociation2",
+    "parent": "NetVpc",
+    "inputs": {
+      "routeTableId": "NetVpcPrivateRouteTable2-id",
+      "subnetId": "NetVpcPrivateSubnet2-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "name": "NetVpcPublicRouteTableAssociation1",
+    "parent": "NetVpc",
+    "inputs": {
+      "routeTableId": "NetVpcPublicRouteTable1-id",
+      "subnetId": "NetVpcPublicSubnet1-id"
+    }
+  },
+  {
+    "type": "aws:ec2/routeTableAssociation:RouteTableAssociation",
+    "name": "NetVpcPublicRouteTableAssociation2",
+    "parent": "NetVpc",
+    "inputs": {
+      "routeTableId": "NetVpcPublicRouteTable2-id",
+      "subnetId": "NetVpcPublicSubnet2-id"
+    }
+  },
+  {
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "name": "Net-WebLoadBalancerSecurityGroup",
+    "parent": "Net-Web",
+    "inputs": {
+      "description": "Managed by SST",
+      "egress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "ingress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "description": "Managed by SST Laravel",
+          "fromPort": 80,
+          "protocol": "tcp",
+          "toPort": 80
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-NetWebLoadBalancerSecurityGroup"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/subnet:Subnet",
+    "name": "NetVpcPrivateSubnet1",
+    "parent": "NetVpc",
+    "inputs": {
+      "availabilityZone": "us-east-1a",
+      "cidrBlock": "10.0.4.0/22",
+      "tags": {
+        "Name": "app-dev-NetVpcPrivateSubnet1"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/subnet:Subnet",
+    "name": "NetVpcPrivateSubnet2",
+    "parent": "NetVpc",
+    "inputs": {
+      "availabilityZone": "us-east-1b",
+      "cidrBlock": "10.0.12.0/22",
+      "tags": {
+        "Name": "app-dev-NetVpcPrivateSubnet2"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/subnet:Subnet",
+    "name": "NetVpcPublicSubnet1",
+    "parent": "NetVpc",
+    "inputs": {
+      "availabilityZone": "us-east-1a",
+      "cidrBlock": "10.0.0.0/22",
+      "mapPublicIpOnLaunch": true,
+      "tags": {
+        "Name": "app-dev-NetVpcPublicSubnet1"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/subnet:Subnet",
+    "name": "NetVpcPublicSubnet2",
+    "parent": "NetVpc",
+    "inputs": {
+      "availabilityZone": "us-east-1b",
+      "cidrBlock": "10.0.8.0/22",
+      "mapPublicIpOnLaunch": true,
+      "tags": {
+        "Name": "app-dev-NetVpcPublicSubnet2"
+      },
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:ec2/vpc:Vpc",
+    "name": "NetVpcVpc",
+    "parent": "NetVpc",
+    "inputs": {
+      "cidrBlock": "10.0.0.0/16",
+      "enableDnsHostnames": true,
+      "enableDnsSupport": true,
+      "tags": {
+        "Name": "app-dev-NetVpc VPC",
+        "sst:component-version": "2",
+        "sst:ref-version": "2"
+      }
+    }
+  },
+  {
+    "type": "aws:ecs/cluster:Cluster",
+    "name": "Net-ClusterCluster",
+    "parent": "Net-Cluster",
+    "inputs": {
+      "name": "app-dev-NetClusterCluster-<random>",
+      "tags": {
+        "sst:ref:version": "2.0"
+      }
+    }
+  },
+  {
+    "type": "aws:ecs/clusterCapacityProviders:ClusterCapacityProviders",
+    "name": "Net-ClusterCapacityProviders",
+    "parent": "Net-Cluster",
+    "inputs": {
+      "capacityProviders": [
+        "FARGATE",
+        "FARGATE_SPOT"
+      ],
+      "clusterName": "app-dev-NetClusterCluster-<random>"
+    }
+  },
+  {
+    "type": "aws:ecs/service:Service",
+    "name": "Net-queueService",
+    "parent": "Net-queue",
+    "inputs": {
+      "cluster": "arn:aws:mock:us-east-1:123456789012:Net-ClusterCluster",
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true
+      },
+      "desiredCount": 1,
+      "enableExecuteCommand": true,
+      "launchType": "FARGATE",
+      "loadBalancers": [],
+      "name": "Net-queue",
+      "networkConfiguration": {
+        "assignPublicIp": true,
+        "securityGroups": [
+          "NetVpcSecurityGroup-id"
+        ],
+        "subnets": [
+          "NetVpcPublicSubnet1-id",
+          "NetVpcPublicSubnet2-id"
+        ]
+      },
+      "serviceRegistries": {
+        "registryArn": "arn:aws:mock:us-east-1:123456789012:Net-queueCloudmapService"
+      },
+      "taskDefinition": "arn:aws:mock:us-east-1:123456789012:Net-queueTask",
+      "waitForSteadyState": false
+    }
+  },
+  {
+    "type": "aws:ecs/service:Service",
+    "name": "Net-WebService",
+    "parent": "Net-Web",
+    "inputs": {
+      "cluster": "arn:aws:mock:us-east-1:123456789012:Net-ClusterCluster",
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true
+      },
+      "desiredCount": 1,
+      "enableExecuteCommand": true,
+      "launchType": "FARGATE",
+      "loadBalancers": [
+        {
+          "containerName": "Net-Web",
+          "containerPort": 8080,
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Net-WebTargetNet-WebHTTP8080"
+        }
+      ],
+      "name": "Net-Web",
+      "networkConfiguration": {
+        "assignPublicIp": true,
+        "securityGroups": [
+          "NetVpcSecurityGroup-id"
+        ],
+        "subnets": [
+          "NetVpcPublicSubnet1-id",
+          "NetVpcPublicSubnet2-id"
+        ]
+      },
+      "serviceRegistries": {
+        "registryArn": "arn:aws:mock:us-east-1:123456789012:Net-WebCloudmapService"
+      },
+      "taskDefinition": "arn:aws:mock:us-east-1:123456789012:Net-WebTask",
+      "waitForSteadyState": false
+    }
+  },
+  {
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "name": "Net-queueTask",
+    "parent": "Net-queue",
+    "inputs": {
+      "containerDefinitions": {
+        "secret": [
+          {
+            "environment": [
+              {
+                "name": "SST_RESOURCE_App",
+                "value": {
+                  "name": "app",
+                  "stage": "dev"
+                }
+              }
+            ],
+            "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
+            "linuxParameters": {
+              "initProcessEnabled": false
+            },
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/sst/cluster/app-dev-NetClusterCluster-<random>/app-dev-Netqueue-<random>/Net-queue",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "/service"
+              }
+            },
+            "name": "Net-queue",
+            "portMappings": [
+              {
+                "containerPortRange": "1-65535"
+              }
+            ],
+            "pseudoTerminal": true,
+            "secrets": []
+          }
+        ]
+      },
+      "cpu": "256",
+      "executionRoleArn": "arn:aws:mock:us-east-1:123456789012:Net-queueExecutionRole",
+      "family": "app-dev-NetClusterCluster-<random>-Net-queue",
+      "memory": "512",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": [
+        "FARGATE"
+      ],
+      "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+      },
+      "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Net-queueTaskRole",
+      "trackLatest": true,
+      "volumes": []
+    }
+  },
+  {
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "name": "Net-WebTask",
+    "parent": "Net-Web",
+    "inputs": {
+      "containerDefinitions": {
+        "secret": [
+          {
+            "environment": [
+              {
+                "name": "SST_RESOURCE_App",
+                "value": {
+                  "name": "app",
+                  "stage": "dev"
+                }
+              }
+            ],
+            "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
+            "linuxParameters": {
+              "initProcessEnabled": false
+            },
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/sst/cluster/app-dev-NetClusterCluster-<random>/app-dev-NetWeb-<random>/Net-Web",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "/service"
+              }
+            },
+            "name": "Net-Web",
+            "portMappings": [
+              {
+                "containerPortRange": "1-65535"
+              }
+            ],
+            "pseudoTerminal": true,
+            "secrets": []
+          }
+        ]
+      },
+      "cpu": "256",
+      "executionRoleArn": "arn:aws:mock:us-east-1:123456789012:Net-WebExecutionRole",
+      "family": "app-dev-NetClusterCluster-<random>-Net-Web",
+      "memory": "512",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": [
+        "FARGATE"
+      ],
+      "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+      },
+      "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Net-WebTaskRole",
+      "trackLatest": true,
+      "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Net-queueExecutionRole",
+    "parent": "Net-queue",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [
+        {
+          "name": "inline",
+          "policy": {}
+        }
+      ],
+      "managedPolicyArns": [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      ],
+      "name": "app-dev-NetqueueExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Net-queueTaskRole",
+    "parent": "Net-queue",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [],
+      "name": "app-dev-NetqueueTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Net-WebExecutionRole",
+    "parent": "Net-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [
+        {
+          "name": "inline",
+          "policy": {}
+        }
+      ],
+      "managedPolicyArns": [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      ],
+      "name": "app-dev-NetWebExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Net-WebTaskRole",
+    "parent": "Net-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [],
+      "name": "app-dev-NetWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lb/listener:Listener",
+    "name": "Net-WebListenerHTTP80",
+    "parent": "Net-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/listener:Listener\"}"
+    ],
+    "inputs": {
+      "defaultActions": [
+        {
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Net-WebTargetNet-WebHTTP8080",
+          "type": "forward"
+        }
+      ],
+      "loadBalancerArn": "arn:aws:mock:us-east-1:123456789012:Net-WebLoadBalancer",
+      "port": 80,
+      "protocol": "HTTP"
+    }
+  },
+  {
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "name": "Net-WebLoadBalancer",
+    "parent": "Net-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/loadBalancer:LoadBalancer\"}"
+    ],
+    "inputs": {
+      "dropInvalidHeaderFields": true,
+      "enableCrossZoneLoadBalancing": true,
+      "internal": false,
+      "loadBalancerType": "application",
+      "name": "NetWebLoadBalan-<random>",
+      "securityGroups": [
+        "Net-WebLoadBalancerSecurityGroup-id"
+      ],
+      "subnets": [
+        "NetVpcPublicSubnet1-id",
+        "NetVpcPublicSubnet2-id"
+      ]
+    }
+  },
+  {
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "name": "Net-WebTargetNet-WebHTTP8080",
+    "parent": "Net-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/targetGroup:TargetGroup\"}"
+    ],
+    "inputs": {
+      "namePrefix": "HTTP",
+      "port": 8080,
+      "protocol": "HTTP",
+      "targetType": "ip",
+      "vpcId": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/privateDnsNamespace:PrivateDnsNamespace",
+    "name": "NetVpcCloudmapNamespace",
+    "parent": "NetVpc",
+    "inputs": {
+      "name": "sst",
+      "vpc": "NetVpcVpc-id"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/service:Service",
+    "name": "Net-queueCloudmapService",
+    "parent": "Net-queue",
+    "inputs": {
+      "dnsConfig": {
+        "dnsRecords": [
+          {
+            "ttl": 60,
+            "type": "A"
+          }
+        ],
+        "namespaceId": "NetVpcCloudmapNamespace-id"
+      },
+      "forceDestroy": true,
+      "name": "Net-queue.dev.app",
+      "namespaceId": "NetVpcCloudmapNamespace-id"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/service:Service",
+    "name": "Net-WebCloudmapService",
+    "parent": "Net-Web",
+    "inputs": {
+      "dnsConfig": {
+        "dnsRecords": [
+          {
+            "ttl": 60,
+            "type": "A"
+          }
+        ],
+        "namespaceId": "NetVpcCloudmapNamespace-id"
+      },
+      "forceDestroy": true,
+      "name": "Net-Web.dev.app",
+      "namespaceId": "NetVpcCloudmapNamespace-id"
+    }
+  },
+  {
+    "type": "docker-build:index:Image",
+    "name": "Net-queueImageNet-queue",
+    "parent": "Net-queue",
+    "inputs": {
+      "buildArgs": {
+        "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Net/conf",
+        "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Net/worker-queue",
+        "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Net/deploy",
+        "PHP_OPCACHE_ENABLE": "1",
+        "PHP_VERSION": "8.4"
+      },
+      "buildOnPreview": true,
+      "cacheFrom": [
+        {
+          "registry": {
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-queue-cache"
+          }
+        }
+      ],
+      "cacheTo": [
+        {
+          "registry": {
+            "imageManifest": true,
+            "mode": "max",
+            "ociMediaTypes": true,
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-queue-cache"
+          }
+        }
+      ],
+      "context": {
+        "location": "<root>"
+      },
+      "dockerfile": {
+        "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.worker"
+      },
+      "network": "default",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "push": true,
+      "registries": [
+        {
+          "address": "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
+          "password": "test",
+          "username": "AWS"
+        }
+      ],
+      "secrets": {
+        "SST_RESOURCE_App": {
+          "name": "app",
+          "stage": "dev"
+        }
+      },
+      "tags": [
+        "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-queue"
+      ],
+      "target": "deploy"
+    }
+  },
+  {
+    "type": "docker-build:index:Image",
+    "name": "Net-WebImageNet-Web",
+    "parent": "Net-Web",
+    "inputs": {
+      "buildArgs": {
+        "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Net/web",
+        "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Net/deploy",
+        "PHP_OPCACHE_ENABLE": "1",
+        "PHP_VERSION": "8.4"
+      },
+      "buildOnPreview": true,
+      "cacheFrom": [
+        {
+          "registry": {
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-Web-cache"
+          }
+        }
+      ],
+      "cacheTo": [
+        {
+          "registry": {
+            "imageManifest": true,
+            "mode": "max",
+            "ociMediaTypes": true,
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-Web-cache"
+          }
+        }
+      ],
+      "context": {
+        "location": "<root>"
+      },
+      "dockerfile": {
+        "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.web"
+      },
+      "network": "default",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "push": true,
+      "registries": [
+        {
+          "address": "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
+          "password": "test",
+          "username": "AWS"
+        }
+      ],
+      "secrets": {
+        "SST_RESOURCE_App": {
+          "name": "app",
+          "stage": "dev"
+        }
+      },
+      "tags": [
+        "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Net-Web"
+      ],
+      "target": "deploy"
+    }
+  },
+  {
+    "type": "sst:aws:Cluster",
+    "name": "Net-Cluster",
+    "parent": "Net",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:LaravelService",
+    "name": "Net",
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Service",
+    "name": "Net-queue",
+    "parent": "Net",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Service",
+    "name": "Net-Web",
+    "parent": "Net",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Vpc",
+    "name": "NetVpc",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:DevCommand",
+    "name": "Net-queueDev",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:DevCommand",
+    "name": "Net-WebDev",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:Version",
+    "name": "Net-ClusterVersion",
+    "parent": "Net-Cluster",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:Version",
+    "name": "NetVpcVersion",
+    "parent": "NetVpc",
+    "inputs": {}
+  }
+]

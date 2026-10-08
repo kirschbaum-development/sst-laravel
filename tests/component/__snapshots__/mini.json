@@ -1,0 +1,428 @@
+[
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Mini-WebAutoScalingCpuPolicy",
+    "parent": "Mini-Web",
+    "inputs": {
+      "name": "app-dev-MiniWebAutoScalingCpuPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-MiniClusterCluster-<random>/Mini-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageCPUUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Mini-WebAutoScalingMemoryPolicy",
+    "parent": "Mini-Web",
+    "inputs": {
+      "name": "app-dev-MiniWebAutoScalingMemoryPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-MiniClusterCluster-<random>/Mini-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageMemoryUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/target:Target",
+    "name": "Mini-WebAutoScalingTarget",
+    "parent": "Mini-Web",
+    "inputs": {
+      "maxCapacity": 1,
+      "minCapacity": 1,
+      "resourceId": "service/app-dev-MiniClusterCluster-<random>/Mini-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Mini-WebLogGroupMini-Web",
+    "parent": "Mini-Web",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-MiniClusterCluster-<random>/app-dev-MiniWeb-<random>/Mini-Web",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "name": "Mini-WebLoadBalancerSecurityGroup",
+    "parent": "Mini-Web",
+    "inputs": {
+      "description": "Managed by SST",
+      "egress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "ingress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "description": "Managed by SST Laravel",
+          "fromPort": 80,
+          "protocol": "tcp",
+          "toPort": 80
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-MiniWebLoadBalancerSecurityGroup"
+      },
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:ecs/cluster:Cluster",
+    "name": "Mini-ClusterCluster",
+    "parent": "Mini-Cluster",
+    "inputs": {
+      "name": "app-dev-MiniClusterCluster-<random>",
+      "tags": {
+        "sst:ref:version": "2.0"
+      }
+    }
+  },
+  {
+    "type": "aws:ecs/clusterCapacityProviders:ClusterCapacityProviders",
+    "name": "Mini-ClusterCapacityProviders",
+    "parent": "Mini-Cluster",
+    "inputs": {
+      "capacityProviders": [
+        "FARGATE",
+        "FARGATE_SPOT"
+      ],
+      "clusterName": "app-dev-MiniClusterCluster-<random>"
+    }
+  },
+  {
+    "type": "aws:ecs/service:Service",
+    "name": "Mini-WebService",
+    "parent": "Mini-Web",
+    "inputs": {
+      "cluster": "arn:aws:mock:us-east-1:123456789012:Mini-ClusterCluster",
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true
+      },
+      "desiredCount": 1,
+      "enableExecuteCommand": true,
+      "launchType": "FARGATE",
+      "loadBalancers": [
+        {
+          "containerName": "Mini-Web",
+          "containerPort": 8080,
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebTargetMini-WebHTTP8080"
+        }
+      ],
+      "name": "Mini-Web",
+      "networkConfiguration": {
+        "assignPublicIp": false,
+        "securityGroups": [
+          "sg-1"
+        ],
+        "subnets": [
+          "subnet-private"
+        ]
+      },
+      "serviceRegistries": {
+        "registryArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebCloudmapService"
+      },
+      "taskDefinition": "arn:aws:mock:us-east-1:123456789012:Mini-WebTask",
+      "waitForSteadyState": false
+    }
+  },
+  {
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "name": "Mini-WebTask",
+    "parent": "Mini-Web",
+    "inputs": {
+      "containerDefinitions": {
+        "secret": [
+          {
+            "environment": [
+              {
+                "name": "SST_RESOURCE_App",
+                "value": {
+                  "name": "app",
+                  "stage": "dev"
+                }
+              }
+            ],
+            "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
+            "linuxParameters": {
+              "initProcessEnabled": false
+            },
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/sst/cluster/app-dev-MiniClusterCluster-<random>/app-dev-MiniWeb-<random>/Mini-Web",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "/service"
+              }
+            },
+            "name": "Mini-Web",
+            "portMappings": [
+              {
+                "containerPortRange": "1-65535"
+              }
+            ],
+            "pseudoTerminal": true,
+            "secrets": []
+          }
+        ]
+      },
+      "cpu": "256",
+      "executionRoleArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebExecutionRole",
+      "family": "app-dev-MiniClusterCluster-<random>-Mini-Web",
+      "memory": "512",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": [
+        "FARGATE"
+      ],
+      "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+      },
+      "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebTaskRole",
+      "trackLatest": true,
+      "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Mini-WebExecutionRole",
+    "parent": "Mini-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [
+        {
+          "name": "inline",
+          "policy": {}
+        }
+      ],
+      "managedPolicyArns": [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      ],
+      "name": "app-dev-MiniWebExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Mini-WebTaskRole",
+    "parent": "Mini-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [],
+      "name": "app-dev-MiniWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lb/listener:Listener",
+    "name": "Mini-WebListenerHTTP80",
+    "parent": "Mini-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/listener:Listener\"}"
+    ],
+    "inputs": {
+      "defaultActions": [
+        {
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebTargetMini-WebHTTP8080",
+          "type": "forward"
+        }
+      ],
+      "loadBalancerArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebLoadBalancer",
+      "port": 80,
+      "protocol": "HTTP"
+    }
+  },
+  {
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "name": "Mini-WebLoadBalancer",
+    "parent": "Mini-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/loadBalancer:LoadBalancer\"}"
+    ],
+    "inputs": {
+      "dropInvalidHeaderFields": true,
+      "enableCrossZoneLoadBalancing": true,
+      "internal": false,
+      "loadBalancerType": "application",
+      "name": "MiniWebLoadBala-<random>",
+      "securityGroups": [
+        "Mini-WebLoadBalancerSecurityGroup-id"
+      ],
+      "subnets": [
+        "subnet-public"
+      ]
+    }
+  },
+  {
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "name": "Mini-WebTargetMini-WebHTTP8080",
+    "parent": "Mini-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/targetGroup:TargetGroup\"}"
+    ],
+    "inputs": {
+      "namePrefix": "HTTP",
+      "port": 8080,
+      "protocol": "HTTP",
+      "targetType": "ip",
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/service:Service",
+    "name": "Mini-WebCloudmapService",
+    "parent": "Mini-Web",
+    "inputs": {
+      "dnsConfig": {
+        "dnsRecords": [
+          {
+            "ttl": 60,
+            "type": "A"
+          }
+        ],
+        "namespaceId": "ns-1"
+      },
+      "forceDestroy": true,
+      "name": "Mini-Web.dev.app",
+      "namespaceId": "ns-1"
+    }
+  },
+  {
+    "type": "docker-build:index:Image",
+    "name": "Mini-WebImageMini-Web",
+    "parent": "Mini-Web",
+    "inputs": {
+      "buildArgs": {
+        "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Mini/web",
+        "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Mini/deploy",
+        "PHP_OPCACHE_ENABLE": "1",
+        "PHP_VERSION": "8.4"
+      },
+      "buildOnPreview": true,
+      "cacheFrom": [
+        {
+          "registry": {
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Mini-Web-cache"
+          }
+        }
+      ],
+      "cacheTo": [
+        {
+          "registry": {
+            "imageManifest": true,
+            "mode": "max",
+            "ociMediaTypes": true,
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Mini-Web-cache"
+          }
+        }
+      ],
+      "context": {
+        "location": "<root>"
+      },
+      "dockerfile": {
+        "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.web"
+      },
+      "network": "default",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "push": true,
+      "registries": [
+        {
+          "address": "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
+          "password": "test",
+          "username": "AWS"
+        }
+      ],
+      "secrets": {
+        "SST_RESOURCE_App": {
+          "name": "app",
+          "stage": "dev"
+        }
+      },
+      "tags": [
+        "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Mini-Web"
+      ],
+      "target": "deploy"
+    }
+  },
+  {
+    "type": "sst:aws:Cluster",
+    "name": "Mini-Cluster",
+    "parent": "Mini",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:LaravelService",
+    "name": "Mini",
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Service",
+    "name": "Mini-Web",
+    "parent": "Mini",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:DevCommand",
+    "name": "Mini-WebDev",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:Version",
+    "name": "Mini-ClusterVersion",
+    "parent": "Mini-Cluster",
+    "inputs": {}
+  }
+]

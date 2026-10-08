@@ -1,0 +1,456 @@
+[
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Vault-WebAutoScalingCpuPolicy",
+    "parent": "Vault-Web",
+    "inputs": {
+      "name": "app-dev-VaultWebAutoScalingCpuPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-VaultClusterCluster-<random>/Vault-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageCPUUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/policy:Policy",
+    "name": "Vault-WebAutoScalingMemoryPolicy",
+    "parent": "Vault-Web",
+    "inputs": {
+      "name": "app-dev-VaultWebAutoScalingMemoryPolicy-<random>",
+      "policyType": "TargetTrackingScaling",
+      "resourceId": "service/app-dev-VaultClusterCluster-<random>/Vault-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs",
+      "targetTrackingScalingPolicyConfiguration": {
+        "predefinedMetricSpecification": {
+          "predefinedMetricType": "ECSServiceAverageMemoryUtilization"
+        },
+        "targetValue": 70
+      }
+    }
+  },
+  {
+    "type": "aws:appautoscaling/target:Target",
+    "name": "Vault-WebAutoScalingTarget",
+    "parent": "Vault-Web",
+    "inputs": {
+      "maxCapacity": 1,
+      "minCapacity": 1,
+      "resourceId": "service/app-dev-VaultClusterCluster-<random>/Vault-Web",
+      "scalableDimension": "ecs:service:DesiredCount",
+      "serviceNamespace": "ecs"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Vault-WebLogGroupVault-Web",
+    "parent": "Vault-Web",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-VaultClusterCluster-<random>/app-dev-VaultWeb-<random>/Vault-Web",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:ec2/securityGroup:SecurityGroup",
+    "name": "Vault-WebLoadBalancerSecurityGroup",
+    "parent": "Vault-Web",
+    "inputs": {
+      "description": "Managed by SST",
+      "egress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "fromPort": 0,
+          "protocol": "-1",
+          "toPort": 0
+        }
+      ],
+      "ingress": [
+        {
+          "cidrBlocks": [
+            "0.0.0.0/0"
+          ],
+          "description": "Managed by SST Laravel",
+          "fromPort": 80,
+          "protocol": "tcp",
+          "toPort": 80
+        }
+      ],
+      "tags": {
+        "Name": "app-dev-VaultWebLoadBalancerSecurityGroup"
+      },
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:ecs/cluster:Cluster",
+    "name": "Vault-ClusterCluster",
+    "parent": "Vault-Cluster",
+    "inputs": {
+      "name": "app-dev-VaultClusterCluster-<random>",
+      "tags": {
+        "sst:ref:version": "2.0"
+      }
+    }
+  },
+  {
+    "type": "aws:ecs/clusterCapacityProviders:ClusterCapacityProviders",
+    "name": "Vault-ClusterCapacityProviders",
+    "parent": "Vault-Cluster",
+    "inputs": {
+      "capacityProviders": [
+        "FARGATE",
+        "FARGATE_SPOT"
+      ],
+      "clusterName": "app-dev-VaultClusterCluster-<random>"
+    }
+  },
+  {
+    "type": "aws:ecs/service:Service",
+    "name": "Vault-WebService",
+    "parent": "Vault-Web",
+    "inputs": {
+      "cluster": "arn:aws:mock:us-east-1:123456789012:Vault-ClusterCluster",
+      "deploymentCircuitBreaker": {
+        "enable": true,
+        "rollback": true
+      },
+      "desiredCount": 1,
+      "enableExecuteCommand": true,
+      "launchType": "FARGATE",
+      "loadBalancers": [
+        {
+          "containerName": "Vault-Web",
+          "containerPort": 8080,
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebTargetVault-WebHTTP8080"
+        }
+      ],
+      "name": "Vault-Web",
+      "networkConfiguration": {
+        "assignPublicIp": false,
+        "securityGroups": [
+          "sg-1"
+        ],
+        "subnets": [
+          "subnet-private"
+        ]
+      },
+      "serviceRegistries": {
+        "registryArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebCloudmapService"
+      },
+      "taskDefinition": "arn:aws:mock:us-east-1:123456789012:Vault-WebTask",
+      "waitForSteadyState": false
+    }
+  },
+  {
+    "type": "aws:ecs/taskDefinition:TaskDefinition",
+    "name": "Vault-WebTask",
+    "parent": "Vault-Web",
+    "inputs": {
+      "containerDefinitions": {
+        "secret": [
+          {
+            "environment": [
+              {
+                "name": "SST_RESOURCE_App",
+                "value": {
+                  "name": "app",
+                  "stage": "dev"
+                }
+              }
+            ],
+            "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
+            "linuxParameters": {
+              "initProcessEnabled": false
+            },
+            "logConfiguration": {
+              "logDriver": "awslogs",
+              "options": {
+                "awslogs-group": "/sst/cluster/app-dev-VaultClusterCluster-<random>/app-dev-VaultWeb-<random>/Vault-Web",
+                "awslogs-region": "us-east-1",
+                "awslogs-stream-prefix": "/service"
+              }
+            },
+            "name": "Vault-Web",
+            "portMappings": [
+              {
+                "containerPortRange": "1-65535"
+              }
+            ],
+            "pseudoTerminal": true,
+            "secrets": []
+          }
+        ]
+      },
+      "cpu": "256",
+      "executionRoleArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebExecutionRole",
+      "family": "app-dev-VaultClusterCluster-<random>-Vault-Web",
+      "memory": "512",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": [
+        "FARGATE"
+      ],
+      "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+      },
+      "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebTaskRole",
+      "trackLatest": true,
+      "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Vault-WebExecutionRole",
+    "parent": "Vault-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [
+        {
+          "name": "inline",
+          "policy": {}
+        }
+      ],
+      "managedPolicyArns": [
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      ],
+      "name": "app-dev-VaultWebExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Vault-WebTaskRole",
+    "parent": "Vault-Web",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ecs-tasks.amazonaws.com"
+            },
+            "Sid": "AllowAssumeRole"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "inlinePolicies": [],
+      "name": "app-dev-VaultWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lb/listener:Listener",
+    "name": "Vault-WebListenerHTTP80",
+    "parent": "Vault-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/listener:Listener\"}"
+    ],
+    "inputs": {
+      "defaultActions": [
+        {
+          "targetGroupArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebTargetVault-WebHTTP8080",
+          "type": "forward"
+        }
+      ],
+      "loadBalancerArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebLoadBalancer",
+      "port": 80,
+      "protocol": "HTTP"
+    }
+  },
+  {
+    "type": "aws:lb/loadBalancer:LoadBalancer",
+    "name": "Vault-WebLoadBalancer",
+    "parent": "Vault-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/loadBalancer:LoadBalancer\"}"
+    ],
+    "inputs": {
+      "dropInvalidHeaderFields": true,
+      "enableCrossZoneLoadBalancing": true,
+      "internal": false,
+      "loadBalancerType": "application",
+      "name": "VaultWebLoadBal-<random>",
+      "securityGroups": [
+        "Vault-WebLoadBalancerSecurityGroup-id"
+      ],
+      "subnets": [
+        "subnet-public"
+      ]
+    }
+  },
+  {
+    "type": "aws:lb/targetGroup:TargetGroup",
+    "name": "Vault-WebTargetVault-WebHTTP8080",
+    "parent": "Vault-Web",
+    "aliases": [
+      "{\"type\":\"aws:elasticloadbalancingv2/targetGroup:TargetGroup\"}"
+    ],
+    "inputs": {
+      "namePrefix": "HTTP",
+      "port": 8080,
+      "protocol": "HTTP",
+      "targetType": "ip",
+      "vpcId": "vpc-1"
+    }
+  },
+  {
+    "type": "aws:servicediscovery/service:Service",
+    "name": "Vault-WebCloudmapService",
+    "parent": "Vault-Web",
+    "inputs": {
+      "dnsConfig": {
+        "dnsRecords": [
+          {
+            "ttl": 60,
+            "type": "A"
+          }
+        ],
+        "namespaceId": "ns-1"
+      },
+      "forceDestroy": true,
+      "name": "Vault-Web.dev.app",
+      "namespaceId": "ns-1"
+    }
+  },
+  {
+    "type": "docker-build:index:Image",
+    "name": "Vault-WebImageVault-Web",
+    "parent": "Vault-Web",
+    "dependsOn": [
+      "Vault-RemoteEnv.sst.aws.EnvFile"
+    ],
+    "inputs": {
+      "buildArgs": {
+        "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Vault/web",
+        "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Vault/deploy",
+        "PHP_OPCACHE_ENABLE": "1",
+        "PHP_VERSION": "8.4"
+      },
+      "buildOnPreview": true,
+      "cacheFrom": [
+        {
+          "registry": {
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Vault-Web-cache"
+          }
+        }
+      ],
+      "cacheTo": [
+        {
+          "registry": {
+            "imageManifest": true,
+            "mode": "max",
+            "ociMediaTypes": true,
+            "ref": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Vault-Web-cache"
+          }
+        }
+      ],
+      "context": {
+        "location": "<root>"
+      },
+      "dockerfile": {
+        "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.web"
+      },
+      "network": "default",
+      "platforms": [
+        "linux/amd64"
+      ],
+      "push": true,
+      "registries": [
+        {
+          "address": "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
+          "password": "test",
+          "username": "AWS"
+        }
+      ],
+      "secrets": {
+        "SST_RESOURCE_App": {
+          "name": "app",
+          "stage": "dev"
+        }
+      },
+      "tags": [
+        "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset:Vault-Web"
+      ],
+      "target": "deploy"
+    }
+  },
+  {
+    "type": "pulumi-nodejs:dynamic:Resource",
+    "name": "Vault-RemoteEnv.sst.aws.EnvFile",
+    "parent": "Vault",
+    "aliases": [
+      "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\"}",
+      "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\",\"parent\":\"root stack\"}"
+    ],
+    "inputs": {
+      "autoInject": true,
+      "envFilePath": "<root>/pkg/@kirschbaum-development/laravel/Vault/deploy/.env",
+      "fingerprint": "4052beda9e53f3625a81962228a3dcdbce4e9592f772de9ee120a3a8da8b8e4d",
+      "linkedEnvironment": {},
+      "linkedSecrets": [],
+      "secretPath": "/app/dev/env"
+    }
+  },
+  {
+    "type": "sst:aws:Cluster",
+    "name": "Vault-Cluster",
+    "parent": "Vault",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:LaravelService",
+    "name": "Vault",
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:RemoteEnvVault",
+    "name": "VaultEnv",
+    "inputs": {}
+  },
+  {
+    "type": "sst:aws:Service",
+    "name": "Vault-Web",
+    "parent": "Vault",
+    "aliases": [
+      "{\"parent\":\"root stack\"}"
+    ],
+    "dependsOn": [
+      "Vault-RemoteEnv.sst.aws.EnvFile"
+    ],
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:DevCommand",
+    "name": "Vault-WebDev",
+    "inputs": {}
+  },
+  {
+    "type": "sst:sst:Version",
+    "name": "Vault-ClusterVersion",
+    "parent": "Vault-Cluster",
+    "inputs": {}
+  }
+]

@@ -1,64 +1,22 @@
-/// <reference path="./../../../.sst/platform/config.d.ts" />
-
 import * as path from 'path';
 import * as fs from 'fs';
-import { Component } from '../../../.sst/platform/src/components/component.js';
-import { FunctionArgs } from '../../../.sst/platform/src/components/aws/function.js';
-import {
-    ComponentResourceOptions,
-    Input as PulumiInput,
-    Output,
-    all,
-    output,
-    rootStackResource,
-    runtime,
-} from '@pulumi/pulumi';
-import { Input } from '../../../.sst/platform/src/components/input.js';
-import { ClusterArgs } from '../../../.sst/platform/src/components/aws/cluster.js';
-import { ServiceArgs } from '../../../.sst/platform/src/components/aws/service.js';
-import { Dns } from '../../../.sst/platform/src/components/dns.js';
-import {
-    applyLinkedResourcesEnv,
-    EnvCallback,
-    EnvCallbacks,
-    extractSecrets,
-} from './src/laravel-env';
+import { ComponentResourceOptions, Resource, rootStackResource } from '@pulumi/pulumi';
+import { ClusterArgs, Component, Dns, FunctionArgs, Input, ServiceArgs } from './src/sst-platform';
+import { EnvCallback } from './src/laravel-env';
 import { RemoteEnvVault, RemoteEnvVaultArgs } from './src/laravel-env-manager';
 import { getPackagePath } from './src/config';
-import { RemoteEnvFile } from './src/remote-env-file';
-import { buildReverbEnvironmentVariables } from './src/reverb';
-import { getSecretsFingerprint } from './src/secrets-manager';
 import { ensureDockerIgnore } from './src/docker-ignore';
-import { buildDefaultPublicPorts, Port } from './src/load-balancer';
-import {
-  assertLoadBalancerArgs,
-  buildAccessLogsBucketPolicy,
-  buildIngressRules,
-  DEFAULT_INGRESS_CIDRS,
-  FALLBACK_LISTENER_PORTS,
-  findLoadBalancerKeys,
-  getLoadBalancerKind,
-  getStaticListenerPorts,
-  normalizeAccessLogsPrefix,
-  resolveAccessLogsRetentionDays,
-  resolveListenerSslPolicy,
-} from './src/load-balancer-hardening';
-import { buildWebServerEnvironment } from './src/web-server';
-import {
-  buildServiceArgs,
-  composeTransform,
-  composeTransforms,
-  findDeprecatedTopLevelKeys,
-  LaravelAdvancedArgs,
-  resolveAdvancedArgs,
-} from './src/service-args';
-import { buildSizeDefaults, ServiceSize } from './src/size';
-import {
-    assertSafeWorkerName,
-    buildBackgroundTasks,
-    writeS6TaskFiles,
-} from './src/background-tasks';
-import { stageWorkerConf } from './src/worker-conf';
+import { writeS6TaskFiles } from './src/background-tasks';
+import { stageDeploymentScript, stageWorkerConf } from './src/build-files';
+import { prepareEnvironmentFile } from './src/env-file';
+import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl } from './src/environment';
+import { buildImage } from './src/image';
+import { linkResources } from './src/links';
+import { buildLoadBalancerHardening } from './src/load-balancer-transforms';
+import { ClusterNetwork, resolveClusterNetwork, withContainerNetwork } from './src/network';
+import { composeTransforms, dependOn, disableInitProcess, LaravelAdvancedArgs } from './src/service-args';
+import { planServices, resolveReverbArgs, ServicePlan } from './src/services';
+import { ServiceSize } from './src/size';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
@@ -67,20 +25,42 @@ export type { PlanetScaleProperties } from './src/planetscale-env.js';
 /** The `transform.service` hook of `sst.aws.Service` (the ECS service). */
 type ServiceResourceTransform = NonNullable<ServiceArgs['transform']>['service'];
 
-/** The transforms the package generates for the load balancer options. */
-type LoadBalancerHardeningTransforms = {
-    listener?: (args: aws.lb.ListenerArgs) => void;
-    loadBalancer?: (
-        args: aws.lb.LoadBalancerArgs,
-        opts: $util.CustomResourceOptions,
-    ) => void;
-    loadBalancerSecurityGroup?: (args: aws.ec2.SecurityGroupArgs) => void;
-};
+/** The resources a `LaravelService` creates. */
+export interface LaravelServiceNodes {
+    /** The ECS cluster the services run in. */
+    cluster: sst.aws.Cluster;
+    /** The web service, when `web` is set. */
+    web?: sst.aws.Service;
+    /** The Reverb service, when `reverb` is set. */
+    reverb?: sst.aws.Service;
+    /** The worker services, by worker name. */
+    workers: Record<string, sst.aws.Service>;
+}
 
-enum ImageType {
-    Web = 'web',
-    Worker = 'worker',
-    Cli = 'cli',
+/**
+ * Created without a parent before 0.7.0: moves them under the component
+ * instead of replacing them.
+ */
+const CREATED_WITHOUT_PARENT = [{ parent: rootStackResource }];
+
+/** What every service of the component shares. */
+interface SharedServiceArgs {
+    cluster: sst.aws.Cluster;
+    network: ClusterNetwork;
+    links: any[];
+    permissions: LaravelArgs['permissions'];
+    sitePath: Input<string>;
+    absSitePath: string;
+    packagePath: string;
+    deployPath: string;
+    workerConfPath: string;
+    php?: Input<number>;
+    opcache?: Input<boolean>;
+    /** Variables the package adds to every container. */
+    injectedEnvironment: Record<string, Input<string | undefined>>;
+    vars: NonNullable<NonNullable<LaravelArgs['config']>['environment']>['vars'];
+    /** The resource that writes the env file, which the images copy. */
+    environmentFile?: Resource;
 }
 
 export type LaravelDomain = Input<
@@ -734,7 +714,7 @@ export interface LaravelArgs extends ClusterArgs {
 }
 
 export class LaravelService extends Component {
-    private readonly services: Record<string, sst.aws.Service>;
+    private readonly _nodes: LaravelServiceNodes;
     private readonly _messages: string[] = [];
 
     constructor(
@@ -744,1055 +724,165 @@ export class LaravelService extends Component {
     ) {
         super(__pulumiType, name, args, opts);
 
-        this.services = {};
-
-        // Captured for `function` declarations below, where `this` is unbound.
-        const component = this;
-        const componentMessages = this._messages;
-
-        args.config = args.config ?? {};
         const sitePath = args.path ?? '.';
         const absSitePath = path.resolve(sitePath.toString());
-        const nodeModulePath = getPackagePath();
-        const reverbConfig = normalizeReverbConfig(args.reverb);
+        const packagePath = getPackagePath();
+        // SST sets __dirname to the .sst/platform directory. Each component
+        // gets its own folder, so two of them don't overwrite each other.
+        const buildPath = path.resolve(__dirname, '../laravel', name);
+        const deployPath = path.resolve(buildPath, 'deploy');
+        const workerConfPath = path.resolve(buildPath, 'conf');
+        const reverb = resolveReverbArgs(args.reverb);
 
-        // Check the load balancer options first, so that a mistake in them
-        // fails the deploy before anything is created.
-        const services: [string, LaravelServiceArgs | undefined][] = [
-            ['web', args.web],
-            ['reverb', reverbConfig],
-            ...(args.workers ?? []).map(
-                (worker, index): [string, LaravelServiceArgs] => [
-                    `workers[${worker.name || `worker-${index + 1}`}]`,
-                    worker,
-                ],
-            ),
-        ];
+        // Checks the options before anything is created or written.
+        const plans = planServices(name, args, { sitePath, buildPath, reverb });
 
-        for (const [label, config] of services) {
-            assertLoadBalancerArgs(
-                label,
-                config?.loadBalancer,
-                resolveAdvancedArgs(config).loadBalancer,
-            );
-        }
+        fs.mkdirSync(deployPath, { recursive: true });
 
-        /**
-         * Merges a `web`, `workers[]`, or `reverb` block into the args for the
-         * underlying `sst.aws.Service`. Simple options (`size`, `cpu`,
-         * `memory`, `permissions`) stay first-class; everything else lives
-         * under `advanced` with the old top-level keys kept as deprecated
-         * aliases (the `advanced` value wins when both are set).
-         */
-        const resolveBlockServiceArgs = (
-          label: string,
-          config?: LaravelServiceArgs & LaravelBackgroundTasksArgs,
-        ): Record<string, unknown> => {
-          const advanced = config?.advanced ?? {};
-
-          for (const key of findDeprecatedTopLevelKeys(config)) {
-            if (
-              (advanced as Record<string, unknown>)[key] === undefined &&
-              (config as Record<string, unknown>)[key] !== undefined
-            ) {
-              console.warn(
-                `[sst-laravel] ${label}.${key} is deprecated. Use ${label}.advanced.${key} instead.`,
-              );
-            }
-          }
-
-          const { loadBalancer, transform, ...advancedPassthrough } =
-            resolveAdvancedArgs(config) as Record<string, unknown> & {
-              loadBalancer?: unknown;
-              transform?: Record<string, unknown>;
-            };
-
-          return {
-            ...buildSizeDefaults(config),
-            ...buildServiceArgs(config),
-            ...advancedPassthrough,
-            ...(loadBalancer !== undefined ? { loadBalancer } : {}),
-            ...(transform !== undefined ? { transform } : {}),
-          };
-        };
-
-        // Determine the path where our plugin will save build files.
-        // SST sets __dirname to the .sst/platform directory.
-        const pluginBuildPath = path.resolve(__dirname, '../laravel');
-
-        if (!fs.existsSync(pluginBuildPath)) {
-            fs.mkdirSync(pluginBuildPath, { recursive: true });
-        }
-
-        if (!fs.existsSync(pluginBuildPath + '/deploy')) {
-            fs.mkdirSync(pluginBuildPath + '/deploy', { recursive: true });
-        }
-
-        const envFilePath = path.resolve(pluginBuildPath, 'deploy', '.env');
-        const workerConfPath = path.resolve(pluginBuildPath, 'conf');
-
-        const envFileHasVariable = (variableName: string): boolean => {
-            const content = fs.readFileSync(envFilePath, 'utf-8');
-            return content
-                .split('\n')
-                .some((line) => line.trim().startsWith(`${variableName}=`));
-        };
-
-        const envFileSetVariable = (variableName: string, value: string) => {
-            fs.appendFileSync(envFilePath, `\n${variableName}=${value}\n`);
-            this._messages.push(
-                `Added ${variableName} to environment file: ${value}`,
-            );
-        };
-
-        const envFileSetVariableIfMissing = (
-            variableName: string,
-            value: string,
-        ) => {
-            if (envFileHasVariable(variableName)) {
-                return;
-            }
-
-            envFileSetVariable(variableName, value);
-        };
-
-        const environmentFileDependency = prepareEnvironmentFile();
-        prepareDeploymentScript();
-
-        const addEnvironmentFileImageDependency = (
-            _args: unknown,
-            opts: $util.CustomResourceOptions,
-            _name: string,
-        ) => {
-            if (!environmentFileDependency) {
-                return undefined;
-            }
-
-            opts.dependsOn = [environmentFileDependency];
-
-            return undefined;
-        };
-
-        /**
-         * Creates the bucket the load balancer delivers its access logs to.
-         * It keeps the S3 default encryption (SSE-S3): ELB cannot deliver
-         * logs to a bucket encrypted with a KMS key.
-         *
-         * Like SST's own buckets, it is emptied and removed with the stage,
-         * unless the app sets `removal: "retain"`.
-         */
-        const createAccessLogsBucket = (
-            serviceName: string,
-            config: LaravelLoadBalancerAccessLogsArgs,
-        ) => {
-            const bucket = new aws.s3.Bucket(
-                `${serviceName}-AccessLogs`,
-                { forceDestroy: true },
-                { parent: this },
-            );
-
-            const publicAccessBlock = new aws.s3.BucketPublicAccessBlock(
-                `${serviceName}-AccessLogsPublicAccessBlock`,
-                {
-                    bucket: bucket.bucket,
-                    blockPublicAcls: true,
-                    blockPublicPolicy: true,
-                    ignorePublicAcls: true,
-                    restrictPublicBuckets: true,
-                },
-                { parent: this },
-            );
-
-            const policy = new aws.s3.BucketPolicy(
-                `${serviceName}-AccessLogsPolicy`,
-                {
-                    bucket: bucket.bucket,
-                    policy: all([
-                        bucket.arn,
-                        aws.getCallerIdentityOutput({}, { parent: this })
-                            .accountId,
-                        aws.getRegionOutput({}, { parent: this }).region,
-                        config.prefix,
-                    ]).apply(([bucketArn, accountId, region, prefix]) =>
-                        JSON.stringify(
-                            buildAccessLogsBucketPolicy({
-                                bucketArn,
-                                accountId,
-                                region,
-                                prefix,
-                            }),
-                        ),
-                    ),
-                },
-                { parent: this, dependsOn: publicAccessBlock },
-            );
-
-            const retentionDays = resolveAccessLogsRetentionDays(
-                config.retentionDays,
-            );
-
-            if (retentionDays) {
-                new aws.s3.BucketLifecycleConfiguration(
-                    `${serviceName}-AccessLogsLifecycle`,
-                    {
-                        bucket: bucket.bucket,
-                        rules: [
-                            {
-                                id: 'expire-access-logs',
-                                status: 'Enabled',
-                                filter: {},
-                                expiration: { days: retentionDays },
-                            },
-                        ],
-                    },
-                    { parent: this },
-                );
-            }
-
-            return { bucket: bucket.bucket, policy };
-        };
-
-        /**
-         * Builds the transforms that harden the load balancer SST creates
-         * for the service, from the secure defaults and the `loadBalancer`
-         * options of the block (`sslPolicy`, `ingressCidrs`, `accessLogs`).
-         */
-        const buildLoadBalancerHardening = (
-            label: string,
-            serviceName: string,
-            config: LaravelLoadBalancerArgs = {},
-            loadBalancer: unknown,
-        ): LoadBalancerHardeningTransforms => {
-            const kind = getLoadBalancerKind(loadBalancer);
-
-            // Nothing to harden: the service has no load balancer, or it
-            // uses a shared one, which belongs to its own component.
-            if (kind !== 'dedicated') {
-                const keys = findLoadBalancerKeys(config);
-
-                if (keys.length > 0 && kind === 'none') {
-                    console.warn(
-                        `[sst-laravel] ${keys
-                            .map((key) => `${label}.loadBalancer.${key}`)
-                            .join(', ')} ignored: ${label} has no load balancer.`,
-                    );
-                }
-
-                return {};
-            }
-
-            const hardening: LoadBalancerHardeningTransforms = {
-                listener: (listenerArgs) => {
-                    listenerArgs.sslPolicy = all([
-                        listenerArgs.protocol,
-                        config.sslPolicy,
-                    ]).apply(([protocol, policy]) =>
-                        resolveListenerSslPolicy(protocol, policy),
-                    ) as Output<string>;
-                },
-            };
-
-            const listenerPorts = getStaticListenerPorts(loadBalancer);
-            const ingressCidrs = config.ingressCidrs;
-
-            if (ingressCidrs) {
-                const ingress =
-                    Array.isArray(ingressCidrs) ||
-                    ingressCidrs instanceof Promise ||
-                    Output.isInstance(ingressCidrs)
-                        ? output(ingressCidrs as Input<string[]>).apply(
-                              (cidrs) =>
-                                  buildIngressRules(
-                                      listenerPorts ?? FALLBACK_LISTENER_PORTS,
-                                      cidrs,
-                                  ),
-                          )
-                        : all([
-                              (ingressCidrs as LaravelIngressCidrsArgs).v4,
-                              (ingressCidrs as LaravelIngressCidrsArgs).v6,
-                              (ingressCidrs as LaravelIngressCidrsArgs).ports,
-                          ]).apply(([v4, v6, ports]) =>
-                              buildIngressRules(
-                                  ports?.map((port) => ({
-                                      port,
-                                      protocol: 'tcp' as const,
-                                  })) ??
-                                      listenerPorts ??
-                                      FALLBACK_LISTENER_PORTS,
-                                  { v4, v6 },
-                              ),
-                          );
-
-                hardening.loadBalancerSecurityGroup = (sgArgs) => {
-                    sgArgs.ingress = ingress;
-                };
-            } else if (listenerPorts) {
-                // Without the ports, keep the rule SST creates. Guessing
-                // them could lock everyone out of a custom load balancer.
-                hardening.loadBalancerSecurityGroup = (sgArgs) => {
-                    sgArgs.ingress = buildIngressRules(
-                        listenerPorts,
-                        DEFAULT_INGRESS_CIDRS,
-                    );
-                };
-            }
-
-            const accessLogs =
-                config.accessLogs === true
-                    ? {}
-                    : config.accessLogs || undefined;
-            const ownBucket = accessLogs?.bucket;
-            const createdBucket =
-                accessLogs && !ownBucket
-                    ? createAccessLogsBucket(serviceName, accessLogs)
-                    : undefined;
-
-            hardening.loadBalancer = (lbArgs, opts) => {
-                // Only application load balancers read HTTP headers.
-                lbArgs.dropInvalidHeaderFields = output(
-                    lbArgs.loadBalancerType,
-                ).apply((type) =>
-                    type === 'network' ? undefined : true,
-                ) as Output<boolean>;
-
-                if (!accessLogs) {
-                    return;
-                }
-
-                lbArgs.accessLogs = {
-                    bucket:
-                        createdBucket?.bucket ??
-                        (typeof ownBucket === 'object' &&
-                        !(ownBucket instanceof Promise) &&
-                        !Output.isInstance(ownBucket)
-                            ? (ownBucket as { name: Input<string> }).name
-                            : (ownBucket as Input<string>)),
-                    prefix: output(accessLogs.prefix).apply((prefix) =>
-                        normalizeAccessLogsPrefix(prefix),
-                    ) as Output<string>,
-                    enabled: accessLogs.enabled ?? true,
-                };
-
-                // AWS checks it can write to the bucket when access logs
-                // are turned on, so the bucket policy has to exist first.
-                if (createdBucket) {
-                    opts.dependsOn = [
-                        ...([opts.dependsOn ?? []].flat() as $util.Resource[]),
-                        createdBucket.policy,
-                    ];
-                }
-            };
-
-            return hardening;
-        };
-
-        const clusterNetwork = normalizeClusterVpc(args.vpc);
-        const cluster = new sst.aws.Cluster(`${name}-Cluster`, {
-            vpc: clusterNetwork.vpc,
+        const reverbEnvironment = buildReverbEnvironment(reverb);
+        const environmentFile = prepareEnvironmentFile({
+            parent: this,
+            name,
+            envFilePath: path.resolve(deployPath, '.env'),
+            absSitePath,
+            environment: args.config?.environment,
+            links: args.link,
+            variables: reverbEnvironment,
+            appUrl: getAppUrl(args.web?.domain),
+            messages: this._messages,
         });
 
-        /**
-         * SST only gives containers a public IP when the cluster gets the
-         * `sst.aws.Vpc` itself. We pass a plain object so we can choose the
-         * subnets, so set the public IP on the ECS service to match. The
-         * user's `advanced.transform.service` still runs after this.
-         */
-        const withContainerNetwork = (
-            userTransform: unknown,
-        ): ServiceResourceTransform => {
-            const assignPublicIp = clusterNetwork.assignPublicIp;
+        stageDeploymentScript(
+            absSitePath,
+            args.config?.deployment?.script as string | undefined,
+            deployPath,
+        );
 
-            if (!assignPublicIp) {
-                return userTransform as ServiceResourceTransform;
-            }
-
-            return composeTransform<{
-                networkConfiguration?: PulumiInput<object>;
-            }>((serviceArgs) => {
-                serviceArgs.networkConfiguration = all([
-                    serviceArgs.networkConfiguration,
-                    assignPublicIp,
-                ]).apply(([networkConfiguration, publicIp]) => ({
-                    ...networkConfiguration,
-                    assignPublicIp: publicIp,
-                }));
-            }, userTransform) as ServiceResourceTransform;
-        };
-
-        const addWebService = () => {
-            const webBuildPath = path.resolve(pluginBuildPath, 'web');
-            writeS6TaskFiles(buildBackgroundTasks(args.web ?? {}), webBuildPath);
-
-            const envVariables = getEnvironmentVariables(
-                buildWebServerEnvironment({
-                    accessLogs: args.web?.accessLogs,
-                }),
-            );
-
-            const webResolved = resolveBlockServiceArgs(
-                'web',
-                args.web,
-            ) as {
-                loadBalancer?: ServiceArgs['loadBalancer'];
-                transform?: Record<string, unknown>;
-                [key: string]: unknown;
-            };
-            const webLoadBalancer: ServiceArgs['loadBalancer'] =
-                webResolved.loadBalancer
-                    ? webResolved.loadBalancer
-                    : {
-                          domain: args.web?.domain,
-                          ports: buildDefaultPublicPorts({
-                              hasDomain: Boolean(args.web?.domain),
-                              httpsRedirect: args.web?.httpsRedirect ?? true,
-                          }),
-                          ...(args.web?.healthCheck
-                              ? {
-                                    health: {
-                                        '8080/http': args.web.healthCheck,
-                                    },
-                                }
-                              : {}),
-                      };
-            const webTransform = composeTransforms(
-                buildLoadBalancerHardening(
-                    'web',
-                    `${name}-Web`,
-                    args.web?.loadBalancer,
-                    webLoadBalancer,
-                ),
-                webResolved.transform,
-            );
-
-            this.services['web'] = new sst.aws.Service(
-                `${name}-Web`,
-                {
-                    cluster,
-                    link: getLinks(),
-                    permissions: args.permissions,
-                    ...webResolved,
-
-                    /**
-                     * Image passed or use our default provided image.
-                     */
-                    image: getImage(ImageType.Web, {
-                        CUSTOM_CONF_PATH: webBuildPath.replace(absSitePath, ''),
-                    }),
-                    environment: envVariables,
-                    scaling: args.web?.scaling,
-
-                    loadBalancer: webLoadBalancer,
-
-                    dev: {
-                        command: `php ${sitePath}/artisan serve`,
-                    },
-
-                    transform: {
-                        ...webTransform,
-                        service: withContainerNetwork(webTransform.service),
-                        image: addEnvironmentFileImageDependency,
-                        taskDefinition: (args) => {
-                            args.containerDefinitions = (
-                                args.containerDefinitions as $util.Output<string>
-                            ).apply((a) => {
-                                return JSON.stringify([
-                                    {
-                                        ...JSON.parse(a)[0],
-                                        linuxParameters: {
-                                            initProcessEnabled: false,
-                                        },
-                                    },
-                                ]);
-                            });
-                        },
-                    },
-                },
-                {
-                    dependsOn: environmentFileDependency
-                        ? [environmentFileDependency]
-                        : [],
-                },
-            );
-        };
-
-        const createWorkerService = (
-            workerConfig: LaravelWorkerConfig,
-            serviceName: string,
-            workerBuildPath: string,
-            serviceKey = serviceName,
-            devCommand = `php ${sitePath}/artisan horizon`,
-        ) => {
-            writeS6TaskFiles(buildBackgroundTasks(workerConfig), workerBuildPath);
-
-            const imgBuildArgs = {
-                CONF_PATH: workerConfPath.replace(absSitePath, ''),
-                CUSTOM_CONF_PATH: workerBuildPath.replace(absSitePath, ''),
-            };
-
-            const workerLabel =
-                serviceKey === 'reverb'
-                    ? 'reverb'
-                    : `workers[${(workerConfig.name as string) ?? serviceKey}]`;
-            const workerResolved = resolveBlockServiceArgs(
-                workerLabel,
-                workerConfig,
-            ) as {
-                loadBalancer?: ServiceArgs['loadBalancer'];
-                transform?: Record<string, unknown>;
-                [key: string]: unknown;
-            };
-            const { loadBalancer: workerLoadBalancer } = workerResolved;
-            const workerTransform = composeTransforms(
-                buildLoadBalancerHardening(
-                    workerLabel,
-                    serviceName,
-                    workerConfig.loadBalancer,
-                    workerLoadBalancer,
-                ),
-                workerResolved.transform,
-            );
-
-            this.services[serviceKey] = new sst.aws.Service(
-                serviceName,
-                {
-                    cluster,
-                    link: getLinks(),
-                    permissions: args.permissions,
-                    ...workerResolved,
-
-                    image: getImage(ImageType.Worker, imgBuildArgs),
-                    scaling: workerConfig.scaling,
-                    environment: getEnvironmentVariables(),
-                    loadBalancer: workerLoadBalancer,
-
-                    dev: {
-                        command: devCommand,
-                    },
-
-                    transform: {
-                        ...workerTransform,
-                        service: withContainerNetwork(workerTransform.service),
-                        image: addEnvironmentFileImageDependency,
-                        taskDefinition: (args) => {
-                            args.containerDefinitions = (
-                                args.containerDefinitions as $util.Output<string>
-                            ).apply((a) => {
-                                return JSON.stringify([
-                                    {
-                                        ...JSON.parse(a)[0],
-                                        linuxParameters: {
-                                            initProcessEnabled: false,
-                                        },
-                                    },
-                                ]);
-                            });
-                        },
-                    },
-                },
-                {
-                    dependsOn: environmentFileDependency
-                        ? [environmentFileDependency]
-                        : [],
-                },
-            );
-        };
-
-        function addReverbService() {
-            if (!reverbConfig) {
-                return;
-            }
-
-            const reverbPort: Port = `${reverbConfig.port}/http`;
-            const reverbAdvanced = resolveAdvancedArgs(reverbConfig) as {
-                loadBalancer?: ServiceArgs['loadBalancer'];
-            };
-            const reverbWorkerConfig: LaravelWorkerConfig = {
-                ...reverbConfig,
-                name: 'reverb',
-                advanced: {
-                    ...reverbConfig.advanced,
-                    loadBalancer: reverbAdvanced.loadBalancer ?? {
-                        domain: reverbConfig.domain,
-                        ports: buildDefaultPublicPorts({
-                            hasDomain: Boolean(reverbConfig.domain),
-                            forwardPort: reverbConfig.port,
-                        }),
-                        health: {
-                            [reverbPort]: {
-                                path: '/apps',
-                                successCodes: '200-499',
-                            },
-                        },
-                    },
-                },
-                tasks: {
-                    'laravel-reverb': {
-                        command: reverbConfig.command,
-                    },
-                },
-            };
-
-            createWorkerService(
-                reverbWorkerConfig,
-                `${name}-Reverb`,
-                path.resolve(pluginBuildPath, 'worker-reverb'),
-                'reverb',
-                `php ${sitePath}/artisan reverb:start`,
-            );
+        if (plans.some((plan) => plan.image === 'worker')) {
+            stageWorkerConf(packagePath, workerConfPath);
         }
 
-        function addWorkerServices() {
-            args.workers?.forEach((workerConfig, index) => {
-                const workerName = workerConfig.name || `worker-${index + 1}`;
-                assertSafeWorkerName(workerName as string);
-                const absWorkerBuildPath = path.resolve(
-                    pluginBuildPath,
-                    `worker-${workerName}`,
-                );
+        const network = resolveClusterNetwork(args.vpc);
+        const cluster = new sst.aws.Cluster(
+            `${name}-Cluster`,
+            {
+                vpc: network.vpc,
+                forceUpgrade: args.forceUpgrade,
+                transform: args.transform,
+            },
+            { parent: this, aliases: CREATED_WITHOUT_PARENT },
+        );
 
-                createWorkerService(
-                    workerConfig,
-                    `${name}-${workerName}`,
-                    absWorkerBuildPath,
-                );
-            });
-        }
+        this._nodes = { cluster, workers: {} };
 
-        if (args.web) {
-            addWebService();
-        }
-
-        if (args.workers?.length || reverbConfig) {
-            stageWorkerConf(nodeModulePath, workerConfPath);
-        }
-
-        if (args.workers) {
-            addWorkerServices();
-        }
-
-        if (reverbConfig) {
-            addReverbService();
-        }
-
-        /**
-         * Picks the subnets the containers run in when `vpc` is an
-         * `sst.aws.Vpc`.
-         *
-         * With NAT, containers stay in the private subnets and reach the
-         * internet through it. Without NAT, private subnets have no route
-         * out, so containers could not even pull their image from ECR. They
-         * run in the public subnets with a public IP instead, which is what
-         * SST does by default. The VPC security group still only accepts
-         * inbound traffic from inside the VPC (the load balancer).
-         */
-        function normalizeClusterVpc(vpc: LaravelArgs['vpc']): {
-            vpc: LaravelArgs['vpc'];
-            assignPublicIp?: Output<boolean>;
-        } {
-            if (
-                !vpc ||
-                typeof vpc !== 'object' ||
-                !('publicSubnets' in vpc) ||
-                !('nodes' in vpc)
-            ) {
-                return { vpc };
-            }
-
-            const cloudmapNamespace = vpc.nodes?.cloudmapNamespace;
-
-            if (!cloudmapNamespace) {
-                return { vpc };
-            }
-
-            const hasNat = all([
-                vpc.nodes.natGateways,
-                vpc.nodes.natInstances,
-            ]).apply(
-                ([natGateways, natInstances]) =>
-                    natGateways.length > 0 || natInstances.length > 0,
-            );
-
-            return {
-                vpc: {
-                    id: vpc.id,
-                    securityGroups: vpc.securityGroups,
-                    containerSubnets: hasNat.apply((nat) =>
-                        nat ? vpc.privateSubnets : vpc.publicSubnets,
-                    ),
-                    loadBalancerSubnets: vpc.publicSubnets,
-                    cloudmapNamespaceId: cloudmapNamespace.id,
-                    cloudmapNamespaceName: cloudmapNamespace.name,
-                },
-                assignPublicIp: hasNat.apply((nat) => !nat),
-            };
-        }
-
-        // TODO: We have to test if it works when a custom image is provided in sst.config.js
-        function getImage(imgType: ImageType, extraArgs: object = {}) {
-            const img = getDefaultImage(imgType, extraArgs);
-
-            const context =
-                typeof img === 'string'
-                    ? sitePath.toString()
-                    : (img as { context: string }).context.toString();
-
-            const dockerfile =
-                typeof img === 'string'
-                    ? 'Dockerfile'
-                    : (img as { dockerfile: string }).dockerfile;
-
-            const dockerIgnoreMessage = ensureDockerIgnore(context, dockerfile);
-            if (dockerIgnoreMessage) {
-                componentMessages.push(dockerIgnoreMessage);
-            }
-
-            return img;
-        }
-
-        /**
-         * Every build arg here must have a matching `ARG` in the Dockerfile,
-         * or Docker drops it.
-         */
-        function getDefaultImage(imageType: ImageType, extraArgs: object = {}) {
-            return {
-                context: sitePath,
-                dockerfile: path
-                    .resolve(nodeModulePath, `Dockerfile.${imageType}`)
-                    .replace(absSitePath, '.'),
-                target: 'deploy',
-                args: {
-                    PHP_VERSION: getPhpVersion().toString(),
-                    PHP_OPCACHE_ENABLE: output(args.config?.opcache).apply(
-                        (opcache) => (opcache === false ? '0' : '1'),
-                    ),
-                    ...extraArgs,
-                },
-            };
-        }
-
-        function getPhpVersion() {
-            return args.config?.php ?? 8.4;
-        }
-
-        /**
-         * The container environment: the Reverb variables, then
-         * `config.environment.vars`, then the given overrides. `vars` may be
-         * an Output, so the result is one. Variables without a value are
-         * left out.
-         */
-        function getEnvironmentVariables(
-            overrides: Record<string, string> = {},
-        ): Output<Record<string, string>> {
-            return all([
-                shouldAutoInjectEnvironment()
-                    ? getReverbEnvironmentVariables()
+        const shared: SharedServiceArgs = {
+            cluster,
+            network,
+            links: linkResources(args.link),
+            permissions: args.permissions,
+            sitePath,
+            absSitePath,
+            packagePath,
+            deployPath,
+            workerConfPath,
+            php: args.config?.php,
+            opcache: args.config?.opcache,
+            injectedEnvironment:
+                args.config?.environment?.autoInject !== false
+                    ? reverbEnvironment
                     : {},
-                args.config?.environment?.vars ?? {},
-                overrides,
-            ]).apply(([reverb, vars, extra]) =>
-                Object.fromEntries(
-                    Object.entries({ ...reverb, ...vars, ...extra }).filter(
-                        (entry): entry is [string, string] =>
-                            entry[1] !== undefined,
-                    ),
-                ),
-            );
-        }
+            vars: args.config?.environment?.vars,
+            environmentFile,
+        };
 
-        function getLinkedEnvironmentData() {
-            const links = args.link || [];
-            const resources: any[] = [];
-            const customEnv: Record<string, string | Output<string>> = {};
+        for (const plan of plans) {
+            const service = this.createService(plan, shared);
 
-            links.forEach((link) => {
-                if (link && typeof link === 'object' && 'resource' in link) {
-                    // Link is an object with resource and optional envCallback
-                    resources.push(link.resource);
-
-                    // If there's an envCallback, call it and merge the result
-                    const linkObject = link as {
-                        resource: any;
-                        envFrom?: EnvCallback;
-                        environment?: EnvCallback;
-                        envCallback?: EnvCallback;
-                    };
-
-                    if (linkObject.envFrom && linkObject.environment) {
-                        throw new Error(
-                            'A linked resource cannot set both `envFrom` and `environment`. Use `envFrom`.',
-                        );
-                    }
-
-                    const callback =
-                        linkObject.envFrom ||
-                        linkObject.environment ||
-                        linkObject.envCallback;
-                    if (callback) {
-                        const callbackResult = callback(link.resource);
-                        Object.assign(customEnv, callbackResult);
-                    }
-                } else {
-                    // Link is just a resource
-                    resources.push(link);
-                }
-            });
-
-            return {
-                linkedEnvironment: {
-                    ...applyLinkedResourcesEnv(resources),
-                    ...customEnv,
-                    ...getReverbEnvironmentVariables(),
-                },
-                linkedSecrets: extractSecrets(resources).map((secret) => ({
-                    name: secret.name,
-                    value: secret.value,
-                })),
-            };
-        }
-
-        function applyLinkedResourcesToEnvironment() {
-            const { linkedEnvironment, linkedSecrets } =
-                getLinkedEnvironmentData();
-
-            // Apply default environment variables for all resources
-            if (!args.config) args.config = {};
-            if (!args.config.environment) args.config.environment = {};
-
-            fs.appendFileSync(
-                envFilePath,
-                '\n' + '# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---' + '\n',
-            );
-
-            addAppUrlIfMissing();
-            envFileSetVariableIfMissing('LOG_CHANNEL', 'stderr');
-
-            all(Object.entries(linkedEnvironment)).apply((entries) => {
-                const envContent = entries
-                    .map(([key, value]) => `${key}=${value}`)
-                    .join('\n');
-
-                if (envContent) {
-                    fs.appendFileSync(envFilePath, '\n' + envContent);
-                }
-            });
-
-            linkedSecrets.forEach((secret) => {
-                all([secret.name, secret.value]).apply(([name, value]) => {
-                    fs.appendFileSync(envFilePath, `\n${name}=${value}`);
-                });
-            });
-        }
-
-        /**
-         * Return the links as an array of resources in the original SST format.
-         */
-        function getLinks(): any[] {
-            return (args.link || []).map((link) => {
-                if (link && typeof link === 'object' && 'resource' in link) {
-                    return link.resource;
-                }
-
-                return link;
-            });
-        }
-
-        function prepareEnvironmentFile() {
-            const envFile = args.config?.environment?.file as
-                | string
-                | undefined;
-            const secrets = args.config?.environment?.secrets;
-
-            if (secrets) {
-                return prepareRemoteEnvironmentFile(secrets);
-            }
-
-            // Handle traditional env file configuration
-            if (!envFile) {
-                return;
-            }
-
-            const src = path.resolve(absSitePath, envFile);
-
-            if (fs.existsSync(src)) {
-                fs.copyFileSync(src, envFilePath);
-                fs.chmodSync(envFilePath, 0o755);
+            if (plan.kind === 'worker') {
+                this._nodes.workers[plan.workerName!] = service;
             } else {
-                fs.writeFileSync(envFilePath, '');
+                this._nodes[plan.kind] = service;
             }
-
-            if (args.config?.environment?.autoInject !== false) {
-                applyLinkedResourcesToEnvironment();
-            }
-        }
-
-        function prepareRemoteEnvironmentFile(secrets: RemoteEnvVault) {
-            if (runtime.isDryRun() && !fs.existsSync(envFilePath)) {
-                fs.writeFileSync(
-                    envFilePath,
-                    '# WARNING: RemoteEnvVault secrets are loaded during deployment. Preview uses a placeholder file.\n',
-                );
-                fs.chmodSync(envFilePath, 0o755);
-            }
-
-            const { linkedEnvironment, linkedSecrets } =
-                getLinkedEnvironmentData();
-
-            return new RemoteEnvFile(
-                `${name}-RemoteEnv`,
-                {
-                    secretPath: secrets.path,
-                    envFilePath,
-                    fingerprint: output(secrets.path).apply((secretPath) =>
-                        getSecretsFingerprint(secretPath),
-                    ),
-                    autoInject: args.config?.environment?.autoInject !== false,
-                    appUrl: getAppUrl(),
-                    linkedEnvironment,
-                    linkedSecrets,
-                },
-                {
-                    parent: component,
-                    // Created without a parent before, so it moves under the
-                    // component instead of being replaced.
-                    aliases: [{ parent: rootStackResource }],
-                },
-            );
-        }
-
-        function addAppUrlIfMissing() {
-            if (envFileHasVariable('APP_URL')) {
-                return;
-            }
-
-            const appUrl = getAppUrl();
-
-            if (typeof appUrl === 'string') {
-                envFileSetVariable('APP_URL', appUrl);
-            }
-        }
-
-        function getAppUrl(): PulumiInput<string | undefined> | undefined {
-            if (!args.web?.domain) {
-                return undefined;
-            }
-
-            if (typeof args.web.domain === 'string') {
-                return `https://${args.web.domain}`;
-            }
-
-            if (
-                typeof args.web.domain === 'object' &&
-                'name' in args.web.domain
-            ) {
-                return output(
-                    (args.web.domain as { name: Input<string> }).name,
-                ).apply((domainName) =>
-                    domainName ? `https://${domainName}` : undefined,
-                );
-            }
-
-            return undefined;
-        }
-
-        function getReverbEnvironmentVariables() {
-            if (!reverbConfig) {
-                return {};
-            }
-
-            const publicHost = getDomainName(reverbConfig.domain);
-            const serverVariables = buildReverbEnvironmentVariables({
-                serverHost: reverbConfig.host,
-                serverPort: reverbConfig.port,
-            });
-
-            if (!publicHost) {
-                return serverVariables;
-            }
-
-            if (typeof publicHost === 'string') {
-                return buildReverbEnvironmentVariables({
-                    publicHost,
-                    serverHost: reverbConfig.host,
-                    serverPort: reverbConfig.port,
-                });
-            }
-
-            return {
-                ...serverVariables,
-                REVERB_HOST: publicHost,
-                REVERB_PORT: '443',
-                REVERB_SCHEME: 'https',
-            };
-        }
-
-        function shouldAutoInjectEnvironment(): boolean {
-            return args.config?.environment?.autoInject !== false;
-        }
-
-        function getDomainName(
-            domain?: LaravelDomain,
-        ): PulumiInput<string | undefined> | undefined {
-            if (!domain) {
-                return undefined;
-            }
-
-            if (typeof domain === 'string') {
-                return domain;
-            }
-
-            if (typeof domain === 'object' && 'name' in domain) {
-                return output((domain as { name: Input<string> }).name).apply(
-                    (domainName) => domainName || undefined,
-                );
-            }
-
-            return undefined;
-        }
-
-        function normalizeReverbConfig(
-            config?: boolean | LaravelReverbArgs,
-        ): (LaravelReverbArgs & {
-            command: string;
-            host: string;
-            port: number;
-        }) | undefined {
-            if (!config) {
-                return undefined;
-            }
-
-            const reverb = typeof config === 'boolean' ? {} : config;
-
-            return {
-                ...reverb,
-                command: reverb.command ?? 'php artisan reverb:start',
-                host: reverb.host ?? '0.0.0.0',
-                port: reverb.port ?? 8080,
-            };
-        }
-
-        function prepareDeploymentScript() {
-            const deployDir = path.resolve(pluginBuildPath, 'deploy');
-            const dst = path.resolve(deployDir, '60-deploy.sh');
-
-            fs.mkdirSync(deployDir, { recursive: true });
-
-            const script = args.config?.deployment?.script as
-                | string
-                | undefined;
-            if (script) {
-                const src = path.resolve(absSitePath, script);
-                if (fs.existsSync(src)) {
-                    fs.copyFileSync(src, dst);
-                    fs.chmodSync(dst, 0o755);
-                    return;
-                }
-            }
-
-            fs.writeFileSync(dst, '#!/bin/sh\nexit 0\n');
-            fs.chmodSync(dst, 0o755);
         }
 
         this.registerOutputs({ _hint: this.messages });
+    }
+
+    private createService(
+        plan: ServicePlan,
+        shared: SharedServiceArgs,
+    ): sst.aws.Service {
+        writeS6TaskFiles(plan.tasks, plan.buildPath);
+
+        const image = buildImage({
+            role: plan.image,
+            sitePath: shared.sitePath,
+            absSitePath: shared.absSitePath,
+            packagePath: shared.packagePath,
+            php: shared.php,
+            opcache: shared.opcache,
+            servicesPath: plan.buildPath,
+            deployPath: shared.deployPath,
+            confPath:
+                plan.image === 'worker' ? shared.workerConfPath : undefined,
+        });
+
+        const dockerIgnoreMessage = ensureDockerIgnore(
+            image.context.toString(),
+            image.dockerfile,
+        );
+
+        if (dockerIgnoreMessage) {
+            this._messages.push(dockerIgnoreMessage);
+        }
+
+        const transform = composeTransforms(
+            buildLoadBalancerHardening(
+                this,
+                plan.label,
+                plan.resourceName,
+                plan.loadBalancerOptions,
+                plan.loadBalancer,
+            ),
+            plan.transform,
+        );
+
+        return new sst.aws.Service(
+            plan.resourceName,
+            {
+                cluster: shared.cluster,
+                link: shared.links,
+                permissions: shared.permissions,
+                ...plan.serviceArgs,
+                image,
+                environment: buildContainerEnvironment(
+                    shared.injectedEnvironment,
+                    shared.vars,
+                    plan.environment,
+                ),
+                scaling: plan.scaling,
+                loadBalancer: plan.loadBalancer as ServiceArgs['loadBalancer'],
+                dev: {
+                    command: plan.devCommand,
+                },
+                transform: {
+                    ...transform,
+                    service: withContainerNetwork(
+                        shared.network,
+                        transform.service,
+                    ) as ServiceResourceTransform,
+                    image: dependOn(shared.environmentFile),
+                    taskDefinition: disableInitProcess,
+                },
+            },
+            {
+                parent: this,
+                aliases: CREATED_WITHOUT_PARENT,
+                dependsOn: shared.environmentFile
+                    ? [shared.environmentFile]
+                    : [],
+            },
+        );
     }
 
     /**
@@ -1803,7 +893,7 @@ export class LaravelService extends Component {
      * `undefined` when no `web` service is configured.
      */
     public get url() {
-        return this.services['web']?.url;
+        return this._nodes.web?.url;
     }
 
     /**
@@ -1814,7 +904,26 @@ export class LaravelService extends Component {
      * `undefined` when no `reverb` service is configured.
      */
     public get reverbUrl() {
-        return this.services['reverb']?.url;
+        return this._nodes.reverb?.url;
+    }
+
+    /**
+     * The underlying resources: the ECS cluster and the `sst.aws.Service`
+     * of web, Reverb, and each worker (by worker name). Use them to add
+     * alarms, permissions, or outputs of your own.
+     *
+     * @example
+     * ```js
+     * const app = new LaravelService('MyLaravelApp', { ... });
+     *
+     * return {
+     *   cluster: app.nodes.cluster.nodes.cluster.name,
+     *   queue: app.nodes.workers.queue.service,
+     * };
+     * ```
+     */
+    public get nodes(): LaravelServiceNodes {
+        return this._nodes;
     }
 
     /**

@@ -24,7 +24,6 @@ RUN s6-install.sh
 FROM phpcli AS base
 
 ARG CONF_PATH
-ARG CUSTOM_CONF_PATH
 
 USER root
 
@@ -35,10 +34,7 @@ ENV AUTORUN_ENABLED=false
 ENV AUTORUN_LARAVEL_MIGRATION=false
 
 # copy our scripts
-RUN test -n "$CUSTOM_CONF_PATH"
-
 COPY --chmod=755 $CONF_PATH /
-COPY --chmod=755 $CUSTOM_CONF_PATH /
 
 # copy s6-overlay from s6-build
 COPY --from=s6-build /opt/s6/ /
@@ -65,6 +61,8 @@ USER www-data
 ##############
 FROM base AS deploy
 
+ARG CUSTOM_CONF_PATH
+ARG DEPLOY_PATH=/.sst/laravel/deploy
 ARG PHP_OPCACHE_ENABLE=1
 
 ENV CONTAINER_TYPE=cli
@@ -73,13 +71,18 @@ ENV CONTAINER_TYPE=cli
 ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
 COPY --chown=www-data:www-data . /var/www/html
-COPY --chown=www-data:www-data .sst/laravel/deploy/.env /var/www/html/.env
+COPY --chown=www-data:www-data $DEPLOY_PATH/.env /var/www/html/.env
 
 # Fix S6 Overlay issues with Big Cloud PaaS (https://github.com/serversideup/docker-php/pull/376#issuecomment-2179262427)
 RUN chown -R www-data:www-data /run
 
-# Copy deploy script generated into .sst/laravel by the build step
-COPY --chmod=755 .sst/laravel/deploy/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
+# Copy the deployment script the component writes into .sst/laravel
+COPY --chmod=755 $DEPLOY_PATH/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
+
+# Copy this worker's generated s6-overlay services. It comes last so every
+# layer above is the same for all workers and comes from the build cache.
+RUN test -n "$CUSTOM_CONF_PATH"
+COPY --chmod=755 $CUSTOM_CONF_PATH /
 
 USER www-data
 

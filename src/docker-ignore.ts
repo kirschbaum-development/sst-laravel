@@ -5,7 +5,7 @@ import * as path from 'path';
  * Written to a project that has no `.dockerignore` yet. The Dockerfiles copy
  * the whole project into the image, so without this the image would carry
  * local-only files: the git history, every `.env*` file (the image gets its
- * own `.env` from `.sst/laravel/deploy`), a local SQLite database, uploads,
+ * own `.env` from `.sst/laravel`), a local SQLite database, uploads,
  * logs, and `node_modules`.
  */
 export const DOCKER_IGNORE_DEFAULTS = `# Added by sst-laravel: keeps local-only files out of the container image.
