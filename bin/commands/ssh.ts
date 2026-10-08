@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
-import { findClusterArn, findTask } from '../utils/ecs.js';
+import { findCluster, findTask } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 
 interface SshOptions {
@@ -28,10 +28,11 @@ export const sshCommand = new Command('ssh')
 
       const ecsClient = new ECSClient({ region });
 
-      const clusterArn = await findClusterArn(ecsClient, stage, options.cluster);
+      const cluster = await findCluster(ecsClient, stage, options.cluster);
+      const clusterArn = cluster.clusterArn;
       console.log(`Cluster ARN: ${clusterArn}`);
 
-      const matchingTask = await findTask(ecsClient, clusterArn, service, 'Select a task to connect to:');
+      const matchingTask = await findTask(ecsClient, cluster, service, 'Select a task to connect to:');
 
       const taskId = matchingTask.taskArn?.split('/').pop();
 

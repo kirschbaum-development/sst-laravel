@@ -1,10 +1,6 @@
 import { Command } from 'commander';
-import {
-  DescribeTasksCommand,
-  ECSClient,
-  ListTasksCommand,
-} from '@aws-sdk/client-ecs';
-import { findClusterArn } from '../utils/ecs.js';
+import { ECSClient } from '@aws-sdk/client-ecs';
+import { findClusterArn, listRunningTasks, taskServiceName } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
 import { readSavedAppUrl } from '../utils/app-url.js';
 
@@ -60,24 +56,16 @@ const checkOnce = async (
   let failed = false;
   let starting = false;
 
-  const listed = await ecsClient.send(
-    new ListTasksCommand({ cluster: clusterArn, desiredStatus: 'RUNNING' }),
-  );
+  const tasks = await listRunningTasks(ecsClient, clusterArn);
 
-  if (!listed.taskArns || listed.taskArns.length === 0) {
+  if (tasks.length === 0) {
     console.log('[FIX] tasks: no RUNNING tasks found.');
     console.log('      Check the deploy output for errors, then `npx sst-laravel logs web --stage <stage> --no-follow`.');
     failed = true;
   } else {
-    const described = await ecsClient.send(
-      new DescribeTasksCommand({ cluster: clusterArn, tasks: listed.taskArns }),
-    );
-
     const byService = new Map<string, { running: number; starting: number }>();
-    for (const task of described.tasks ?? []) {
-      const containerName = task.containers?.[0]?.name ?? 'unknown';
-      // Container names look like "<stage>-<app>-<service>-<hash>".
-      const service = containerName.split('-').slice(2, -1).join('-') || containerName;
+    for (const task of tasks) {
+      const service = taskServiceName(task) ?? task.containers?.[0]?.name ?? 'unknown';
       const entry = byService.get(service) ?? { running: 0, starting: 0 };
       if (task.lastStatus === 'RUNNING') {
         entry.running += 1;

@@ -1,19 +1,105 @@
-import { ECSClient, ListTasksCommand, DescribeTasksCommand, ListClustersCommand, Task } from '@aws-sdk/client-ecs';
+import { DescribeTasksCommand, ECSClient, ListClustersCommand, ListTasksCommand, Task } from '@aws-sdk/client-ecs';
 import { select } from '@inquirer/prompts';
-import { findSstConfig, extractLaravelComponents } from './sst-config.js';
+import { extractLaravelComponents, extractSstProjectName, findSstConfig } from './sst-config.js';
 
-export interface EcsTaskResult {
-  task: Task;
+export interface EcsCluster {
   clusterArn: string;
+  /** The `LaravelService` name from sst.config.ts. Unknown with `--cluster`. */
+  component?: string;
 }
 
-export async function findClusterArn(
-  ecsClient: ECSClient,
-  stage: string,
-  clusterOption?: string
-): Promise<string> {
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The name SST gives the ECS cluster of a `LaravelService`:
+ * `<app>-<stage>-<component>ClusterCluster-<random>`, where the component
+ * name keeps only its letters and digits. Without the app name, any app
+ * matches.
+ */
+export function clusterNamePattern(app: string | null, stage: string, component: string): RegExp {
+  const name = component.replace(/[^a-zA-Z0-9]/g, '');
+  const appPattern = app ? escapeRegExp(app) : '.+';
+
+  return new RegExp(`^${appPattern}-${escapeRegExp(stage)}-${escapeRegExp(name)}ClusterCluster-[a-z]+$`);
+}
+
+/** The ECS service a task belongs to, from its `service:<name>` group. */
+export function taskServiceName(task: Task): string | undefined {
+  return task.group?.startsWith('service:') ? task.group.slice('service:'.length) : undefined;
+}
+
+/**
+ * Finds the tasks of the service a `[service]` argument names: `web`,
+ * `reverb`, or a worker name. `worker` also stands for any worker, when none
+ * has that name.
+ *
+ * With the component known, it compares the ECS service names, which are
+ * `<component>-Web`, `<component>-Reverb`, and `<component>-<worker>`.
+ * Without it (`--cluster`), it looks for the name in the container names.
+ */
+export function findServiceTasks(tasks: Task[], service: string, component?: string): Task[] {
+  if (!component) {
+    const suffix = `-${service}`.toLowerCase();
+    return tasks.filter((task) => (task.containers?.[0]?.name ?? '').toLowerCase().includes(suffix));
+  }
+
+  const role = service === 'web' ? 'Web' : service === 'reverb' ? 'Reverb' : service;
+  const exact = tasks.filter((task) => taskServiceName(task) === `${component}-${role}`);
+
+  if (exact.length > 0 || service !== 'worker') {
+    return exact;
+  }
+
+  const notWorkers = [`${component}-Web`, `${component}-Reverb`];
+
+  return tasks.filter((task) => {
+    const name = taskServiceName(task);
+    return Boolean(name?.startsWith(`${component}-`)) && !notWorkers.includes(name!);
+  });
+}
+
+async function listClusterArns(ecsClient: ECSClient): Promise<string[]> {
+  const arns: string[] = [];
+  let nextToken: string | undefined;
+
+  do {
+    const response = await ecsClient.send(new ListClustersCommand({ nextToken }));
+    arns.push(...(response.clusterArns ?? []));
+    nextToken = response.nextToken;
+  } while (nextToken);
+
+  return arns;
+}
+
+/** Every running task of the cluster, described. */
+export async function listRunningTasks(ecsClient: ECSClient, clusterArn: string): Promise<Task[]> {
+  const taskArns: string[] = [];
+  let nextToken: string | undefined;
+
+  do {
+    const response = await ecsClient.send(new ListTasksCommand({ cluster: clusterArn, desiredStatus: 'RUNNING', nextToken }));
+    taskArns.push(...(response.taskArns ?? []));
+    nextToken = response.nextToken;
+  } while (nextToken);
+
+  const tasks: Task[] = [];
+
+  // DescribeTasks takes up to 100 tasks at a time.
+  for (let i = 0; i < taskArns.length; i += 100) {
+    const response = await ecsClient.send(new DescribeTasksCommand({ cluster: clusterArn, tasks: taskArns.slice(i, i + 100) }));
+    tasks.push(...(response.tasks ?? []));
+  }
+
+  return tasks;
+}
+
+/**
+ * The ECS cluster of the stage: the one `--cluster` names, or the cluster of
+ * the `LaravelService` in sst.config.ts, matched by its exact name.
+ */
+export async function findCluster(ecsClient: ECSClient, stage: string, clusterOption?: string): Promise<EcsCluster> {
   if (clusterOption) {
-    return clusterOption;
+    return { clusterArn: clusterOption };
   }
 
   const configPath = findSstConfig();
@@ -38,108 +124,68 @@ export async function findClusterArn(
     process.exit(1);
   }
 
-  const componentName = components[0].replace(/-/g, '');
-  const clusterPattern = `${stage}-${componentName}Cluster`;
+  const app = extractSstProjectName(configPath);
+  const component = components[0];
+  const pattern = clusterNamePattern(app, stage, component);
+  const clusterArns = await listClusterArns(ecsClient);
+  const clusterArn = clusterArns.find((arn) => pattern.test(arn.split('/').pop() ?? ''));
 
-  console.log(`Looking for cluster matching pattern: *${clusterPattern}`);
+  if (!clusterArn) {
+    console.error(`Error: No cluster found for app "${app ?? '(any)'}", stage "${stage}", and component "${component}".`);
 
-  const listClustersCommand = new ListClustersCommand({});
-  const listClustersResponse = await ecsClient.send(listClustersCommand);
+    if (clusterArns.length === 0) {
+      console.error('No ECS clusters found in this region.');
+    } else {
+      console.error('Available clusters:');
+      clusterArns.forEach((arn) => console.error(`  - ${arn.split('/').pop()}`));
+    }
 
-  if (!listClustersResponse.clusterArns || listClustersResponse.clusterArns.length === 0) {
-    console.error('Error: No ECS clusters found in this region.');
     process.exit(1);
   }
 
-  const matchingCluster = listClustersResponse.clusterArns.find(arn => {
-    const clusterName = arn.split('/').pop();
-    return clusterName?.includes(stage) && clusterName?.includes(componentName);
-  });
+  console.log(`Auto-detected cluster: ${clusterArn.split('/').pop()}`);
+  return { clusterArn, component };
+}
 
-  if (!matchingCluster) {
-    console.error(`Error: No cluster found matching stage "${stage}" and component "${components[0]}".`);
-    console.error('Available clusters:');
-    listClustersResponse.clusterArns.forEach(arn => {
-      console.error(`  - ${arn.split('/').pop()}`);
-    });
-    process.exit(1);
-  }
-
-  console.log(`Auto-detected cluster: ${matchingCluster.split('/').pop()}`);
-  return matchingCluster;
+export async function findClusterArn(ecsClient: ECSClient, stage: string, clusterOption?: string): Promise<string> {
+  return (await findCluster(ecsClient, stage, clusterOption)).clusterArn;
 }
 
 export async function findTask(
   ecsClient: ECSClient,
-  clusterArn: string,
+  cluster: EcsCluster,
   service?: string,
   selectPrompt: string = 'Select a task to connect to:'
 ): Promise<Task> {
-  const listTasksCommand = new ListTasksCommand({
-    cluster: clusterArn,
-    desiredStatus: 'RUNNING'
-  });
+  const tasks = await listRunningTasks(ecsClient, cluster.clusterArn);
 
-  const listTasksResponse = await ecsClient.send(listTasksCommand);
-
-  if (!listTasksResponse.taskArns || listTasksResponse.taskArns.length === 0) {
+  if (tasks.length === 0) {
     console.error('No running tasks found in cluster');
     process.exit(1);
   }
 
-  const describeTasksCommand = new DescribeTasksCommand({
-    cluster: clusterArn,
-    tasks: listTasksResponse.taskArns
-  });
+  const matchingTask = service ? findServiceTasks(tasks, service, cluster.component)[0] : undefined;
 
-  const describeTasksResponse = await ecsClient.send(describeTasksCommand);
-
-  let matchingTask: Task | undefined;
+  if (matchingTask) {
+    return matchingTask;
+  }
 
   if (service) {
-    let servicePrefix: string;
-    if (service === 'web') {
-      servicePrefix = '-web';
-    } else if (service === 'worker') {
-      servicePrefix = '-worker';
-    } else {
-      servicePrefix = `-${service}`;
-    }
-
-    matchingTask = describeTasksResponse.tasks?.find(task => {
-      const containerName = task.containers?.[0]?.name || '';
-      return containerName.toLowerCase().includes(servicePrefix.toLowerCase());
-    });
+    console.log(`\nNo running task found matching service: ${service}`);
   }
+  console.log('Available tasks in cluster:\n');
 
-  if (!matchingTask) {
-    if (service) {
-      console.log(`\nNo running task found matching service: ${service}`);
-    }
-    console.log('Available tasks in cluster:\n');
-
-    const choices = describeTasksResponse.tasks?.map(task => {
+  return select({
+    message: selectPrompt,
+    choices: tasks.map((task) => {
       const taskId = task.taskArn?.split('/').pop() || '';
-      const containerName = task.containers?.[0]?.name || 'unknown';
-      const status = task.lastStatus || 'unknown';
+      const name = taskServiceName(task) ?? task.containers?.[0]?.name ?? 'unknown';
 
       return {
-        name: `${containerName} (${taskId.substring(0, 8)}...) - ${status}`,
+        name: `${name} (${taskId.substring(0, 8)}...) - ${task.lastStatus || 'unknown'}`,
         value: task,
-        description: `Task: ${taskId}`
+        description: `Task: ${taskId}`,
       };
-    }) || [];
-
-    if (choices.length === 0) {
-      console.error('No tasks available to select from.');
-      process.exit(1);
-    }
-
-    matchingTask = await select({
-      message: selectPrompt,
-      choices
-    });
-  }
-
-  return matchingTask;
+    }),
+  });
 }
