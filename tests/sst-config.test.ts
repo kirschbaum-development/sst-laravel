@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { extractSecretsConfig, resolveVaultSecretPath, stripTsComments } from '../bin/utils/sst-config';
+import { extractSecretsConfig, extractSstProjectName, resolveVaultSecretPath, stripTsComments } from '../bin/utils/sst-config';
 
 function writeTempConfig(content: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-laravel-test-'));
@@ -110,5 +110,33 @@ describe('resolveVaultSecretPath', () => {
       new RemoteEnvVault("Env", { path: "/a/env" });
       new RemoteEnvVault("Other");
     `)).toThrow('--path');
+  });
+});
+
+describe('extractSstProjectName', () => {
+  const name = (content: string) => extractSstProjectName(writeTempConfig(content));
+
+  it('reads the name app() returns, not an earlier one', () => {
+    expect(name(`
+      const workers = [{ name: "queue" }];
+      export default $config({
+        app(input) {
+          return { name: "shop", home: "aws" };
+        },
+        async run() {},
+      });
+    `)).toBe('shop');
+  });
+
+  it('ignores comments and keys that end in "name"', () => {
+    expect(name(`
+      // name: "old-name"
+      const filename: "x.txt";
+      export default $config({ app: (input) => ({ name: 'shop' }) });
+    `)).toBe('shop');
+  });
+
+  it('falls back to the first name without an app() function', () => {
+    expect(name('export default { name: "shop" };')).toBe('shop');
   });
 });

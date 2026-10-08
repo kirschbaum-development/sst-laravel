@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1
+# COPY --exclude needs Dockerfile syntax 1.19 or later.
+
 ARG PHP_VERSION=8.4
 FROM serversideup/php:${PHP_VERSION}-fpm-nginx as base
 
@@ -50,7 +53,9 @@ ENV CONTAINER_TYPE=web
 # OPcache, on unless `config.opcache` is false
 ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
-COPY --chown=www-data:www-data . /var/www/html
+# The app, without .sst: the files the component generates there are copied
+# where they belong below, and one of them is the env file.
+COPY --chown=www-data:www-data --exclude=.sst . /var/www/html
 COPY --chown=www-data:www-data $DEPLOY_PATH/.env /var/www/html/.env
 
 # Copy the deployment script the component writes into .sst/laravel

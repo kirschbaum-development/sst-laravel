@@ -29,6 +29,27 @@ export function taskServiceName(task: Task): string | undefined {
 }
 
 /**
+ * The container is named after the service in sst.config.ts
+ * (`<component>-Web`), even when a transform gives the ECS service another
+ * name.
+ */
+const containerName = (task: Task) => task.containers?.[0]?.name ?? '';
+
+/**
+ * Picks the cluster of the stage from the cluster names. The exact name
+ * comes first. When none has it (the app name in the config was not read
+ * right, or SST shortened a very long name), a single cluster of the stage
+ * and component from any app is taken, but never one of several.
+ */
+export function pickCluster(clusterArns: string[], app: string | null, stage: string, component: string) {
+  const named = (pattern: RegExp) => clusterArns.filter((arn) => pattern.test(arn.split('/').pop() ?? ''));
+  const exact = app ? named(clusterNamePattern(app, stage, component)) : [];
+  const candidates = exact.length > 0 ? exact : named(clusterNamePattern(null, stage, component));
+
+  return { clusterArn: candidates.length === 1 ? candidates[0] : undefined, candidates };
+}
+
+/**
  * Finds the tasks of the service a `[service]` argument names: `web`,
  * `reverb`, or a worker name. `worker` also stands for any worker, when none
  * has that name.
@@ -44,7 +65,8 @@ export function findServiceTasks(tasks: Task[], service: string, component?: str
   }
 
   const role = service === 'web' ? 'Web' : service === 'reverb' ? 'Reverb' : service;
-  const exact = tasks.filter((task) => taskServiceName(task) === `${component}-${role}`);
+  const expected = `${component}-${role}`;
+  const exact = tasks.filter((task) => containerName(task) === expected || taskServiceName(task) === expected);
 
   if (exact.length > 0 || service !== 'worker') {
     return exact;
@@ -53,8 +75,8 @@ export function findServiceTasks(tasks: Task[], service: string, component?: str
   const notWorkers = [`${component}-Web`, `${component}-Reverb`];
 
   return tasks.filter((task) => {
-    const name = taskServiceName(task);
-    return Boolean(name?.startsWith(`${component}-`)) && !notWorkers.includes(name!);
+    const name = containerName(task);
+    return name.startsWith(`${component}-`) && !notWorkers.includes(name);
   });
 }
 
@@ -126,9 +148,15 @@ export async function findCluster(ecsClient: ECSClient, stage: string, clusterOp
 
   const app = extractSstProjectName(configPath);
   const component = components[0];
-  const pattern = clusterNamePattern(app, stage, component);
   const clusterArns = await listClusterArns(ecsClient);
-  const clusterArn = clusterArns.find((arn) => pattern.test(arn.split('/').pop() ?? ''));
+  const { clusterArn, candidates } = pickCluster(clusterArns, app, stage, component);
+
+  if (candidates.length > 1) {
+    console.error(`Error: Several clusters match stage "${stage}" and component "${component}":`);
+    candidates.forEach((arn) => console.error(`  - ${arn.split('/').pop()}`));
+    console.error('Please use --cluster flag to specify which cluster to connect to.');
+    process.exit(1);
+  }
 
   if (!clusterArn) {
     console.error(`Error: No cluster found for app "${app ?? '(any)'}", stage "${stage}", and component "${component}".`);

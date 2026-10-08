@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '@aws-sdk/client-ecs';
-import { clusterNamePattern, findServiceTasks, taskServiceName } from '../bin/utils/ecs';
+import { clusterNamePattern, findServiceTasks, pickCluster, taskServiceName } from '../bin/utils/ecs';
 
 describe('clusterNamePattern', () => {
   const pattern = clusterNamePattern('shop', 'dev', 'My-Laravel-App');
@@ -51,5 +51,40 @@ describe('findServiceTasks', () => {
 
   it('falls back to the container names without the component (--cluster)', () => {
     expect(findServiceTasks(tasks, 'queue').map(taskServiceName)).toEqual(['App-queue']);
+  });
+});
+
+describe('pickCluster', () => {
+  const arn = (name: string) => `arn:aws:ecs:us-east-1:123456789012:cluster/${name}`;
+
+  it('takes the cluster with the exact name', () => {
+    const clusters = [arn('shop-dev-AppClusterCluster-hkxrtoaz'), arn('blog-dev-AppClusterCluster-hkxrtoaz')];
+
+    expect(pickCluster(clusters, 'shop', 'dev', 'App').clusterArn).toBe(clusters[0]);
+  });
+
+  it('takes the only cluster of the stage and component when the app name does not match', () => {
+    // A misread app name, or a name SST shortened.
+    const clusters = [arn('shopping-platf-dev-AppClusterCluster-hkxrtoaz')];
+
+    expect(pickCluster(clusters, 'shopping-platform', 'dev', 'App').clusterArn).toBe(clusters[0]);
+  });
+
+  it('never guesses between several clusters', () => {
+    const clusters = [arn('shop-dev-AppClusterCluster-hkxrtoaz'), arn('blog-dev-AppClusterCluster-hkxrtoaz')];
+    const picked = pickCluster(clusters, 'other', 'dev', 'App');
+
+    expect(picked.clusterArn).toBeUndefined();
+    expect(picked.candidates).toEqual(clusters);
+  });
+});
+
+describe('findServiceTasks with a renamed ECS service', () => {
+  it('finds the service by its container name', () => {
+    // advanced.transform.service: { name: 'backend' } renames the ECS service, not the container.
+    const tasks = [task('backend', 'App-Web'), task('App-queue')];
+
+    expect(findServiceTasks(tasks, 'web', 'App').map(taskServiceName)).toEqual(['backend']);
+    expect(findServiceTasks(tasks, 'worker', 'App').map(taskServiceName)).toEqual(['App-queue']);
   });
 });

@@ -77,6 +77,14 @@ describe.each([
     expect(argsReadBy(dockerfile, image.target)).toEqual(expect.arrayContaining(Object.keys(image.args)));
   });
 
+  it('copies the app without .sst, with a Dockerfile syntax that supports it', () => {
+    const { content } = parseDockerfile(dockerfile);
+
+    expect(content.startsWith('# syntax=docker/dockerfile:1\n')).toBe(true);
+    expect(content).toMatch(/^COPY [^\n]*--exclude=\.sst \. \/var\/www\/html$/m);
+    expect(content).not.toMatch(/^COPY (?![^\n]*--exclude=\.sst)[^\n]* \. \/var\/www\/html$/m);
+  });
+
   it('passes PHP_OPCACHE_ENABLE on to the container', () => {
     expect(parseDockerfile(dockerfile).content).toContain('ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}');
   });
