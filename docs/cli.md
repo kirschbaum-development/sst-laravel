@@ -79,22 +79,22 @@ Deploys the stage with `sst deploy`. Use it instead of `sst deploy` when you use
 npx sst-laravel deploy --stage production
 ```
 
-When it finishes, it prints the `status --wait` command to check the new tasks. Without a domain, it also reminds you that the load balancer address serves http only.
+When it finishes, it saves the app URL for [`status`](#status) and prints the `status --wait` command to check the new tasks. The URL comes from the `url` output that `sst.config.ts` returns (the config from `init` does), or from the load balancer address when the outputs have only one. Without a domain, it also reminds you that the load balancer address serves http only.
 
 ## `status`
 
 Checks a deployment in one view: running tasks plus an optional health-endpoint check.
 
 ```bash
+npx sst-laravel status --stage dev --wait
 npx sst-laravel status --stage production --url https://app.example.com
-npx sst-laravel status --stage dev --url http://<load-balancer> --wait
 ```
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
 - `-c, --cluster <arn>` - ECS cluster ARN (skips auto-detection)
 - `-r, --region <region>` - AWS region (default: `AWS_REGION`, then the active profile, then `us-east-1`)
-- `-u, --url <url>` - Public app URL to health-check
+- `-u, --url <url>` - Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved on this machine)
 - `-p, --path <path>` - Health path to request (default: `/up`)
 - `-w, --wait [seconds]` - Keep checking every 15 seconds while tasks start, up to this long (default: 600). Use it right after a deploy, which returns before the new tasks pass the health check.
 

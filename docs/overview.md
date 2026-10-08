@@ -58,10 +58,10 @@ const app = new LaravelService("MyLaravelApp", {
 Start in your Laravel application and paste this into your coding agent:
 
 ```text
-Fetch and follow the instructions at https://raw.githubusercontent.com/kirschbaum-development/sst-laravel/main/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
+Fetch and follow the instructions at https://cdn.jsdelivr.net/npm/@kirschbaum-development/sst-laravel/docs/agent-setup.md to set up and deploy this Laravel app with SST Laravel.
 ```
 
-The agent installs the package and the [SST Laravel skill](../resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and looks at what your app needs. Before it changes anything, it shows you a plan: why SST Laravel, what it will create in AWS and the monthly cost, how the deploy works, and how to remove it. It asks what only you can decide, such as whether to add a database, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
+The agent installs the package and the [SST Laravel skill](../resources/boost/skills/sst-laravel/SKILL.md), checks your machine and AWS access, and looks at what your app needs. If you haven't set up AWS access yet, it walks you through it. Before it changes anything, it shows you a plan: why SST Laravel, what it will create in AWS and the monthly cost, how the deploy works, and how to remove it. It asks what only you can decide, such as whether to add a database and where to keep your environment variables, and waits for your yes. Then it deploys a `dev` stage and checks the live `/up` endpoint. It never prints secret values.
 
 To install or update only the skill:
 

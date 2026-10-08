@@ -38,8 +38,10 @@ It checks the tools (including a reachable Docker daemon), the AWS login and reg
 After deploying, check everything in one view (running tasks plus the `/up` health endpoint). The deploy returns before the new tasks pass the health check, so use `--wait` to keep checking:
 
 ```bash
-npx sst-laravel status --stage production --url https://app.example.com --wait
+npx sst-laravel status --stage production --wait
 ```
+
+It checks the app URL that the last `sst-laravel deploy` of the stage saved, from the `url` output of `sst.config.ts`. Pass `--url <url>` to check another address.
 
 `/up` doesn't touch the database. To check the database and the migrations:
 

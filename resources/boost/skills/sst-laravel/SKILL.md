@@ -40,7 +40,8 @@ Find the Laravel root. Inspect `composer.json`, `package.json`, `.env.example`, 
 - scheduled tasks;
 - Reverb;
 - mail and external services;
-- a custom domain and DNS provider.
+- a custom domain and DNS provider;
+- how environment variables are managed today: stage env files, `RemoteEnvVault` or `sst.Secret` in an SST config, CI workflows in `.github/workflows`.
 
 Install the package if `package.json` does not list it yet. `sst.config.ts` imports it, and `npx sst-laravel` only runs this CLI once it is installed — before that, `npx` looks for a different, unscoped package:
 
@@ -63,6 +64,17 @@ npx sst-laravel doctor
 
 Fix anything marked `FIX` before continuing; `warn` items are worth a look. Docker must be running, because the deploy builds the container image on this machine. When the machine has several AWS profiles, ask the user which one to use and export `AWS_PROFILE=<name>` for every command; do not change a profile or region without user agreement. Keep your other questions for the plan, unless one blocks the inspection.
 
+### AWS access
+
+`doctor` shows the AWS account, identity, and region in use. When it marks the AWS CLI, the login, or the region `FIX`, the user has to act: signing in happens in a browser, and some steps need the AWS console. Tell them what to do one step at a time, and run `doctor` again when they're done.
+
+- **No AWS account.** They create one at https://aws.amazon.com. A separate account for these deploys keeps the costs and permissions apart from anything else they run.
+- **No AWS CLI.** Install AWS CLI v2 (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Run the installer yourself when you can. When it needs `sudo` or an installer window, give the user the command.
+- **Not logged in.** Recommend IAM Identity Center (AWS SSO): the sign-in is short-lived and no keys are stored on the machine. In the AWS console, they enable IAM Identity Center, create a user, and give it access to the account with a permission set. Then they run `aws configure sso` in their own terminal (it asks questions and opens a browser) and choose a profile name. From then on, `aws sso login --profile <name>` signs them in again when the session expires, and you `export AWS_PROFILE=<name>` for every command. SST's guide walks through it: https://sst.dev/docs/aws-accounts/.
+- **Access keys instead.** When the user only has access keys for an IAM user, they run `aws configure` themselves. Never ask them to paste keys into the chat, and don't use the root user's keys.
+- **No region.** Ask which region to deploy to (close to their users), then set it with `aws configure set region <region> --profile <name>`.
+- **Permissions.** The first deploy creates a VPC, IAM roles, ECS, a load balancer, an image registry, and logs, so the identity needs broad rights. `AdministratorAccess` in a dev or sandbox account is the simplest, and what SST recommends there. For a company account, SST's guide has a narrower policy: https://sst.dev/docs/iam-credentials/#iam-permissions. When a deploy fails with `AccessDenied`, show the user the action and the resource from the error. Don't change IAM policies yourself.
+
 ## 2. Agree on a plan with the user
 
 Before you write any configuration, send the user one message with the plan. Use plain words, and explain each AWS piece in one short line. Cover:
@@ -72,8 +84,9 @@ Before you write any configuration, send the user one message with the plan. Use
 3. **Questions.** Only the decisions you can't make yourself. Give your recommendation and its monthly cost for each, and ask them all at once (with your question or choice tool when you have one). Usually:
    - **Database**, whenever the app uses one. See [Database choices](#database-choices).
    - **Background work**, when the app has queued jobs or scheduled tasks. For a first deploy, recommend running the scheduler and a queue worker inside the web container (no extra cost, see `workers.md`). A separate worker container costs about $22/month. Without either, jobs need `QUEUE_CONNECTION=sync` and scheduled tasks don't run.
+   - **Environment variables.** Always ask, unless the project already has a setup. Explain the options in plain words; see [Environment choices](#environment-choices).
    - **Domain.** Recommend none for the first deploy: the app gets a load balancer address (http only). A domain can come later.
-   - **AWS account, region, and stage**, unless the user already chose them. Recommend the `dev` stage.
+   - **AWS account, region, and stage.** Show the account ID, identity, and region that `doctor` reported, so the user confirms where the resources go and who pays for them. Recommend the `dev` stage.
 4. **What will be created** in their AWS account, with the rough monthly cost (on-demand prices in us-east-1; other regions cost a bit more):
 
    | Piece | What it does | About |
@@ -84,7 +97,7 @@ Before you write any configuration, send the user one message with the plan. Use
    | Network (VPC) | The private network everything runs in | $0.50 |
    | Logs and image registry | Container logs (CloudWatch) and the stored app images (ECR) | Small, grows with traffic and deploys |
 
-   That is about $46/month for the web-only setup. Add what the user picks: a database (about $14), Redis (about $12, or $9 with Valkey), a worker container (about $22), a NAT gateway (`nat: "ec2"`, about $13). A `medium` container costs $36 instead of $18, a `large` one $72.
+   That is about $46/month for the web-only setup. Add what the user picks: a database (about $14), Redis (about $12, or $9 with Valkey), a worker container (about $22), a NAT gateway (`nat: "ec2"`, about $13), environment variables in AWS Secrets Manager (about $0.40). A `medium` container costs $36 instead of $18, a `large` one $72.
 5. **How the deploy works.** `npx sst-laravel deploy` builds a Docker image of the app on this machine, uploads it to a private image registry in the user's AWS account, and creates or updates the resources above. The first deploy takes the longest (on an ARM machine, the x86 image builds under emulation, which is slower). Later deploys roll out the new image without downtime.
 6. **How to undo it.** `npx sst remove --stage <stage>` deletes everything in the stage. With the config from `init`, that includes a database and its data on every stage except `production`.
 
@@ -100,6 +113,20 @@ The app uses a database when `DB_CONNECTION` is anything other than `sqlite`, wh
 
 SQLite only fits a throwaway demo: the file lives inside the container, so every deploy or restart wipes it, and containers don't share it.
 
+### Environment choices
+
+The app's environment variables (`APP_KEY`, mail, payment, and API keys) have to reach the containers. Give your recommendation, and let the user pick between:
+
+- **An env file on this machine** (`.env.dev`, ignored by git). Each deploy copies it into the app image as `.env`. It costs nothing and needs no extra setup. But only a machine with the file can deploy: teammates and CI need a copy passed around by hand, and the copies drift apart. Recommend it for one person trying SST Laravel out.
+- **AWS Secrets Manager** (`RemoteEnvVault`). The same file lives in the user's AWS account, at `/<app>/<stage>/env`. `npx sst-laravel env:push` uploads it, `env:pull` downloads it to edit, and `npx sst-laravel deploy` fetches it before each build. Anyone with AWS access to the stage, and CI, deploys with the same values and no file to pass around. About $0.40/month per stage. Recommend it for teams, CI, and any stage that will become production.
+
+On top of either one, the user can add:
+
+- **SST secrets** for the most sensitive values (`new sst.Secret("STRIPE_SECRET")`, linked to the service). SST stores the value encrypted in the user's AWS account, the user sets it with `npx sst secret set`, and it never sits in a file on a laptop. SST Laravel writes it into the containers' `.env` under the same name. Each one is a line in `sst.config.ts` and a value to set, so it suits a handful of values, not the whole file.
+- **Plain values in `sst.config.ts`** (`config.environment.vars`) for settings that aren't secret and belong with the code. They are committed to git, so never put a secret there.
+
+When the repository has CI workflows (`.github/workflows`) or several people committing, recommend `RemoteEnvVault`. When it already uses one of these setups, keep it and say so instead of asking.
+
 ## 3. Prepare the configuration
 
 If no SST config exists, run:
@@ -110,29 +137,61 @@ npx sst-laravel init
 
 If `init` asks to install this skill and the skill is already active, decline the duplicate installation.
 
-`init` generates a minimal config: one `LaravelService`, web only, no domain, no database, health check at `/up`. It names the app after the composer project or the folder, and warns when the name is generic; SST keys its state by app name and stage, so the name must be unique in the AWS account. Start from the generated config and add only what the user agreed to in the plan. For the first `dev` deploy, an environment file is the shortest path unless the repository already uses `RemoteEnvVault` or SST secrets:
+`init` generates a minimal config: one `LaravelService`, web only, no domain, no database, health check at `/up`, and the environment from `.env.<stage>`. It names the app after the composer project or the folder, and warns when the name is generic; SST keys its state by app name and stage, so the name must be unique in the AWS account. Start from the generated config and add only what the user agreed to in the plan.
 
-```ts
-config: {
-  environment: {
-    file: `.env.${$app.stage}`,
-  },
-},
-web: {
-  size: "small",
-  healthCheck: { path: "/up" },
-},
-```
+### Set up the environment
 
-Create `.env.dev` from `.env.example` when it does not exist. Generate an application key with `php artisan key:generate --env=dev`. Before deployment:
+Every option starts from a stage file. Create `.env.dev` from `.env.example` when it does not exist (not from the local `.env`: its database settings and keys are meant for this machine). Generate an application key with `php artisan key:generate --env=dev`. Then:
 
 - set `APP_ENV=production` and `APP_DEBUG=false` for any public endpoint;
 - set `LOG_CHANNEL=stderr`;
 - set the database, cache, session, queue, and filesystem drivers to match the plan (files work without extra resources; mysql/pgsql/redis/s3 need linked resources);
+- leave out what linked resources inject (`DB_*`, `REDIS_*`);
 - enable the deployment script with migrations only when the stage has a persistent database;
 - confirm that the exact environment file is ignored with `git check-ignore`.
 
-Do not replace an existing environment strategy only to follow this baseline. For a shared or CI-managed stage, prefer `RemoteEnvVault`. Use `npx sst-laravel env:push --stage <stage> --input <file>` only after you confirm the target account, region, app name, stage, and secret path. Never show the file contents.
+Credentials for outside services (mail, payments, APIs) are the user's to fill in. List the variable names that still need a value and ask the user to add them to the file themselves, or to leave them for later when the app loads without them. Never ask for secret values in the chat.
+
+Then connect it the way the user chose:
+
+- **Env file.** Keep the `file` entry from `init`:
+
+  ```ts
+  config: {
+    environment: {
+      file: `.env.${$app.stage}`,
+    },
+  },
+  ```
+
+- **`RemoteEnvVault`.** Replace the `file` entry with the vault:
+
+  ```ts
+  const { LaravelService, RemoteEnvVault } = await import("@kirschbaum-development/sst-laravel");
+  const env = new RemoteEnvVault("Env");
+
+  // in the LaravelService
+  config: {
+    environment: {
+      secrets: env,
+    },
+  },
+  ```
+
+  Confirm the AWS account, region, app name, stage, and secret path with the user, then upload the file before the first deploy: `npx sst-laravel env:push --stage <stage> --input .env.<stage>`. Keep the local file ignored by git; `npx sst-laravel env:pull --stage <stage>` recreates it. After a change, push again, then deploy.
+- **SST secrets.** Declare and link each one, and remove it from the stage file:
+
+  ```ts
+  const stripeSecret = new sst.Secret("STRIPE_SECRET");
+
+  // in the LaravelService
+  link: [stripeSecret],
+  ```
+
+  The user sets each value in their own terminal before the deploy, which fails while a secret has no value: `npx sst secret set STRIPE_SECRET <value> --stage <stage>`.
+- **Values in the config.** Add the settings that aren't secret to `config.environment.vars`.
+
+Do not replace an existing environment setup only to follow this one. Never show the contents of an environment file.
 
 ### Add what the plan includes
 
@@ -168,10 +227,10 @@ The first deploy writes a `.dockerignore` when the project has none, so the imag
 A successful infrastructure command is not enough. The deploy returns before the new tasks pass the health check, so check tasks and the health endpoint together and keep checking while they start:
 
 ```bash
-npx sst-laravel status --stage <stage> --url <app-url-from-deploy-output> --wait
+npx sst-laravel status --stage <stage> --wait
 ```
 
-Use the URL as the deploy printed it. Without a domain it is `http://`; `https://` on the load balancer address times out.
+It checks the URL that `npx sst-laravel deploy` saved for the stage. To check another address, pass `--url <url>`. Without a domain, the app URL is `http://`; `https://` on the load balancer address times out.
 
 Confirm all of these items:
 
@@ -200,9 +259,10 @@ Finish only when the application is healthy or a concrete external blocker remai
 - deployed app name, stage, region, and URL;
 - health verification result;
 - resources that were created, imported, or reused;
-- environment strategy, with no secret values;
-- code and config files changed;
+- the environment setup, with no secret values, and how to change a value (edit the file and deploy, or `env:pull`, edit, `env:push`, and deploy);
+- code and config files changed, including the skill files and the `.dockerignore` the first deploy writes;
 - how to deploy again (`npx sst-laravel deploy --stage <stage>`) and how to remove the stage (`npx sst remove --stage <stage>`);
-- remaining work, such as a database the user skipped, a production domain, CI, or cost review.
+- remaining work, such as a database the user skipped, a production domain, CI, or cost review;
+- when a blocker remains: the exact error and what you checked (running tasks, the health endpoint, recent logs).
 
 After the first healthy deployment, offer production hardening or GitHub Actions as a separate next step. Do not expand the first deployment into CI work without user agreement.

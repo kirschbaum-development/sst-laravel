@@ -9,6 +9,13 @@ There are multiple ways to configure environment variables:
 
 On top of these, SST Laravel [adds variables](#variables-sst-laravel-adds) for linked resources and a few Laravel settings.
 
+## Which one to use
+
+- **An environment file** is the simplest and costs nothing, but only a machine that has the file can deploy. It suits one person, or trying SST Laravel out.
+- **`RemoteEnvVault`** keeps the file in your AWS account (about $0.40/month per stage), so teammates and CI deploy with the same values without passing a file around. It suits teams, CI, and production.
+- **SST secrets** keep the most sensitive values out of any file. SST Laravel writes them into the `.env` that the environment file or `RemoteEnvVault` provides, so use them with one of the two.
+- **Variables in the config** are committed with the code, so use them only for values that aren't secret.
+
 ## Environment file
 
 If you want SST Laravel to copy an environment file, configure the `config.environment.file` entry. The configuration below copies a file named `.env.$STAGE` (e.g. `.env.production`) into the deployment containers as your `.env` file.

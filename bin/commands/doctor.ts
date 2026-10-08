@@ -165,7 +165,7 @@ export const doctorCommand = new Command('doctor')
         status: 'fix',
         detail: profile
           ? `not logged in with ${profileLabel} — run \`aws sso login --profile ${profile}\` (or set its keys) and try again`
-          : 'not logged in — with named profiles, run `aws sso login --profile <name>` and `export AWS_PROFILE=<name>` so every sst-laravel and sst command uses it; otherwise configure the default profile',
+          : 'not logged in — with named profiles, run `aws sso login --profile <name>` and `export AWS_PROFILE=<name>` so every sst-laravel and sst command uses it; with no profile yet, run `aws configure sso` (see AWS access in docs/getting-started.md)',
       });
     }
 

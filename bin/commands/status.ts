@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-ecs';
 import { findClusterArn } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
+import { readSavedAppUrl } from '../utils/app-url.js';
 
 interface StatusOptions {
   stage?: string;
@@ -122,7 +123,7 @@ const checkOnce = async (
       failed = true;
     }
   } else {
-    console.log('[--] health: skipped (pass --url <app-url> to request the health endpoint)');
+    console.log('[--] health: skipped (no app URL for this stage: pass --url <app-url>, or deploy with `npx sst-laravel deploy` to save it)');
   }
 
   return { failed, starting };
@@ -133,7 +134,7 @@ export const statusCommand = new Command('status')
   .option('-s, --stage <stage>', 'SST stage name (required unless --cluster is given)')
   .option('-c, --cluster <cluster>', 'ECS cluster ARN (skips auto-detection)')
   .option('-r, --region <region>', REGION_OPTION_HELP)
-  .option('-u, --url <url>', 'Public app URL to health-check (from the deploy output)')
+  .option('-u, --url <url>', 'Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved)')
   .option('-p, --path <path>', 'Health path to request', '/up')
   .option('-w, --wait [seconds]', `Keep checking while tasks start, up to this many seconds (default ${DEFAULT_WAIT_SECONDS}). Use it right after a deploy.`)
   .action(async (options: StatusOptions) => {
@@ -151,6 +152,14 @@ export const statusCommand = new Command('status')
         : await findClusterArn(ecsClient, options.stage as string, undefined);
 
       console.log(`\nCluster: ${clusterArn.split('/').pop()}`);
+
+      if (!options.url && options.stage) {
+        options.url = readSavedAppUrl(process.cwd(), options.stage);
+
+        if (options.url) {
+          console.log(`URL: ${options.url} (saved by the last \`sst-laravel deploy\` of ${options.stage})`);
+        }
+      }
 
       if (options.url && isLoadBalancerHttpsUrl(options.url)) {
         console.log('Note: the load balancer address only serves http:// until you add a domain. Checking it over https:// will fail.');

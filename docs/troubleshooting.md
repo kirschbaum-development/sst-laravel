@@ -2,7 +2,7 @@
 
 ## The app isn't healthy after a deploy
 
-1. Run `npx sst-laravel status --stage <stage> --url <url> --wait` to see the running tasks and the `/up` health check in one view. The deploy returns before the new tasks pass the health check, so a 502 or 503 in the first minutes only means they are still starting.
+1. Run `npx sst-laravel status --stage <stage> --wait` to see the running tasks and the `/up` health check in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. The deploy returns before the new tasks pass the health check, so a 502 or 503 in the first minutes only means they are still starting.
 1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors.
 
 The usual causes are a missing `APP_KEY`, wrong environment variable names, a database the containers can't reach, a wrong health check path, or AWS keys in the environment file (see [below](#cd-aws-credentials-are-not-configured)).
@@ -21,7 +21,7 @@ This shows on the first deploy of a stage. SST points Docker at a build cache in
 
 ## The deploy says "not logged in" or uses the wrong account
 
-The commands use the AWS CLI's credentials. With several named profiles, export `AWS_PROFILE=<name>` so `sst-laravel doctor`, `deploy`, `status`, and `sst` itself all use the same one, and log in with `aws sso login --profile <name>`. `npx sst-laravel doctor` shows the account and profile in use.
+The commands use the AWS CLI's credentials. With several named profiles, export `AWS_PROFILE=<name>` so `sst-laravel doctor`, `deploy`, `status`, and `sst` itself all use the same one, and log in with `aws sso login --profile <name>`. `npx sst-laravel doctor` shows the account and profile in use. To set up a login for the first time, see [AWS access](getting-started.md#aws-access).
 
 ## Assets load over HTTP instead of HTTPS
 

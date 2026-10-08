@@ -6,8 +6,28 @@ This guide takes a Laravel application to a running `dev` stage on AWS. To let a
 
 1. Node.js.
 1. SST 4.17.1 or later within version 4. The `init` command installs SST if it is missing.
-1. The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), installed and configured. See the SST guide on [setting up IAM credentials](https://sst.dev/docs/iam-credentials/).
+1. The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html), installed and signed in to your AWS account. See [AWS access](#aws-access).
 1. [Docker](https://docs.docker.com/get-docker/), running. The deploy builds the container image on your machine.
+
+## AWS access
+
+The commands use the AWS CLI's login. If you don't have one yet, use IAM Identity Center (AWS SSO): you sign in through the browser, and no long-lived keys are stored on your machine.
+
+1. In the AWS console, enable **IAM Identity Center**, create a user, and give it access to the account with a permission set. The first deploy creates a VPC, IAM roles, ECS, a load balancer, an image registry, and logs, so it needs broad rights: `AdministratorAccess` is the simplest in a dev or sandbox account. For a company account, SST lists a narrower policy under [IAM permissions](https://sst.dev/docs/iam-credentials/#iam-permissions).
+1. Create a profile. The command asks for the start URL and region of IAM Identity Center, opens the browser, and saves the profile under a name you choose:
+
+   ```bash
+   aws configure sso
+   ```
+
+1. Use the profile for every command, and sign in again when the session expires:
+
+   ```bash
+   export AWS_PROFILE=<name>
+   aws sso login --profile <name>
+   ```
+
+SST's [AWS accounts guide](https://sst.dev/docs/aws-accounts/) covers the setup in more detail. If you use access keys for an IAM user instead, set them with `aws configure`, and don't use the root user's keys. `npx sst-laravel doctor` shows the account, identity, and region in use.
 
 ## Install the package
 
@@ -123,8 +143,10 @@ The first deploy takes several minutes: it builds the image, uploads it, and cre
 The deploy returns before the new tasks pass the health check. Check the running tasks and Laravel's `/up` health endpoint in one view, and keep checking while they start:
 
 ```bash
-npx sst-laravel status --stage dev --url <url-from-deploy> --wait
+npx sst-laravel status --stage dev --wait
 ```
+
+It checks the URL the deploy saved for the stage. Pass `--url <url>` to check another address.
 
 To see what the app logged:
 

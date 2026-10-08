@@ -5,6 +5,19 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2]
+
+### Added
+
+- `status` checks the app URL that the last `sst-laravel deploy` of the stage saved when `--url` isn't given, so `npx sst-laravel status --stage dev --wait` is enough after a deploy. `deploy` takes the URL from the `url` output of `sst.config.ts` (the config from `init` returns it), or from the load balancer address when the outputs have only one, and keeps it in `.sst/laravel/urls.json`.
+
+### Changed
+
+- The onboarding prompt fetches `docs/agent-setup.md` from the latest npm release through jsDelivr instead of from the `main` branch, so agents no longer get instructions for commands that aren't released yet. The publish workflow clears the jsDelivr cache after each release.
+- `docs/agent-setup.md` has the agent run `npx sst-laravel guide` and follow it, instead of loading the skill it just installed, which most agents only see after a restart. The skill is installed for later sessions. The rules and the report that repeated the skill are gone; the skill's report now also lists the skill files, the `.dockerignore`, and what was checked when a blocker remains.
+- The agent asks where the environment variables should live, and explains the options, instead of always using an env file: an env file on this machine, or `RemoteEnvVault` in AWS Secrets Manager, plus SST secrets and `config.environment.vars`. It recommends `RemoteEnvVault` for teams and CI, keeps a setup the project already has, and never asks for secret values in the chat. `docs/environment-variables.md` has a new "Which one to use" section.
+- The agent helps users without AWS access set it up: IAM Identity Center with `aws configure sso`, the region, and the permissions the first deploy needs. The plan shows the AWS account and identity in use. `doctor` suggests `aws configure sso` when there is no login, and `docs/getting-started.md` has a new AWS access section.
+
 ## [0.6.1]
 
 ### Fixed

@@ -14,7 +14,7 @@ npx sst-laravel doctor                   # readiness check (tools, Docker, AWS, 
 npx sst-laravel init                     # creates sst.config.ts (minimal)
 composer install && npm run build        # the image copies vendor/ and public/build as they are
 npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy)
-npx sst-laravel status --stage dev --url http://<url-from-deploy> --wait  # tasks + /up, keeps checking while tasks start
+npx sst-laravel status --stage dev --wait   # tasks + /up at the URL the deploy saved, keeps checking while tasks start
 npx sst-laravel command:run migrate:status --stage dev   # checks the database (/up does not)
 npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming
 npx sst remove --stage dev               # deletes everything in the stage
@@ -23,6 +23,9 @@ npx sst remove --stage dev               # deletes everything in the stage
 Install the package before any `npx sst-laravel` command. Until it is
 installed, `npx` looks for a different, unscoped package with that name.
 With several AWS profiles, `export AWS_PROFILE=<name>` before every command.
+No AWS login yet: the user runs `aws configure sso` (browser), then
+`aws sso login --profile <name>`; never ask for keys in the chat. Guide:
+`getting-started.md#aws-access`.
 Without a domain the URL is http only; https:// on the load balancer times out.
 
 Never print secret values. Never put AWS keys in `.env` files. Never deploy to
@@ -53,8 +56,14 @@ its public IP $3.65, load balancer $16 + its 2 public IPs $7.30, VPC $0.50).
 Before any config, show the user a plan: why SST Laravel in a few bullets
 (`why-sst-laravel.md`: infrastructure as code, auto-scaling, linking AWS
 resources, IAM roles instead of AWS keys), what the app needs, questions
-(database? background work?), what gets created and the monthly cost, how the
-deploy works, and how to remove it (`npx sst remove --stage <stage>`).
+(database? background work? where the environment variables live?), what gets
+created and the monthly cost, how the deploy works, and how to remove it
+(`npx sst remove --stage <stage>`).
+
+Environment options to explain: an env file on this machine (free, simplest,
+only this machine can deploy), `RemoteEnvVault` in AWS Secrets Manager
+(~$0.40/mo per stage, for teams and CI), plus SST secrets for a few sensitive
+values and `config.environment.vars` for settings that aren't secret.
 
 ```ts
 const database = new sst.aws.Postgres("MyDatabase", { vpc }); // or sst.aws.Mysql, ~$14/mo
@@ -66,7 +75,9 @@ web: { size: "medium", scaling: { min: 1, max: 3 } },  // small|medium|large; cp
 web: { scheduler: true, tasks: { queue: { command: "php artisan queue:work" } } }, // in the web container, no extra cost
 workers: [{ horizon: true, scheduler: true }],         // queues / scheduler in a worker (~$22/mo)
 reverb: { domain: "ws.example.com" },   // WebSockets (or `reverb: true`)
-config: { environment: { secrets: env } },  // RemoteEnvVault instead of file
+config: { environment: { secrets: env } },  // RemoteEnvVault instead of file; env:push before deploy
+link: [new sst.Secret("STRIPE_SECRET")],     // SST secret: npx sst secret set STRIPE_SECRET <value> --stage <stage>
+config: { environment: { vars: { FEATURE_X: "on" } } }, // values that aren't secret (committed)
 web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
 ```
 
@@ -94,7 +105,8 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 
 ## Before deploying
 
-- `.env.<stage>` exists, `APP_KEY` set, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`.
+- `.env.<stage>` exists, `APP_KEY` set, `APP_DEBUG=false`, `LOG_CHANNEL=stderr`
+  (with `RemoteEnvVault`, pushed with `env:push`).
 - Stage env file is git-ignored (`git check-ignore .env.dev`).
 - `bootstrap/app.php` has `$middleware->trustProxies(at: "*")`.
 - Docker is running (the image builds on this machine).
@@ -108,8 +120,9 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 
 ## If /up is not healthy
 
-1. `npx sst-laravel status --stage <stage> --url <url> --wait` — tasks + health in
-   one view; 502/503 right after a deploy means the tasks are still starting.
+1. `npx sst-laravel status --stage <stage> --wait` — tasks + health in one view
+   (`--url <url>` for another address); 502/503 right after a deploy means the
+   tasks are still starting.
 2. `npx sst-laravel logs web --stage <stage> --no-follow` — recent errors.
 3. Usual causes: missing `APP_KEY`, wrong env names, DB unreachable, wrong health
    path, AWS keys committed in the env file (use the IAM role instead).

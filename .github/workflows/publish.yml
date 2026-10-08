@@ -35,3 +35,11 @@ jobs:
             TAG=latest
           fi
           npm publish --provenance --tag "$TAG"
+      # The onboarding prompt fetches docs/agent-setup.md from jsDelivr, which
+      # caches the latest version for up to 12 hours. Give the registry a
+      # minute to serve the new version, then clear the cache.
+      - if: ${{ !contains(github.event.release.tag_name, '-') }}
+        run: |
+          sleep 60
+          curl -fsS https://purge.jsdelivr.net/npm/@kirschbaum-development/sst-laravel/docs/agent-setup.md \
+            || echo "::warning::Could not clear the jsDelivr cache of docs/agent-setup.md"
