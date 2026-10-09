@@ -64,5 +64,13 @@ COPY --chmod=755 $DEPLOY_PATH/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
 # Copy generated s6-overlay background task definitions (no-op when none are configured)
 COPY --chmod=755 $CUSTOM_CONF_PATH /
 
+# The background processes are in the user bundle of s6-overlay 3.2.3.2
+# (ServerSideUp v5), in user-bundles.d. An older base image, such as a stale
+# local copy of the tag, only reads s6-rc.d/user and would skip them. (The
+# base image sets its own PHP_VERSION, the full version, so the tag can't be
+# named here.)
+RUN test -f /etc/s6-overlay/user-bundles.d/user/type && test ! -e /etc/s6-overlay/s6-rc.d/user \
+    || { echo "The serversideup/php base image is older than ServerSideUp v5, probably a copy Docker downloaded before. Run 'docker pull serversideup/php:<version>-fpm-nginx' with the PHP version of config.php (8.4 by default), and deploy again." >&2; exit 1; }
+
 # Drop back to our unprivileged user
 USER www-data

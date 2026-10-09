@@ -452,7 +452,8 @@ export interface LaravelHealthCheck {
  * Background processes supervised by s6-overlay inside the container.
  *
  * On `workers[]`, these run as the container's main workload; if Horizon or
- * the scheduler dies, the container halts and ECS replaces it.
+ * the scheduler dies, the container stops with its exit code and ECS
+ * replaces it. Custom tasks are restarted in place.
  *
  * On `web`, these run alongside nginx/php-fpm. A crashed process is restarted
  * in place by s6 so HTTP traffic is never interrupted. Note that when the web
@@ -473,6 +474,10 @@ export interface LaravelBackgroundTasksArgs {
 
     /**
      * Custom long-running commands, keyed by task name.
+     *
+     * `dependencies` lists services that must start first: other tasks of
+     * the same container, `base` (s6-overlay's setup, which every task
+     * depends on anyway), and on `web`, `nginx` and `php-fpm`.
      *
      * @example
      * ```js
@@ -629,7 +634,7 @@ export interface LaravelArgs extends ClusterArgs {
     config?: {
         /**
          * PHP version.
-         * Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
+         * Available versions: 8.1, 8.2, 8.3, 8.4, 8.5
          *
          * @default `8.4`
          */

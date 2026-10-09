@@ -9,7 +9,8 @@ import * as path from 'path';
  */
 export const GENERIC_APP_NAMES = ['laravel', 'app', 'example-app', 'my-laravel-app', 'laravel-app', 'example'];
 
-export const SUPPORTED_PHP_VERSIONS = ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5'];
+// ServerSideUp v5, which the images build on, starts at 8.1.
+export const SUPPORTED_PHP_VERSIONS = ['8.1', '8.2', '8.3', '8.4', '8.5'];
 export const DEFAULT_PHP_VERSION = '8.4';
 
 export const slugify = (name: string): string =>

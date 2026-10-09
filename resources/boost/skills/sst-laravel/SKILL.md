@@ -218,23 +218,25 @@ Tell the user that the deploy is starting, with the AWS identity, region, and st
 npx sst-laravel deploy --stage <stage>
 ```
 
-Use this command instead of direct `sst deploy` so that `RemoteEnvVault` works when configured. Keep the full error output if deployment fails. A `failed to configure registry cache importer ... not found` line during the first build is expected: the build cache does not exist yet.
+Use this command instead of direct `sst deploy` so that `RemoteEnvVault` works when configured, and so the deploy waits for ECS to run the new revision: it fails when ECS rolls the deployment back. Keep the full error output if deployment fails. A `failed to configure registry cache importer ... not found` line during the first build is expected: the build cache does not exist yet.
 
 The first deploy writes a `.dockerignore` when the project has none, so the image skips `.git`, `node_modules`, `.env*` files, local databases, uploads, and logs. Tell the user, and commit it with the other files.
 
 ## 5. Verify and repair
 
-A successful infrastructure command is not enough. The deploy returns before the new tasks pass the health check, so check tasks and the health endpoint together and keep checking while they start:
+A successful infrastructure command is not enough. `npx sst-laravel deploy` waits for the rollout; after a deploy run any other way (or with `--no-wait`), check that each service runs its last deployment, and the health endpoint, keeping checking while ECS rolls out:
 
 ```bash
 npx sst-laravel status --stage <stage> --wait
 ```
 
+A rolled-back deploy still answers from the previous revision, so a healthy URL alone does not prove the new code runs.
+
 It checks the URL that `npx sst-laravel deploy` saved for the stage. To check another address, pass `--url <url>`. Without a domain, the app URL is `http://`; `https://` on the load balancer address times out.
 
 Confirm all of these items:
 
-- the deploy command exited successfully;
+- the deploy command exited successfully, and `status` reports every service as live (not rolled back);
 - at least one web task is running and stable;
 - `GET /up`, or the configured health route, returns a successful HTTP response;
 - the task does not enter a restart loop after the first request;

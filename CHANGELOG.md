@@ -5,6 +5,25 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1]
+
+### Fixed
+
+- Containers start on the current ServerSideUp images. On 2026-10-08 the `serversideup/php` tags for PHP 8.1 to 8.5 moved to ServerSideUp v5, which ships s6-overlay 3.2.3.2. The package registered the background processes in `/etc/s6-overlay/s6-rc.d/user`, which that s6-overlay treats as a deprecated layout: it then ignores the image's own nginx and php-fpm services and writes to `/etc` at boot, which fails as `www-data` (`cannot create /etc/s6-overlay/s6-rc.d/user/type: Permission denied`). Every web container failed to start, with or without background processes, and ECS rolled the deploy back. The processes are now registered in `/etc/s6-overlay/user-bundles.d/user/contents.d`, and each one depends on s6-overlay's `base` bundle, as s6-overlay recommends. The containers still run as `www-data`.
+- In workers, the container stops when Horizon or the scheduler exits, so ECS replaces the task, as documented. The `finish` scripts never ran as intended (execline ran them as one command from the service folder), so s6 restarted the process in place instead. The container now stops with the process's exit code. Custom tasks, Reverb, and the processes in the web container are still restarted in place.
+
+### Changed
+
+- `sst-laravel deploy` waits until every service runs the revision it deployed and the health endpoint (`--path`, default `/up`) answers. It exits with an error when ECS rolls the deployment back, the deployment is stopped, the health endpoint returns an error, or the rollout doesn't finish within 30 minutes (`--timeout`). Before, it returned as soon as `sst deploy` did, so CI stayed green while ECS rolled a failed deploy back. `--no-wait` returns right after `sst deploy`. The check reads the ECS service deployments, so it needs `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListServiceDeployments`, and `ecs:DescribeServiceRevisions`.
+- `status` checks the last ECS deployment of each service instead of counting the running tasks, so it fails after a rollback even though the previous revision still answers on the URL. It checks the health endpoint once the rollout is done. Without `--wait`, a rollout in progress makes it exit with an error. `--wait` waits up to 30 minutes by default, instead of 10, because a rollout includes draining the old tasks.
+- `status` and `deploy` use the `region` of the `aws` provider in `sst.config.ts` when it sets one.
+- The workflow `github-iam` prints deploys with `npx sst-laravel deploy`, so the job fails on a rollback.
+- PHP 7.4 and 8.0 are no longer supported: `config.php` fails with a clear error, and `init` doesn't offer them. ServerSideUp v5 has no images for them, and their last images run an s6-overlay that doesn't read `user-bundles.d`.
+- The worker image installs s6-overlay 3.2.3.2 instead of 3.2.0.2, the same version as the web image, so both read the background processes from the same place.
+- The web image build fails with a message when Docker uses a base image older than ServerSideUp v5, such as a copy of the tag downloaded before the change, instead of building an image that silently skips the background processes. Run `docker pull serversideup/php:<version>-fpm-nginx` to fix it.
+- Background process `dependencies` are written as `dependencies.d` entries and checked before anything is built: a task can depend on the other tasks of its container, `base`, and in the web container `nginx` and `php-fpm`. Before, a typo only showed when the container failed to start. Task names that s6-overlay uses (`user2`, `base`, `top`, `fix-attrs`, `legacy-cont-init`, `legacy-services`, and names starting with `s6rc-`) are rejected, as `user`, `nginx`, and `php-fpm` were.
+- Worker images no longer include the Horizon and scheduler s6 services when the worker doesn't run them.
+
 ## [0.7.0]
 
 ### Added

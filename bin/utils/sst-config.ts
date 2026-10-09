@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { resolveRegion } from './aws.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,28 @@ export function extractSstProjectName(configPath: string): string | null {
     content.match(namePattern);
 
   return match ? match[1] : null;
+}
+
+/**
+ * The region the config deploys to, when the `aws` provider sets it as a
+ * literal (`providers: { aws: { region: "eu-west-1" } }`). Otherwise SST uses
+ * the AWS CLI's region.
+ */
+export function extractAwsRegion(configPath: string): string | null {
+  const content = stripTsComments(fs.readFileSync(configPath, 'utf-8'));
+  const match = content.match(/\baws\s*:\s*\{[^{}]*?\bregion\s*:\s*['"`]([a-z0-9-]+)['"`]/);
+
+  return match ? match[1] : null;
+}
+
+/**
+ * The region the app is deployed to: `--region`, then the region in
+ * sst.config.ts, then the AWS CLI's.
+ */
+export function resolveAppRegion(explicit?: string): string {
+  const configPath = explicit ? null : findSstConfig();
+
+  return resolveRegion(explicit ?? (configPath ? extractAwsRegion(configPath) ?? undefined : undefined));
 }
 
 function findLaravelComponentsInContent(content: string): string[] {

@@ -44,3 +44,6 @@ export const configuredRegion = (): string | null => {
 export const resolveRegion = (explicit?: string): string => explicit || configuredRegion() || FALLBACK_REGION;
 
 export const REGION_OPTION_HELP = 'AWS region (defaults to AWS_REGION, then the active profile, then us-east-1)';
+
+export const APP_REGION_OPTION_HELP =
+  'AWS region of the app (defaults to the aws provider region in sst.config.ts, then AWS_REGION, the active profile, and us-east-1)';

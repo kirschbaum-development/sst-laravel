@@ -9,7 +9,7 @@ set -oue
 # This script is used to install S6 Overlay. It is intended to be used during the build process only.
 # Be sure to set the S6_SRC_URL, S6_SRC_DEP, and S6_DIR  environment variables before running this script.
 
-S6_VERSION=v3.2.0.2
+S6_VERSION=v3.2.3.2
 mkdir -p $S6_DIR
 export SYS_ARCH=$(uname -m)
 case "$SYS_ARCH" in

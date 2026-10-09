@@ -26,9 +26,9 @@ export function stageDeploymentScript(absSitePath: string, script: string | unde
 }
 
 /**
- * Copies the package's `conf` folder (the s6-overlay installer, the
- * entrypoint, and the Horizon and scheduler services) into the build
- * directory the worker image copies it from.
+ * Copies the package's `conf` folder (the s6-overlay installer and the
+ * entrypoint) into the build directory the worker image copies it from. The
+ * s6 services are generated per service by `writeS6TaskFiles`.
  *
  * The image can't copy it from the package itself: the package lives in
  * `node_modules`, which the project's `.dockerignore` usually leaves out of

@@ -23,6 +23,8 @@ npx sst-laravel deploy --stage sandbox
 npx sst-laravel deploy --stage production
 ```
 
+`sst deploy` returns as soon as ECS accepts the new revision. `sst-laravel deploy` then waits until every service runs it, and fails when ECS rolls the deployment back or the rollout doesn't finish in 30 minutes. See [`deploy`](cli.md#deploy). Pass `--no-wait` to return right after `sst deploy`.
+
 > **Note:** If you're using `RemoteEnvVault` for secrets management, you should use `sst-laravel deploy` instead of `sst deploy` directly. This ensures secrets are fetched from AWS Secrets Manager before the Docker build.
 
 ## Readiness and status
@@ -35,13 +37,13 @@ npx sst-laravel doctor
 
 It checks the tools (including a reachable Docker daemon), the AWS login and region, the app and its dependencies and built assets, `sst.config.ts`, the stage env file, trusted proxies, and that git ignores the env files. It never prints secret values. See [`doctor`](cli.md#doctor) for the full list.
 
-After deploying, check everything in one view (running tasks plus the `/up` health endpoint). The deploy returns before the new tasks pass the health check, so use `--wait` to keep checking:
+`sst-laravel deploy` checks the rollout itself. After `npx sst deploy`, or to check a stage later, run `status`. It checks that each service runs the revision of its last deployment, and the `/up` health endpoint. Use `--wait` to keep checking while ECS rolls out:
 
 ```bash
 npx sst-laravel status --stage production --wait
 ```
 
-It checks the app URL that the last `sst-laravel deploy` of the stage saved, from the `url` output of `sst.config.ts`. Pass `--url <url>` to check another address.
+It fails when the last deployment was rolled back, even though the app still answers from the previous revision. It checks the app URL that the last `sst-laravel deploy` of the stage saved, from the `url` output of `sst.config.ts`. Pass `--url <url>` to check another address.
 
 `/up` doesn't touch the database. To check the database and the migrations:
 
@@ -61,7 +63,7 @@ It deletes everything SST created for the stage. With the config from `init`, a 
 
 ## PHP version and OPcache
 
-The containers run PHP 8.4 unless you set `config.php`. The available versions are 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, and 8.5. OPcache is on in every container. Set `config.opcache` to `false` to turn it off:
+The containers run PHP 8.4 unless you set `config.php`. The available versions are 8.1, 8.2, 8.3, 8.4, and 8.5. The images build on the [ServerSideUp PHP images](https://serversideup.net/open-source/docker-php/) v5, which don't support 7.4 and 8.0. OPcache is on in every container. Set `config.opcache` to `false` to turn it off:
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
@@ -117,4 +119,4 @@ npx sst-laravel github-iam --branch main
 
 It creates the GitHub OIDC provider in your AWS account if it's missing, creates the role, and prints the workflow steps to add. The role trusts only your repository (detected from the git remote, or set with `--repo`) and the branch you pass (all branches by default). It gets the `AdministratorAccess` policy, so restrict the branch to the ones that should deploy. See the [CLI reference](cli.md#github-iam) for all options.
 
-If you use `RemoteEnvVault`, change the printed `npx sst deploy` step to `npx sst-laravel deploy`.
+The printed workflow deploys with `npx sst-laravel deploy`, so the job fails when ECS rolls the new revision back. A workflow that runs `npx sst deploy` stays green in that case: add a step with `npx sst-laravel status --stage production --wait` after it.

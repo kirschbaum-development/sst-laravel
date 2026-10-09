@@ -14,7 +14,8 @@ describe('stageWorkerConf', () => {
 
     expect(fs.existsSync(path.join(buildPath, 'usr/local/bin/s6-install.sh'))).toBe(true);
     expect(fs.existsSync(path.join(buildPath, 'usr/local/bin/entrypoint.sh'))).toBe(true);
-    expect(fs.existsSync(path.join(buildPath, 'etc/s6-overlay/s6-rc.d/laravel-horizon/finish'))).toBe(true);
+    // The s6 services are generated per service, never shipped in the conf.
+    expect(fs.existsSync(path.join(buildPath, 'etc'))).toBe(false);
   });
 
   it('removes files left over from an earlier deploy', () => {

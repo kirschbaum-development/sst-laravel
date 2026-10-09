@@ -136,11 +136,11 @@ You must be authenticated with AWS in your terminal session to deploy. With seve
 npx sst-laravel deploy --stage dev
 ```
 
-The first deploy takes several minutes: it builds the image, uploads it, and creates the resources. When it finishes, the deploy prints the app URL. Without a domain, this is the load balancer address, which serves `http://` only; `https://` times out until you add a domain.
+The first deploy takes several minutes: it builds the image, uploads it, and creates the resources. Then it waits until ECS runs the new tasks and Laravel's `/up` health endpoint answers, and fails if ECS rolls the deployment back. When it finishes, the deploy prints the app URL. Without a domain, this is the load balancer address, which serves `http://` only; `https://` times out until you add a domain.
 
 ## Check the deployment
 
-The deploy returns before the new tasks pass the health check. Check the running tasks and Laravel's `/up` health endpoint in one view, and keep checking while they start:
+To check the stage later, in one view (whether each service runs its last deployment, and the `/up` health endpoint):
 
 ```bash
 npx sst-laravel status --stage dev --wait
