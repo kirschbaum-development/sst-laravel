@@ -1,6 +1,6 @@
 {
   "name": "@kirschbaum-development/sst-laravel",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "module",
   "description": "Deploy secure, reliable, and scalable Laravel applications to AWS with SST.",
   "main": "laravel-sst.ts",
