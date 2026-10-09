@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildImage } from '../src/image';
+import { buildImage, managedImageTransform } from '../src/image';
+import type { CustomResourceOptions, Resource } from '@pulumi/pulumi';
 
 const options = {
   sitePath: '.',
@@ -43,5 +44,29 @@ describe('buildImage', () => {
     );
 
     expect(value).toBe(expected);
+  });
+});
+
+describe('managed image lifecycle', () => {
+  it('keeps function transforms, resource options, and dependencies', () => {
+    const env = {} as Resource;
+    const dependency = {} as Resource;
+    const args: Record<string, unknown> = { push: true };
+    const opts: CustomResourceOptions = { dependsOn: [dependency], protect: true };
+    const user = (image: Record<string, unknown>, options: CustomResourceOptions, name: string) => {
+      image.labels = { name };
+      options.customTimeouts = { create: '30m' };
+    };
+    managedImageTransform(env, user)(args, opts, 'Image');
+    expect(args).toEqual({ push: true, labels: { name: 'Image' } });
+    expect(opts).toMatchObject({ retainOnDelete: true, protect: true, dependsOn: [dependency, env], customTimeouts: { create: '30m' } });
+  });
+
+  it('preserves object transforms and an explicit retention override', () => {
+    const args = {};
+    const opts: CustomResourceOptions = { retainOnDelete: false };
+    managedImageTransform(undefined, { buildOnPreview: false })(args, opts, 'Image');
+    expect(args).toEqual({ buildOnPreview: false });
+    expect(opts.retainOnDelete).toBe(false);
   });
 });

@@ -1,5 +1,8 @@
 import type { ECSClient } from '@aws-sdk/client-ecs';
 import { checkRollouts, ServiceRollout } from './rollout.js';
+import { ECRClient } from '@aws-sdk/client-ecr';
+import type { DeploymentTargets } from './deployment-targets.js';
+import { checkTaskImages, EcrClients } from './image-check.js';
 
 export const DEFAULT_WAIT_SECONDS = 1800;
 export const RETRY_SECONDS = 15;
@@ -76,6 +79,8 @@ export type DeploymentVerdict = 'healthy' | 'failed' | 'in-progress' | 'timed-ou
 export interface DeploymentCheckOptions {
   ecsClient: ECSClient;
   clusterArns: string[];
+  targets?: DeploymentTargets;
+  ecrClients?: EcrClients;
   url?: string;
   healthPath: string;
   /** Keep checking while the rollout is in progress, up to this long. 0 checks once. */
@@ -94,8 +99,9 @@ export interface DeploymentCheckResult {
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Checks that every service runs the revision of its last deployment and
- * that the health endpoint answers, waiting while ECS rolls out.
+ * With targets, checks the exact expected revisions and their private ECR
+ * images. Without them, provides ECS-history diagnostics for an explicit
+ * cluster. Waits for rollouts and checks the health endpoint last.
  *
  * A healthy URL alone proves nothing after a deploy: until the new tasks
  * pass their health checks, and after ECS rolls a failed deployment back,
@@ -107,23 +113,35 @@ export async function verifyDeployment(options: DeploymentCheckOptions): Promise
   const sleep = options.sleep ?? defaultSleep;
   const now = options.now ?? Date.now;
   const deadline = now() + options.waitSeconds * 1000;
+  const clients = new Map<string, ECRClient>();
+  const ecrClients = options.ecrClients ?? ((region: string) => {
+    if (!clients.has(region)) clients.set(region, new ECRClient({ region }));
+    return clients.get(region)!;
+  });
   let previousReport = '';
 
   for (;;) {
     const rollouts: ServiceRollout[] = [];
 
-    for (const clusterArn of options.clusterArns) {
-      rollouts.push(...(await checkRollouts(options.ecsClient, clusterArn)));
+    const clusterArns = options.targets
+      ? [...new Set(options.targets.services.map((target) => target.cluster))]
+      : options.clusterArns;
+    for (const clusterArn of clusterArns) {
+      rollouts.push(...(await checkRollouts(options.ecsClient, clusterArn,
+        options.targets?.services.filter((target) => target.cluster === clusterArn))));
     }
 
-    const failed = rollouts.some((rollout) => rollout.state === 'failed');
+    const missingImages = options.targets ? await checkTaskImages(options.ecsClient,
+      [...options.targets.services.map((target) => target.taskDefinition), ...options.targets.taskDefinitions], ecrClients) : [];
+    const failed = rollouts.some((rollout) => rollout.state === 'failed') || missingImages.length > 0;
     const live = rollouts.length > 0 && rollouts.every((rollout) => rollout.state === 'live');
     const health: HealthResult =
-      live || options.waitSeconds === 0
+      !failed && (live || options.waitSeconds === 0)
         ? await checkHealth(options.url, options.healthPath)
         : { state: 'starting', lines: ['[..] health: checked once every service is live'] };
 
     const lines = rollouts.length > 0 ? rollouts.map(formatRollout) : ['[FIX] services: none found in the cluster.'];
+    lines.push(...missingImages.map((message) => `[FIX] ${message}`));
     const report = [...lines, ...health.lines].join('\n');
 
     if (report !== previousReport) {

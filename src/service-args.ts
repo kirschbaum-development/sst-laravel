@@ -29,8 +29,11 @@ export interface LaravelAdvancedArgs {
   /**
    * Transform the underlying ECS Service resources.
    *
-   * `image` and `taskDefinition` are managed internally and cannot be
-   * overridden here. Transforms for the load balancer run after the
+   * `taskDefinition` is managed internally and cannot be overridden here.
+   * Image transforms run after the retention default; the environment-file
+   * dependency is always preserved. Setting opts.retainOnDelete = false
+   * explicitly accepts the risk of deleting a replacement's shared digest.
+   * Transforms for the load balancer run after the
    * `loadBalancer` options (`sslPolicy`, `ingressCidrs`, `accessLogs`).
    */
   transform?: unknown;

@@ -5,6 +5,19 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0]
+
+### Fixed
+
+- Dockerfiles work with SST 4.17.1's docker-build 0.0.14 provider. Replace `COPY --exclude` with a read-only context mount that excludes `.sst` without copying it into any layer. No provider pin or changes to existing application provider configuration are needed.
+- Retain managed web, worker, and Reverb image resources by default, preventing old-resource deletion from removing a replacement's identical digest. Other resources keep their existing lifecycle. Image transforms and dependencies are preserved. Retention must be persisted before a separate replacement; retained manifests require deliberate ECR cleanup. See the [upgrade sequence](docs/deploying.md#upgrading-from-071).
+- Verified deploys compare ECS to task definitions emitted by SST and check every referenced private ECR image. A healthy older revision after rollback, missing service, missing image, or zero-task service cannot pass.
+
+### Changed
+
+- **Breaking:** Add `deployment: app.deployment` to `sst.config.ts` outputs when upgrading; the `init` template now includes it. `deploy` and `status --stage` require this metadata and do not scan unrelated services. Multiple components use an array. External task image checks are explicitly registered via `taskDefinitions`. Verification additionally needs `ecs:DescribeTaskDefinition` and `ecr:DescribeImages`. `--no-wait` still skips verification; standalone `status --cluster` reports diagnostic-only results.
+- Add actual provider Check RPC regression tests, local Pulumi engine replacement tests, and container source-exclusion tests. AWS/ECR integration remains mocked; test boundaries are documented in the deployment guide.
+
 ## [0.7.1]
 
 ### Fixed

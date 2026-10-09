@@ -769,6 +769,7 @@
     "type": "docker-build:index:Image",
     "name": "Net-queueImageNet-queue",
     "parent": "Net-queue",
+    "retainOnDelete": true,
     "inputs": {
       "buildArgs": {
         "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Net/conf",
@@ -829,6 +830,7 @@
     "type": "docker-build:index:Image",
     "name": "Net-WebImageNet-Web",
     "parent": "Net-Web",
+    "retainOnDelete": true,
     "inputs": {
       "buildArgs": {
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Net/web",

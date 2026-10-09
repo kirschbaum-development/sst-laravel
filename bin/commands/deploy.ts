@@ -5,7 +5,7 @@ import { validateDeployment, getPackageRoot, resolveAppRegion } from '../utils/s
 import { resolveBin } from '../utils/process.js';
 import { findAppUrl, findHttpOnlyUrls, readOutputs, saveAppUrl } from '../utils/app-url.js';
 import { APP_REGION_OPTION_HELP } from '../utils/aws.js';
-import { findStageClusters } from '../utils/ecs.js';
+import { clearSavedDeploymentTargets, readDeploymentTargets, saveDeploymentTargets } from '../utils/deployment-targets.js';
 import { DEFAULT_WAIT_SECONDS, DeploymentVerdict, verifyDeployment } from '../utils/deployment-check.js';
 
 interface DeployOptions {
@@ -58,6 +58,11 @@ export const deployCommand = new Command('deploy')
 
       // `status` checks this URL when it gets no --url.
       saveAppUrl(process.cwd(), options.stage, url);
+      // Record a no-wait deployment too: a subsequent status must never use
+      // an older target just because another stage overwrote outputs.json.
+      clearSavedDeploymentTargets(process.cwd(), options.stage);
+      const targets = outputs.deployment === undefined ? undefined : readDeploymentTargets(outputs, options.stage);
+      if (targets) saveDeploymentTargets(process.cwd(), targets);
 
       console.log('');
       if (httpOnlyUrl) {
@@ -81,11 +86,12 @@ export const deployCommand = new Command('deploy')
 
       try {
         const ecsClient = new ECSClient({ region: resolveAppRegion(options.region) });
-        const clusters = await findStageClusters(ecsClient, options.stage);
+        const expected = targets ?? readDeploymentTargets(outputs, options.stage);
 
         ({ verdict } = await verifyDeployment({
           ecsClient,
-          clusterArns: clusters.map((cluster) => cluster.clusterArn),
+          clusterArns: [...new Set(expected.services.map((target) => target.cluster))],
+          targets: expected,
           url,
           healthPath: options.path,
           waitSeconds: timeoutSeconds,
@@ -99,7 +105,7 @@ export const deployCommand = new Command('deploy')
       console.log('');
 
       if (verdict === 'healthy') {
-        console.log('Deployed: every service runs the new revision.');
+        console.log('Deployed: every registered service runs the expected revision and its ECR images are available.');
         return;
       }
 

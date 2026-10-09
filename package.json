@@ -31,6 +31,7 @@
     "build": "tsc",
     "test": "vitest run",
     "test:component": "./scripts/test-component.sh",
+    "test:lifecycle": "vitest run --config tests/lifecycle/vitest.config.mjs",
     "test:containers": "vitest run --config tests/container/vitest.config.mjs",
     "release": "./scripts/publish.sh"
   },
@@ -57,6 +58,7 @@
     "sst-laravel": "dist/bin/cli.js"
   },
   "dependencies": {
+    "@aws-sdk/client-ecr": "^3.0.0",
     "@aws-sdk/client-ecs": "^3.0.0",
     "@aws-sdk/client-iam": "^3.0.0",
     "@aws-sdk/client-secrets-manager": "^3.0.0",

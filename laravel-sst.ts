@@ -10,17 +10,19 @@ import { writeS6TaskFiles } from './src/background-tasks';
 import { stageDeploymentScript, stageWorkerConf } from './src/build-files';
 import { prepareEnvironmentFile } from './src/env-file';
 import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl } from './src/environment';
-import { buildImage } from './src/image';
+import { buildImage, managedImageTransform } from './src/image';
 import { linkResources } from './src/links';
 import { buildLoadBalancerHardening } from './src/load-balancer-transforms';
 import { ClusterNetwork, resolveClusterNetwork, withContainerNetwork } from './src/network';
-import { composeTransforms, dependOn, disableInitProcess, LaravelAdvancedArgs } from './src/service-args';
+import { composeTransforms, disableInitProcess, LaravelAdvancedArgs } from './src/service-args';
 import { planServices, resolveReverbArgs, ServicePlan } from './src/services';
 import { ServiceSize } from './src/size';
+import type { DeploymentManifest } from './src/deployment';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
 export type { PlanetScaleProperties } from './src/planetscale-env.js';
+export type LaravelDeployment = DeploymentManifest<Input<string>>;
 
 /** The `transform.service` hook of `sst.aws.Service` (the ECS service). */
 type ServiceResourceTransform = NonNullable<ServiceArgs['transform']>['service'];
@@ -876,7 +878,7 @@ export class LaravelService extends Component {
                         shared.network,
                         transform.service,
                     ) as ServiceResourceTransform,
-                    image: dependOn(shared.environmentFile),
+                    image: managedImageTransform(shared.environmentFile, transform.image),
                     taskDefinition: disableInitProcess,
                 },
             },
@@ -910,6 +912,28 @@ export class LaravelService extends Component {
      */
     public get reverbUrl() {
         return this._nodes.reverb?.url;
+    }
+
+    /**
+     * Return this in `sst.config.ts` outputs as `deployment: app.deployment`.
+     * The CLI verifies these exact services and task definitions, including
+     * their ECR images. External tasks can opt in by adding their task
+     * definition ARNs to `taskDefinitions` in the returned object.
+     */
+    public get deployment(): LaravelDeployment {
+        return {
+            version: 1 as const,
+            app: $app.name,
+            stage: $app.stage,
+            services: $dev ? [] : [this._nodes.web, ...Object.values(this._nodes.workers), this._nodes.reverb]
+                .filter((service): service is sst.aws.Service => service !== undefined)
+                .map((service) => ({
+                    cluster: this._nodes.cluster.nodes.cluster.arn,
+                    service: service.nodes.service.arn,
+                    taskDefinition: service.nodes.taskDefinition.arn,
+                })),
+            taskDefinitions: [] as Input<string>[],
+        };
     }
 
     /**

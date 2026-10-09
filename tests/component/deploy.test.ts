@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import * as pulumi from '@pulumi/pulumi';
+import { checkImageInputs } from './provider-rpc';
 
 // Same type and name as the real dynamic resource. Vitest rewrites the
 // dynamic imports in its provider, which Pulumi can't serialize; SST's
@@ -56,6 +57,7 @@ interface Recorded {
   parent?: string;
   aliases?: string[];
   dependsOn?: string[];
+  retainOnDelete?: boolean;
 }
 
 const resources = new Map<string, Recorded>();
@@ -146,7 +148,7 @@ beforeAll(async () => {
   }, 'app', 'dev', false);
 
   const g = globalThis as Record<string, unknown>;
-  g.$app = { name: 'app', stage: 'dev', removal: 'remove', protect: false, providers: { aws: { region: 'us-east-1' } } };
+  g.$app = { name: 'app', stage: 'dev', removal: 'remove', protect: false, providers: { aws: { region: 'us-east-1' }, 'docker-build': { version: '0.0.14' } } };
   g.$dev = false;
   g.$cli = { paths: { root: ROOT, work: path.join(ROOT, '.sst'), platform: path.join(ROOT, '.sst/platform') }, command: 'deploy', state: { version: {} } };
   g.$util = pulumi;
@@ -165,6 +167,7 @@ beforeAll(async () => {
 
   fs.writeFileSync(path.join(ROOT, '.env.dev'), 'APP_KEY=base64:test\nAPP_NAME="My App"\n');
   fs.writeFileSync(path.join(ROOT, 'deploy.sh'), '#!/bin/sh\nphp artisan migrate --force\n');
+  fs.writeFileSync(path.join(ROOT, '.dockerignore'), '# user rules\nnode_modules\n.env*\ncustom-exclusion\n');
 
   const { LaravelService, RemoteEnvVault } = await import('./pkg/@kirschbaum-development/sst-laravel/laravel-sst.js');
   const sst = g.sst as any;
@@ -173,6 +176,7 @@ beforeAll(async () => {
     pulumi.runtime.registerStackTransformation((args) => {
       const recorded = resources.get(args.name) ?? { type: args.type, name: args.name, inputs: {} };
       recorded.parent = (args.opts.parent as any)?.__name;
+      recorded.retainOnDelete = args.opts.retainOnDelete;
       // `rootStackResource` is undefined: an alias with a `parent` key set to
       // it means the root stack, one without the key the current parent.
       recorded.aliases = (args.opts.aliases as any[] | undefined)?.map((alias) =>
@@ -239,7 +243,16 @@ beforeAll(async () => {
       config: { opcache: false },
       workers: [{
         name: 'api',
-        advanced: { loadBalancer: { ports: [{ listen: '80/http', forward: '8080/http' }] } },
+        advanced: {
+          loadBalancer: { ports: [{ listen: '80/http', forward: '8080/http' }] },
+          transform: {
+            image: (args: any, opts: pulumi.CustomResourceOptions) => {
+              args.labels = { 'user-image-hook': 'preserved' };
+              opts.customTimeouts = { create: '30m' };
+            },
+            service: { deploymentMinimumHealthyPercent: 50 },
+          },
+        },
       }],
     });
 
@@ -322,9 +335,54 @@ describe('nodes', () => {
     expect(full.nodes.reverb.constructor.name).toBe('Service');
     expect(Object.keys(full.nodes.workers)).toEqual(['queue', 'pulse']);
   });
+
+  it('exports the exact managed service and task definition ARNs for verification', async () => {
+    const deployment = await new Promise<any>((resolve) => pulumi.output(full.deployment).apply(resolve));
+    expect(deployment).toMatchObject({ version: 1, app: 'app', stage: 'dev', taskDefinitions: [] });
+    expect(deployment.services).toHaveLength(4);
+    expect(deployment.services.map((service: any) => service.taskDefinition)).toEqual([
+      'arn:aws:mock:us-east-1:123456789012:Full-WebTask',
+      'arn:aws:mock:us-east-1:123456789012:Full-queueTask',
+      'arn:aws:mock:us-east-1:123456789012:Full-pulseTask',
+      'arn:aws:mock:us-east-1:123456789012:Full-ReverbTask',
+    ]);
+  });
 });
 
 describe('deployed configuration', () => {
+  it('keeps existing provider settings and user Docker ignore rules', () => {
+    expect((globalThis as any).$app.providers).toEqual({ aws: { region: 'us-east-1' }, 'docker-build': { version: '0.0.14' } });
+    expect(fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8')).toBe('# user rules\nnode_modules\n.env*\ncustom-exclusion\n\n# sst\n.sst\n\n# sst-laravel\n!.sst/laravel\n');
+  });
+  it('retains built images, without retaining ECS services or task definitions', () => {
+    for (const resource of resources.values()) {
+      if (resource.type === 'docker-build:index:Image') expect(resource.retainOnDelete).toBe(true);
+      if (resource.type.startsWith('aws:ecs/')) expect(resource.retainOnDelete).not.toBe(true);
+    }
+  });
+
+  it('composes user image and service hooks through SST', () => {
+    expect(find('docker-build:index:Image', 'Custom-apiImageCustom-api').inputs.labels).toEqual({ 'user-image-hook': 'preserved' });
+    expect(find('aws:ecs/service:Service', 'Custom-apiService').inputs.deploymentMinimumHealthyPercent).toBe(50);
+  });
+
+  it('passes the SST-selected provider Check RPC with the real generated image inputs', async () => {
+    for (const name of ['Full-WebImageFull-Web', 'Full-queueImageFull-queue']) {
+      const inputs = find('docker-build:index:Image', name).inputs;
+      // Credentials are irrelevant to Check; never pass or report registry secrets.
+      const { context, dockerfile, buildArgs, target, platforms } = inputs;
+      expect(await checkImageInputs({ context, dockerfile, buildArgs, target, platforms, push: false })).toEqual([]);
+    }
+  });
+
+  it('reproduces the old COPY --exclude failure in provider 0.0.14', async () => {
+    const version = JSON.parse(fs.readFileSync(path.join(ROOT, '.sst/platform/package.json'), 'utf8')).dependencies['@pulumi/docker-build'];
+    if (version !== '0.0.14') return;
+    const failures = await checkImageInputs({ context: { location: ROOT }, dockerfile: {
+      inline: '# syntax=docker/dockerfile:1\nFROM scratch\nCOPY --exclude=.sst . /app\n',
+    }, push: false });
+    expect(failures.some((failure: any) => /exclude/.test(failure.reason))).toBe(true);
+  });
   it('passes config.environment.vars to the containers when it is an Output', () => {
     expect(containerEnvironment('Full-WebTask')).toMatchObject({
       FROM_OUTPUT: 'yes',

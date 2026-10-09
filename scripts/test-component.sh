@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURE="$ROOT/tests/component/fixture"
 PLATFORM="${SST_PLATFORM_DIR:-$FIXTURE/.sst/platform}"
 
-if [ ! -d "$PLATFORM/node_modules/@pulumi/pulumi" ]; then
+if [ ! -d "$PLATFORM/node_modules/@pulumi/pulumi" ] || [ ! -f "$PLATFORM/config.d.ts" ]; then
   echo "Installing the SST platform in $FIXTURE..."
   (cd "$FIXTURE" && "$ROOT/node_modules/.bin/sst" install)
 fi
@@ -33,7 +33,7 @@ mkdir -p "$PACKAGE" "$SCRATCH/.sst" "$SCRATCH/node_modules"
 cp -r "$ROOT/laravel-sst.ts" "$ROOT/sst-env.d.ts" "$ROOT/src" "$ROOT/conf" \
   "$ROOT/Dockerfile.web" "$ROOT/Dockerfile.worker" "$PACKAGE/"
 cp "$ROOT/tests/component/tsconfig.json" "$PACKAGE/"
-cp "$ROOT/tests/component/"*.test.ts "$ROOT/tests/component/vitest.config.mjs" "$SCRATCH/"
+cp "$ROOT/tests/component/"*.ts "$ROOT/tests/component/vitest.config.mjs" "$SCRATCH/"
 
 # Never link the whole .sst folder: the component writes its build files
 # next to the platform.
@@ -42,6 +42,9 @@ ln -s "$PLATFORM/node_modules/@pulumi" "$SCRATCH/node_modules/@pulumi"
 ln -s "$ROOT/node_modules/@aws-sdk" "$SCRATCH/node_modules/@aws-sdk"
 ln -s "$ROOT/node_modules/@types" "$SCRATCH/node_modules/@types"
 ln -s "$ROOT/node_modules/vitest" "$SCRATCH/node_modules/vitest"
+# The provider RPC regression uses the same protobuf/gRPC dependencies as Pulumi.
+ln -s "$PLATFORM/node_modules/@grpc" "$SCRATCH/node_modules/@grpc"
+ln -s "$PLATFORM/node_modules/google-protobuf" "$SCRATCH/node_modules/google-protobuf"
 
 echo "Type-checking laravel-sst.ts..."
 (cd "$PACKAGE" && "$ROOT/node_modules/.bin/tsc" -p tsconfig.json)

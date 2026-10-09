@@ -14,10 +14,10 @@ npx sst-laravel doctor                   # readiness check (tools, Docker, AWS, 
 npx sst-laravel init                     # creates sst.config.ts (minimal)
 composer install && npm run build        # the image copies vendor/ and public/build as they are
 npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy); waits for the rollout, fails on rollback
-npx sst-laravel status --stage dev --wait   # each service runs its last deployment + /up at the URL the deploy saved
+npx sst-laravel status --stage dev --wait   # expected revisions + private ECR image availability + /up at the URL the deploy saved
 npx sst-laravel command:run migrate:status --stage dev   # checks the database (/up does not)
 npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming
-npx sst remove --stage dev               # deletes everything in the stage
+npx sst remove --stage dev               # removes stage resources; retained image manifests need separate cleanup
 ```
 
 Install the package before any `npx sst-laravel` command. Until it is
@@ -39,7 +39,7 @@ const app = new LaravelService("MyApp", {
   web: { size: "small", healthCheck: { path: "/up" } },
   config: { environment: { file: `.env.${$app.stage}` } },
 });
-return { url: app.url };
+return { url: app.url, deployment: app.deployment };
 ```
 
 `new sst.aws.Vpc("MyVpc")` with no options is cheapest (~$0.50/mo). Without
@@ -128,3 +128,22 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
    path, AWS keys committed in the env file (use the IAM role instead).
 4. `failed to configure registry cache importer ... not found` on the first
    build is expected.
+
+## Upgrading and verification
+
+Keep `deployment: app.deployment` in run() outputs (array for several components).
+Deploy/status verify only registered services against those exact task definition
+ARNs and check their private ECR images. Add external tasks explicitly via
+`deployment: { ...app.deployment, taskDefinitions: [taskRunner.taskDefinition] }`;
+this only checks images, not task execution, env vars, or IAM. No discovery of
+unrelated services/tasks. Verification also needs ecs:DescribeTaskDefinition and
+ecr:DescribeImages. --no-wait skips verification.
+
+SST 4.17.1 / docker-build 0.0.14 work with the package Dockerfiles; no provider
+pin is needed. .sst is excluded using a read-only build-context mount. Existing
+pins are preserved; 0.0.22 was a verified workaround, not a proven minimum.
+Only managed images default to retainOnDelete. Persist retention in a deployment
+BEFORE a provider/resource replacement: adding it during replacement does not
+protect the old resource. Retention cannot restore deleted images or prevent ECR
+lifecycle cleanup. Retained manifests need deliberate cleanup that accounts for
+active and rollback task revisions. See deploying.md#upgrading-from-071.

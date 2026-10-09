@@ -336,6 +336,7 @@
     "type": "docker-build:index:Image",
     "name": "Mini-WebImageMini-Web",
     "parent": "Mini-Web",
+    "retainOnDelete": true,
     "inputs": {
       "buildArgs": {
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Mini/web",

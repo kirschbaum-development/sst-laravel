@@ -1,9 +1,9 @@
 import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
-import { findClusterArn } from '../utils/ecs.js';
 import { APP_REGION_OPTION_HELP } from '../utils/aws.js';
 import { resolveAppRegion } from '../utils/sst-config.js';
-import { readSavedAppUrl } from '../utils/app-url.js';
+import { readOutputs, readSavedAppUrl } from '../utils/app-url.js';
+import { readStatusDeploymentTargets } from '../utils/deployment-targets.js';
 import { DEFAULT_WAIT_SECONDS, isLoadBalancerHttpsUrl, RETRY_SECONDS, verifyDeployment } from '../utils/deployment-check.js';
 
 export { isLoadBalancerHttpsUrl };
@@ -31,9 +31,9 @@ export const parseWaitSeconds = (wait: string | boolean | undefined): number => 
 };
 
 export const statusCommand = new Command('status')
-  .description('Check a deployment: whether each service runs its last deployment, plus an optional /up health check. Fails when a deployment was rolled back. Prints one summary, never secrets.')
+  .description('Verify registered service revisions and ECR images, plus an optional /up health check. With --cluster alone, report cluster diagnostics only.')
   .option('-s, --stage <stage>', 'SST stage name (required unless --cluster is given)')
-  .option('-c, --cluster <cluster>', 'ECS cluster ARN (skips auto-detection)')
+  .option('-c, --cluster <cluster>', 'Restrict to this cluster; without --stage, check ECS history only')
   .option('-r, --region <region>', APP_REGION_OPTION_HELP)
   .option('-u, --url <url>', 'Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved)')
   .option('-p, --path <path>', 'Health path to request', '/up')
@@ -47,11 +47,16 @@ export const statusCommand = new Command('status')
 
       const ecsClient = new ECSClient({ region: resolveAppRegion(options.region) });
 
-      const clusterArn = options.cluster
-        ? options.cluster
-        : await findClusterArn(ecsClient, options.stage as string, undefined);
-
-      console.log(`\nCluster: ${clusterArn.split('/').pop()}`);
+      const outputs = readOutputs(process.cwd());
+      // outputs.json is overwritten by another stage's deploy. Saved targets
+      // keep status tied to the intended revision of the requested stage.
+      const targets = options.stage
+        ? readStatusDeploymentTargets(process.cwd(), outputs, options.stage)
+        : undefined;
+      if (options.cluster && targets) targets.services = targets.services.filter((target) => target.cluster === options.cluster);
+      const clusterArns = targets ? [...new Set(targets.services.map((target) => target.cluster))] : [options.cluster!];
+      if (!clusterArns.length) throw new Error('No registered services match this cluster.');
+      if (!targets) console.log('Cluster diagnostics only: pass --stage with deployment outputs to verify the expected revision and ECR images.');
 
       if (!options.url && options.stage) {
         options.url = readSavedAppUrl(process.cwd(), options.stage);
@@ -70,7 +75,8 @@ export const statusCommand = new Command('status')
       const waitSeconds = parseWaitSeconds(options.wait);
       const { verdict } = await verifyDeployment({
         ecsClient,
-        clusterArns: [clusterArn],
+        clusterArns,
+        targets,
         url: options.url,
         healthPath: options.path,
         waitSeconds,
@@ -79,7 +85,7 @@ export const statusCommand = new Command('status')
       console.log('');
 
       if (verdict === 'healthy') {
-        console.log('Deployment looks healthy.');
+        console.log(targets ? 'Expected deployment is running and its ECR images are available.' : 'Cluster looks healthy; the expected deployment was not verified.');
         return;
       }
 

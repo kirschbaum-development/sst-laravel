@@ -336,6 +336,7 @@
     "type": "docker-build:index:Image",
     "name": "Vault-WebImageVault-Web",
     "parent": "Vault-Web",
+    "retainOnDelete": true,
     "dependsOn": [
       "Vault-RemoteEnv.sst.aws.EnvFile"
     ],

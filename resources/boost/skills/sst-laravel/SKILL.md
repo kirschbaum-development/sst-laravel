@@ -224,7 +224,7 @@ The first deploy writes a `.dockerignore` when the project has none, so the imag
 
 ## 5. Verify and repair
 
-A successful infrastructure command is not enough. `npx sst-laravel deploy` waits for the rollout; after a deploy run any other way (or with `--no-wait`), check that each service runs its last deployment, and the health endpoint, keeping checking while ECS rolls out:
+A successful infrastructure command is not enough. `npx sst-laravel deploy` waits for the rollout; after a deploy run any other way (or with `--no-wait`), keep `deployment: app.deployment` in the `run()` outputs and check the expected service revisions, private ECR image availability, and the health endpoint, keeping checking while ECS rolls out:
 
 ```bash
 npx sst-laravel status --stage <stage> --wait

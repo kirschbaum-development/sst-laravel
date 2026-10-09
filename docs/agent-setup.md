@@ -24,6 +24,8 @@ npm install @kirschbaum-development/sst-laravel --save
 
 Install it before any `npx sst-laravel` command. Until it's installed, `npx` looks for a different, unscoped package with that name.
 
+Keep `deployment: app.deployment` in the `run()` outputs so deploy/status can verify the expected task definitions and their ECR images. For an upgrade from 0.7.1, follow [the upgrade sequence](deploying.md#upgrading-from-071): persist image retention before a separate provider/resource replacement.
+
 If the package is already installed, keep its version. Upgrading can change deployed infrastructure, so only upgrade when the user asks.
 
 ## 3. Install the skill for later sessions

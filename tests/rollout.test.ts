@@ -194,7 +194,7 @@ describe('checkRollouts', () => {
     } as unknown as ECSClient;
 
     await expect(checkRollouts(ecs, CLUSTER)).rejects.toThrow(
-      'The check needs ecs:ListServices, ecs:DescribeServices, ecs:ListServiceDeployments, ecs:DescribeServiceRevisions.',
+      'The check needs ecs:ListServices, ecs:DescribeServices, ecs:ListServiceDeployments, ecs:DescribeServiceRevisions, ecs:DescribeTaskDefinition.',
     );
   });
 });

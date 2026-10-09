@@ -8,7 +8,7 @@ The package ships an `sst-laravel` command. Install the package first, then run 
 | [`install`](#install) | Runs `sst install`, even when `sst.config.ts` can't be built yet. |
 | [`doctor`](#doctor) | Checks that the machine and app are ready to deploy. |
 | [`deploy`](#deploy) | Deploys a stage and waits until ECS runs the new revision. |
-| [`status`](#status) | Checks that each service runs its last deployment, and the health endpoint. |
+| [`status`](#status) | Checks expected service revisions, private ECR images, and the health endpoint. |
 | [`ssh`](#ssh) | Opens a shell in a running container. |
 | [`command:run`](#commandrun) | Runs an Artisan or shell command in a running container. |
 | [`logs`](#logs) | Prints or streams the logs of a running service. |
@@ -82,11 +82,11 @@ npx sst-laravel deploy --stage production
 `sst deploy` returns as soon as ECS accepts the new revision, before the new tasks start. `deploy` then waits until every service (web, Reverb, and each worker) runs the revision it deployed, and the health endpoint answers. It exits with an error when:
 
 - ECS rolls the deployment back, or the rollback fails. The deployment circuit breaker rolls back when the new tasks keep failing to start or failing their health checks.
-- The deployment is stopped.
+- The deployment is stopped, an expected service is missing, or a referenced ECR image is unavailable.
 - The health endpoint returns an error once the rollout is done.
 - The rollout doesn't finish within `--timeout`.
 
-A rolled-back app still answers on its URL, from the previous revision, so the URL alone can't tell a failed deploy from a good one. `deploy` reads the result of the ECS deployment instead. That makes it safe to use in CI: the job fails when the new revision isn't running.
+A rolled-back app still answers on its URL, from the previous revision, so the URL alone can't tell a failed deploy from a good one. `deploy` compares ECS against the `deployment: app.deployment` output of `run()` and checks the referenced private ECR images. Missing or invalid deployment metadata fails verification with setup instructions. That makes it safe to use in CI: the job fails when the new revision isn't running.
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name (required)
@@ -95,13 +95,15 @@ A rolled-back app still answers on its URL, from the previous revision, so the U
 - `-p, --path <path>` - Health path to request once the rollout is done (default: `/up`)
 - `-r, --region <region>` - AWS region of the app (default: `--region`, then the `aws` provider's `region` in `sst.config.ts`, then `AWS_REGION`, the active profile, and `us-east-1`)
 
-It saves the app URL for [`status`](#status). The URL comes from the `url` output that `sst.config.ts` returns (the config from `init` does), or from the load balancer address when the outputs have only one. Without a domain, it also reminds you that the load balancer address serves http only.
+It saves expected targets in `.sst/laravel/deployments.json` before verification (including failed checks), and saves the app URL for [`status`](#status). The URL comes from the `url` output that `sst.config.ts` returns (the config from `init` does), or from the load balancer address when the outputs have only one. Without a domain, it also reminds you that the load balancer address serves http only.
 
-The check needs the `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListServiceDeployments`, and `ecs:DescribeServiceRevisions` permissions. The role from [`github-iam`](#github-iam) has them.
+The check needs `ecs:DescribeServices`, `ecs:ListServiceDeployments`, `ecs:DescribeServiceRevisions`, `ecs:DescribeTaskDefinition`, and `ecr:DescribeImages`. The role from [`github-iam`](#github-iam) has them.
+
+For existing apps, add `deployment: app.deployment` to the outputs before using verified deploy/status. See [upgrading from 0.7.1](deploying.md#upgrading-from-071), including the retention sequence and opt-in external task checks.
 
 ## `status`
 
-Checks a deployment in one view: whether each service runs the revision of its last deployment, plus an optional health-endpoint check. It fails when the last deployment was rolled back or stopped, even though the previous revision still answers. Use it after `npx sst deploy`, or after `sst-laravel deploy --no-wait`, to get the same check as `sst-laravel deploy`.
+Checks a deployment in one view: whether each registered service runs the exact task definition in the stage's deployment output, whether its private ECR images exist, plus an optional health-endpoint check. It fails when the last deployment was rolled back or stopped, even though the previous revision still answers. Use it after `npx sst deploy`, or after `sst-laravel deploy --no-wait`, to get the same check as `sst-laravel deploy`.
 
 ```bash
 npx sst-laravel status --stage dev --wait
@@ -110,7 +112,7 @@ npx sst-laravel status --stage production --url https://app.example.com
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
-- `-c, --cluster <arn>` - ECS cluster ARN (skips auto-detection)
+- `-c, --cluster <arn>` - Restrict stage verification to this registered cluster. Without `--stage`, run cluster diagnostics based on ECS history; expected revisions and image availability are not verified. This diagnostic mode also needs `ecs:ListServices`.
 - `-r, --region <region>` - AWS region (default: the `aws` provider's `region` in `sst.config.ts`, then `AWS_REGION`, the active profile, and `us-east-1`)
 - `-u, --url <url>` - Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved on this machine)
 - `-p, --path <path>` - Health path to request (default: `/up`)

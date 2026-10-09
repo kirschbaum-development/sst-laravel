@@ -772,6 +772,10 @@ const app = new LaravelService("MyApp", { ... });
 console.log(app.reverbUrl); // https://ws.example.com or https://xyz.elb.amazonaws.com
 ```
 
+### `deployment`
+- **Type:** `LaravelDeployment`
+- **Description:** Expected deployment metadata for `deploy` and `status`: schema version, app and stage, and the exact cluster, ECS service, and task definition ARNs for web, workers, and Reverb. Return it as `deployment: app.deployment` from `run()`; use an array for multiple components. In dev mode the service list is empty. Add `taskDefinitions: [taskRunner.taskDefinition]` to the returned object to opt an external task into image availability checks. See [deployment verification](deploying.md#deploy).
+
 ### `nodes`
 - **Type:** `{ cluster: sst.aws.Cluster; web?: sst.aws.Service; reverb?: sst.aws.Service; workers: Record<string, sst.aws.Service> }`
 - **Description:** The underlying resources: the ECS cluster and the `sst.aws.Service` of web, Reverb, and each worker (by worker name). Use them to add alarms, permissions, or outputs of your own. Resource options passed to `LaravelService` (such as `provider` or `protect`) apply to all of them.
@@ -855,6 +859,7 @@ const app = new LaravelService("MyApp", {
 
 return {
   url: app.url,
+  deployment: app.deployment,
   reverbUrl: app.reverbUrl
 };
 ```
@@ -914,6 +919,7 @@ const app = new LaravelService("MyApp", {
 
 return {
   url: app.url,
+  deployment: app.deployment,
   reverbUrl: app.reverbUrl,
   secretsPath: env.path
 };

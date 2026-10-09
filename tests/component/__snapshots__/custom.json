@@ -122,6 +122,7 @@
         "enable": true,
         "rollback": true
       },
+      "deploymentMinimumHealthyPercent": 50,
       "desiredCount": 1,
       "enableExecuteCommand": true,
       "launchType": "FARGATE",
@@ -336,6 +337,7 @@
     "type": "docker-build:index:Image",
     "name": "Custom-apiImageCustom-api",
     "parent": "Custom-api",
+    "retainOnDelete": true,
     "inputs": {
       "buildArgs": {
         "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Custom/conf",
@@ -367,6 +369,9 @@
       },
       "dockerfile": {
         "location": "<root>/pkg/@kirschbaum-development/sst-laravel/Dockerfile.worker"
+      },
+      "labels": {
+        "user-image-hook": "preserved"
       },
       "network": "default",
       "platforms": [

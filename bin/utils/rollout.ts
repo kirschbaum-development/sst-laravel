@@ -7,6 +7,7 @@ import {
   Service,
   ServiceDeploymentBrief,
 } from '@aws-sdk/client-ecs';
+import type { ServiceTarget } from './deployment-targets.js';
 
 /**
  * - `live`: the service runs the revision of its last deployment, with every
@@ -33,6 +34,8 @@ export interface RolloutFacts {
   deployment?: ServiceDeploymentBrief;
   /** The task definition that deployment rolls out. */
   targetTaskDefinition?: string;
+  /** The task definition from SST outputs, independent of ECS deployment history. */
+  expectedTaskDefinition?: string;
 }
 
 /** `App-Web-Task:42` from a task definition ARN. */
@@ -44,14 +47,25 @@ export const taskDefinitionRevision = (arn?: string): string => arn?.split('/').
  * rolled-back service fails here even though it runs, and passes health
  * checks, on the previous revision.
  */
-export function evaluateRollout({ service, deployment, targetTaskDefinition }: RolloutFacts): ServiceRollout {
+export function evaluateRollout({ service, deployment, targetTaskDefinition, expectedTaskDefinition }: RolloutFacts): ServiceRollout {
   const name = service.serviceName ?? 'unknown';
   const running = service.runningCount ?? 0;
   const desired = service.desiredCount ?? 0;
   const tasks = `${running}/${desired} tasks running`;
-  const target = taskDefinitionRevision(targetTaskDefinition ?? service.taskDefinition);
+  const target = taskDefinitionRevision(expectedTaskDefinition ?? targetTaskDefinition ?? service.taskDefinition);
   const reason = deployment?.statusReason ? `: ${deployment.statusReason}` : '';
   const result = (state: RolloutState, message: string): ServiceRollout => ({ service: name, state, message });
+
+  // History can lag, expire, or describe a later rollback. It cannot replace
+  // the target emitted by SST. Ignore history for a different revision.
+  if (expectedTaskDefinition && targetTaskDefinition !== expectedTaskDefinition) deployment = undefined;
+
+  const primary = service.deployments?.find((candidate) => candidate.status === 'PRIMARY');
+  if (expectedTaskDefinition && (service.taskDefinition !== expectedTaskDefinition || primary?.taskDefinition !== expectedTaskDefinition)) {
+    const settling = service.deployments?.some((candidate) => candidate.rolloutState === 'IN_PROGRESS');
+    return result(settling ? 'rolling-out' : 'failed',
+      `expected ${target}, but ECS runs ${taskDefinitionRevision(primary?.taskDefinition ?? service.taskDefinition)} (rollback or a different deployment)`);
+  }
 
   switch (deployment?.status) {
     case 'PENDING':
@@ -71,12 +85,10 @@ export function evaluateRollout({ service, deployment, targetTaskDefinition }: R
 
   // A successful deployment, or none in the last 90 days: check what the
   // service runs now.
-  if (deployment && targetTaskDefinition && service.taskDefinition !== targetTaskDefinition) {
+  if (!expectedTaskDefinition && deployment && targetTaskDefinition && service.taskDefinition !== targetTaskDefinition) {
     // ECS lists a new deployment a moment after the service changes.
     return result('rolling-out', `waiting for ECS to start rolling out ${taskDefinitionRevision(service.taskDefinition)}`);
   }
-
-  const primary = service.deployments?.find((candidate) => candidate.status === 'PRIMARY');
 
   if (primary?.rolloutState === 'FAILED') {
     const primaryReason = primary.rolloutStateReason ? `: ${primary.rolloutStateReason}` : '';
@@ -89,6 +101,10 @@ export function evaluateRollout({ service, deployment, targetTaskDefinition }: R
 
   if (running !== desired || (service.pendingCount ?? 0) > 0) {
     return result('rolling-out', `${target} is deployed, ${tasks}`);
+  }
+
+  if (expectedTaskDefinition && (desired === 0 || !primary || primary.rolloutState !== 'COMPLETED')) {
+    return result('rolling-out', `waiting for ${target} to complete with running tasks, ${tasks}`);
   }
 
   return result('live', `${target} is live, ${tasks}`);
@@ -106,6 +122,7 @@ export const ROLLOUT_PERMISSIONS = [
   'ecs:DescribeServices',
   'ecs:ListServiceDeployments',
   'ecs:DescribeServiceRevisions',
+  'ecs:DescribeTaskDefinition',
 ];
 
 async function listServiceArns(ecsClient: ECSClient, clusterArn: string): Promise<string[]> {
@@ -153,12 +170,12 @@ async function revisionTaskDefinition(ecsClient: ECSClient, serviceRevisionArn?:
 }
 
 /**
- * The rollout of every service in the cluster: web, Reverb, and the
- * workers.
+ * Check only registered targets when provided. Cluster-wide discovery is
+ * reserved for the explicitly requested `status --cluster` diagnostic mode.
  */
-export async function checkRollouts(ecsClient: ECSClient, clusterArn: string): Promise<ServiceRollout[]> {
+export async function checkRollouts(ecsClient: ECSClient, clusterArn: string, expected?: ServiceTarget[]): Promise<ServiceRollout[]> {
   try {
-    const serviceArns = await listServiceArns(ecsClient, clusterArn);
+    const serviceArns = expected ? expected.map((target) => target.service) : await listServiceArns(ecsClient, clusterArn);
     const services: Service[] = [];
 
     // DescribeServices takes up to 10 services at a time.
@@ -171,11 +188,18 @@ export async function checkRollouts(ecsClient: ECSClient, clusterArn: string): P
 
     const rollouts: ServiceRollout[] = [];
 
+    for (const target of expected ?? []) {
+      if (!services.some((service) => (service.serviceArn === target.service || service.serviceName === target.service) && service.status === 'ACTIVE')) {
+        rollouts.push({ service: target.service, state: 'failed', message: 'expected service is missing or inactive' });
+      }
+    }
+
     for (const service of services.filter((candidate) => candidate.status === 'ACTIVE')) {
       const deployment = await latestDeployment(ecsClient, clusterArn, service.serviceArn!);
       const targetTaskDefinition = await revisionTaskDefinition(ecsClient, deployment?.targetServiceRevisionArn);
 
-      rollouts.push(evaluateRollout({ service, deployment, targetTaskDefinition }));
+      const expectedTaskDefinition = expected?.find((target) => target.service === service.serviceArn || target.service === service.serviceName)?.taskDefinition;
+      rollouts.push(evaluateRollout({ service, deployment, targetTaskDefinition, expectedTaskDefinition }));
     }
 
     return rollouts.sort((a, b) => a.service.localeCompare(b.service));

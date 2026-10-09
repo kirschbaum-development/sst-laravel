@@ -72,6 +72,7 @@ const app = new LaravelService("MyLaravelApp", {
 
 return {
   url: app.url,
+  deployment: app.deployment,
 };
 ```
 

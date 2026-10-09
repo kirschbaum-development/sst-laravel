@@ -1410,6 +1410,7 @@
     "type": "docker-build:index:Image",
     "name": "Full-pulseImageFull-pulse",
     "parent": "Full-pulse",
+    "retainOnDelete": true,
     "dependsOn": [
       "Full-EnvFile.sst.aws.EnvFile"
     ],
@@ -1481,6 +1482,7 @@
     "type": "docker-build:index:Image",
     "name": "Full-queueImageFull-queue",
     "parent": "Full-queue",
+    "retainOnDelete": true,
     "dependsOn": [
       "Full-EnvFile.sst.aws.EnvFile"
     ],
@@ -1552,6 +1554,7 @@
     "type": "docker-build:index:Image",
     "name": "Full-ReverbImageFull-Reverb",
     "parent": "Full-Reverb",
+    "retainOnDelete": true,
     "dependsOn": [
       "Full-EnvFile.sst.aws.EnvFile"
     ],
@@ -1623,6 +1626,7 @@
     "type": "docker-build:index:Image",
     "name": "Full-WebImageFull-Web",
     "parent": "Full-Web",
+    "retainOnDelete": true,
     "dependsOn": [
       "Full-EnvFile.sst.aws.EnvFile"
     ],

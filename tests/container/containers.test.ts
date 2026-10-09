@@ -227,6 +227,9 @@ beforeAll(async () => {
   context = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-laravel-containers-'));
   fs.cpSync(path.join(__dirname, 'app'), context, { recursive: true });
   fs.chmodSync(path.join(context, 'artisan'), 0o755);
+  fs.mkdirSync(path.join(context, '.sst/other-component'), { recursive: true });
+  fs.writeFileSync(path.join(context, '.sst/other-component/secret'), 'must-not-ship');
+  fs.writeFileSync(path.join(context, '.app-dotfile'), 'keep-me');
 
   app = await buildApp('App', appConfig);
   // A web container without background processes.
@@ -245,6 +248,16 @@ afterAll(() => {
 
 const plan = (label: string) => app.plans.find((candidate) => candidate.label === label)!;
 const imageFor = (plan: ServicePlan) => app.images[plan.label];
+
+describe('application source copy', () => {
+  it.each(['web', 'workers[queue]', 'reverb'])('%s excludes all .sst content while keeping app files and the generated environment', (label) => {
+    const container = startContainer(app.images[label]);
+    expect(run(['exec', container, 'test', '!', '-e', '/var/www/html/.sst']).status).toBe(0);
+    expect(run(['exec', container, 'cat', '/var/www/html/.app-dotfile']).output.trim()).toBe('keep-me');
+    expect(run(['exec', container, 'cat', '/var/www/html/.env']).output).toContain('APP_ENV=production');
+    expect(run(['exec', container, 'stat', '-c', '%u', '/var/www/html/artisan']).output.trim()).toBe('33');
+  });
+});
 
 const expectCleanBoot = (container: string) => {
   const output = logs(container);

@@ -2,7 +2,7 @@
 
 ## The app isn't healthy after a deploy
 
-1. Run `npx sst-laravel status --stage <stage> --wait` to see whether each service runs its last deployment, and the `/up` health check, in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. A 502 or 503 in the first minutes after a deploy only means the new tasks are still starting.
+1. Run `npx sst-laravel status --stage <stage> --wait` to see the expected service revisions from `deployment: app.deployment`, private ECR image availability, and the `/up` health check, in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. A 502 or 503 in the first minutes after a deploy only means the new tasks are still starting.
 1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors.
 
 The usual causes are a missing `APP_KEY`, wrong environment variable names, a database the containers can't reach, a wrong health check path, or AWS keys in the environment file (see [below](#cd-aws-credentials-are-not-configured)).
@@ -102,3 +102,7 @@ If you are getting the following error when deploying (usually via CI/CD), the i
 ✕  AWS credentials are not configured. Try configuring your profile in `~/.aws/config` and setting the `AWS_PROFILE` environment variable or specifying `providers.aws.profile` in your sst.config.ts
    aws: failed to refresh cached credentials, no EC2 IMDS role found, operation error ec2imds: GetMetadata, failed to get API token, operation error ec2imds: getToken, http response error StatusCode: 400, request to EC2 IMDS failed
 ```
+
+## Unknown Dockerfile flag `exclude`, or missing ECR images after an upgrade
+
+See [upgrading from 0.7.1](deploying.md#upgrading-from-071). The old `COPY --exclude` failure comes from Pulumi's embedded validator, so updating Docker alone is insufficient. The package Dockerfiles now work with SST 4.17.1's provider without a version override. Retention must be recorded before a separate image/provider replacement; it cannot recover a digest already deleted. Deploy/status verify the exact task definitions from the deployment output and fail if a referenced private ECR image is unavailable.

@@ -77,12 +77,13 @@ describe.each([
     expect(argsReadBy(dockerfile, image.target)).toEqual(expect.arrayContaining(Object.keys(image.args)));
   });
 
-  it('copies the app without .sst, with a Dockerfile syntax that supports it', () => {
+  it('copies the app through a context mount without staging .sst in a layer', () => {
     const { content } = parseDockerfile(dockerfile);
 
-    expect(content.startsWith('# syntax=docker/dockerfile:1\n')).toBe(true);
-    expect(content).toMatch(/^COPY [^\n]*--exclude=\.sst \. \/var\/www\/html$/m);
-    expect(content).not.toMatch(/^COPY (?![^\n]*--exclude=\.sst)[^\n]* \. \/var\/www\/html$/m);
+    expect(content).toContain('RUN --mount=type=bind,target=/app-source');
+    expect(content).toContain('! -name .sst -exec cp -a -t /var/www/html -- {} +');
+    expect(content).not.toContain('--exclude');
+    expect(content).not.toMatch(/^COPY [^\n]* \. \/var\/www\/html$/m);
   });
 
   it('passes PHP_OPCACHE_ENABLE on to the container', () => {

@@ -1,5 +1,24 @@
 import * as path from 'path';
-import { Input, output } from '@pulumi/pulumi';
+import { CustomResourceOptions, Input, output, Resource } from '@pulumi/pulumi';
+import { composeTransform } from './service-args.js';
+
+/** Only built images are retained: deleting a shared digest can break the replacement. */
+export function managedImageTransform(environmentFile?: Resource, user?: unknown) {
+  return (args: object, opts: CustomResourceOptions, name: string): undefined => {
+    opts.retainOnDelete ??= true;
+    composeTransform(() => {}, user)(args, opts, name);
+
+    // Keep the user's dependencies as well as the file the build must wait for.
+    if (environmentFile) {
+      const dependencies = opts.dependsOn ?? [];
+      opts.dependsOn = Array.isArray(dependencies)
+        ? [...dependencies, environmentFile]
+        : output<Resource | Input<Resource>[]>(dependencies).apply((resolved) => [...(Array.isArray(resolved) ? resolved : [resolved]), environmentFile]);
+    }
+
+    return undefined;
+  };
+}
 
 export interface ImageOptions {
   /** `web` builds `Dockerfile.web`, `worker` builds `Dockerfile.worker`. */

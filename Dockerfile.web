@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-# COPY --exclude needs Dockerfile syntax 1.19 or later.
 
 ARG PHP_VERSION=8.4
 FROM serversideup/php:${PHP_VERSION}-fpm-nginx as base
@@ -55,7 +54,11 @@ ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
 # The app, without .sst: the files the component generates there are copied
 # where they belong below, and one of them is the env file.
-COPY --chown=www-data:www-data --exclude=.sst . /var/www/html
+# A read-only context mount works with SST's docker-build 0.0.14 parser.
+# Never stage .sst in an image layer: it contains deployment files and secrets.
+RUN --mount=type=bind,target=/app-source \
+    find /app-source -mindepth 1 -maxdepth 1 ! -name .sst -exec cp -a -t /var/www/html -- {} + \
+    && chown -R www-data:www-data /var/www/html
 COPY --chown=www-data:www-data $DEPLOY_PATH/.env /var/www/html/.env
 
 # Copy the deployment script the component writes into .sst/laravel

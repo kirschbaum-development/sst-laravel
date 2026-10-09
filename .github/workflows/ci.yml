@@ -28,11 +28,29 @@ jobs:
         with:
           node-version: '24'
       - run: npm install
+      # Exercise the oldest supported SST and its embedded Dockerfile parser.
+      - run: npm install --no-save sst@4.17.1
       - name: Install the SST platform
         working-directory: tests/component/fixture
         timeout-minutes: 10
         run: ../../../node_modules/.bin/sst install
+      - name: Read the tool versions selected by SST
+        id: tools
+        run: |
+          node --input-type=commonjs -e '
+            const dependencies = require("./tests/component/fixture/.sst/platform/package.json").dependencies;
+            console.log("pulumi=" + dependencies["@pulumi/pulumi"].replace(/^v/, ""));
+            console.log("docker-build=" + dependencies["@pulumi/docker-build"]);
+          ' >> "$GITHUB_OUTPUT"
+      - uses: pulumi/actions@v6
+        with:
+          pulumi-version: ${{ steps.tools.outputs.pulumi }}
+      - name: Install the selected Docker build provider
+        run: pulumi plugin install resource docker-build "${{ steps.tools.outputs.docker-build }}"
       - run: npm run test:component
+      - run: npm run test:lifecycle
+        env:
+          PULUMI_BIN: pulumi
 
   # Builds the images on the current ServerSideUp tags and starts them.
   containers:
