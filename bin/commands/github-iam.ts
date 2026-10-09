@@ -111,8 +111,9 @@ export const githubIamCommand = new Command('github-iam')
       console.log(`          role-to-assume: arn:aws:iam::ACCOUNT_ID:role/${roleName}`);
       console.log(`          aws-region: ${region}`);
       console.log('');
-      console.log('      - name: Deploy with SST');
-      console.log('        run: npx sst deploy --stage production');
+      console.log('      # Fails the job when ECS rolls the new revision back.');
+      console.log('      - name: Deploy');
+      console.log('        run: npx sst-laravel deploy --stage production');
       console.log('```\n');
 
       console.log('Replace ACCOUNT_ID with your AWS account ID in the workflow file.');

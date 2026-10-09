@@ -1,8 +1,12 @@
 import { Command } from 'commander';
 import { ECSClient } from '@aws-sdk/client-ecs';
-import { findClusterArn, listRunningTasks, taskServiceName } from '../utils/ecs.js';
-import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
+import { findClusterArn } from '../utils/ecs.js';
+import { APP_REGION_OPTION_HELP } from '../utils/aws.js';
+import { resolveAppRegion } from '../utils/sst-config.js';
 import { readSavedAppUrl } from '../utils/app-url.js';
+import { DEFAULT_WAIT_SECONDS, isLoadBalancerHttpsUrl, RETRY_SECONDS, verifyDeployment } from '../utils/deployment-check.js';
+
+export { isLoadBalancerHttpsUrl };
 
 interface StatusOptions {
   stage?: string;
@@ -13,23 +17,7 @@ interface StatusOptions {
   wait?: string | boolean;
 }
 
-const DEFAULT_WAIT_SECONDS = 600;
-const RETRY_SECONDS = 15;
-
-/**
- * Without a domain, the app runs on the load balancer address over plain
- * http: port 443 is not open, so an https:// URL times out silently.
- */
-export const isLoadBalancerHttpsUrl = (url: string): boolean => {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'https:' && parsed.hostname.endsWith('.elb.amazonaws.com');
-  } catch {
-    return false;
-  }
-};
-
-const parseWaitSeconds = (wait: string | boolean | undefined): number => {
+export const parseWaitSeconds = (wait: string | boolean | undefined): number => {
   if (wait === undefined || wait === false) {
     return 0;
   }
@@ -42,89 +30,14 @@ const parseWaitSeconds = (wait: string | boolean | undefined): number => {
   return Number.isNaN(seconds) || seconds <= 0 ? DEFAULT_WAIT_SECONDS : seconds;
 };
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * One pass over the tasks and the health endpoint. Returns whether anything
- * needs attention; prints the report as it goes.
- */
-const checkOnce = async (
-  ecsClient: ECSClient,
-  clusterArn: string,
-  options: StatusOptions,
-): Promise<{ failed: boolean; starting: boolean }> => {
-  let failed = false;
-  let starting = false;
-
-  const tasks = await listRunningTasks(ecsClient, clusterArn);
-
-  if (tasks.length === 0) {
-    console.log('[FIX] tasks: no RUNNING tasks found.');
-    console.log('      Check the deploy output for errors, then `npx sst-laravel logs web --stage <stage> --no-follow`.');
-    failed = true;
-  } else {
-    const byService = new Map<string, { running: number; starting: number }>();
-    for (const task of tasks) {
-      const service = taskServiceName(task) ?? task.containers?.[0]?.name ?? 'unknown';
-      const entry = byService.get(service) ?? { running: 0, starting: 0 };
-      if (task.lastStatus === 'RUNNING') {
-        entry.running += 1;
-      } else {
-        entry.starting += 1;
-        starting = true;
-      }
-      byService.set(service, entry);
-    }
-
-    for (const [service, counts] of byService) {
-      console.log(
-        `[ok] tasks (${service}): ${counts.running} running${counts.starting > 0 ? `, ${counts.starting} still starting` : ''}`,
-      );
-    }
-  }
-
-  if (options.url) {
-    const target = `${options.url.replace(/\/$/, '')}${options.path}`;
-    try {
-      const response = await fetch(target, {
-        signal: AbortSignal.timeout(15000),
-      });
-      if (response.ok) {
-        console.log(`[ok] health: GET ${options.path} returned ${response.status}`);
-      } else if (response.status === 502 || response.status === 503) {
-        // The load balancer answers 502/503 while no task is healthy yet.
-        console.log(`[FIX] health: GET ${options.path} returned ${response.status}. The load balancer has no healthy task yet; right after a deploy that usually means the task is still starting.`);
-        failed = true;
-        starting = true;
-      } else {
-        console.log(`[FIX] health: GET ${options.path} returned ${response.status}. Check env vars, migrations, and recent logs.`);
-        failed = true;
-      }
-    } catch (error) {
-      console.log(`[FIX] health: could not reach ${target} (${(error as Error).message}).`);
-      if (isLoadBalancerHttpsUrl(options.url)) {
-        console.log('      This is the load balancer address, which only serves http:// until you add a domain. Retry with http://.');
-      } else {
-        console.log('      The load balancer can take a few minutes after a deploy. If it persists, check target health and logs.');
-        starting = true;
-      }
-      failed = true;
-    }
-  } else {
-    console.log('[--] health: skipped (no app URL for this stage: pass --url <app-url>, or deploy with `npx sst-laravel deploy` to save it)');
-  }
-
-  return { failed, starting };
-};
-
 export const statusCommand = new Command('status')
-  .description('Check a deployment: running tasks plus an optional /up health check. Prints one summary, never secrets.')
+  .description('Check a deployment: whether each service runs its last deployment, plus an optional /up health check. Fails when a deployment was rolled back. Prints one summary, never secrets.')
   .option('-s, --stage <stage>', 'SST stage name (required unless --cluster is given)')
   .option('-c, --cluster <cluster>', 'ECS cluster ARN (skips auto-detection)')
-  .option('-r, --region <region>', REGION_OPTION_HELP)
+  .option('-r, --region <region>', APP_REGION_OPTION_HELP)
   .option('-u, --url <url>', 'Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved)')
   .option('-p, --path <path>', 'Health path to request', '/up')
-  .option('-w, --wait [seconds]', `Keep checking while tasks start, up to this many seconds (default ${DEFAULT_WAIT_SECONDS}). Use it right after a deploy.`)
+  .option('-w, --wait [seconds]', `Keep checking every ${RETRY_SECONDS}s while ECS rolls out, up to this many seconds (default ${DEFAULT_WAIT_SECONDS}). Use it right after a deploy.`)
   .action(async (options: StatusOptions) => {
     try {
       if (!options.stage && !options.cluster) {
@@ -132,8 +45,7 @@ export const statusCommand = new Command('status')
         process.exit(1);
       }
 
-      const region = resolveRegion(options.region);
-      const ecsClient = new ECSClient({ region });
+      const ecsClient = new ECSClient({ region: resolveAppRegion(options.region) });
 
       const clusterArn = options.cluster
         ? options.cluster
@@ -153,27 +65,32 @@ export const statusCommand = new Command('status')
         console.log('Note: the load balancer address only serves http:// until you add a domain. Checking it over https:// will fail.');
       }
 
-      const waitSeconds = parseWaitSeconds(options.wait);
-      const deadline = Date.now() + waitSeconds * 1000;
-      let result = await checkOnce(ecsClient, clusterArn, options);
+      console.log('');
 
-      while (result.failed && result.starting && Date.now() < deadline) {
-        const left = Math.round((deadline - Date.now()) / 1000);
-        console.log(`\nStill starting. Checking again in ${RETRY_SECONDS}s (up to ${left}s more)...\n`);
-        await sleep(RETRY_SECONDS * 1000);
-        result = await checkOnce(ecsClient, clusterArn, options);
-      }
+      const waitSeconds = parseWaitSeconds(options.wait);
+      const { verdict } = await verifyDeployment({
+        ecsClient,
+        clusterArns: [clusterArn],
+        url: options.url,
+        healthPath: options.path,
+        waitSeconds,
+      });
 
       console.log('');
-      if (result.failed) {
-        if (result.starting && waitSeconds === 0) {
-          console.log('Right after a deploy, tasks can take a few minutes to pass the health check. Run again with --wait to keep checking.');
-        }
-        console.log('Something needs attention. Recent logs: `npx sst-laravel logs web --stage <stage> --no-follow`.');
-        process.exit(1);
+
+      if (verdict === 'healthy') {
+        console.log('Deployment looks healthy.');
+        return;
       }
 
-      console.log('Deployment looks healthy.');
+      if (verdict === 'in-progress') {
+        console.log('ECS is still rolling out. Run again with --wait to keep checking until it finishes.');
+      } else if (verdict === 'timed-out') {
+        console.log(`Gave up after ${waitSeconds}s: the rollout has not finished.`);
+      }
+
+      console.log('Something needs attention. Recent logs: `npx sst-laravel logs web --stage <stage> --no-follow`.');
+      process.exit(1);
     } catch (error) {
       console.error('Error:', (error as Error).message);
       process.exit(1);

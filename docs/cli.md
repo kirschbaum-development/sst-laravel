@@ -7,8 +7,8 @@ The package ships an `sst-laravel` command. Install the package first, then run 
 | [`init`](#init) | Creates `sst.config.ts` for your Laravel application. |
 | [`install`](#install) | Runs `sst install`, even when `sst.config.ts` can't be built yet. |
 | [`doctor`](#doctor) | Checks that the machine and app are ready to deploy. |
-| [`deploy`](#deploy) | Deploys a stage. |
-| [`status`](#status) | Shows the running tasks and checks the health endpoint. |
+| [`deploy`](#deploy) | Deploys a stage and waits until ECS runs the new revision. |
+| [`status`](#status) | Checks that each service runs its last deployment, and the health endpoint. |
 | [`ssh`](#ssh) | Opens a shell in a running container. |
 | [`command:run`](#commandrun) | Runs an Artisan or shell command in a running container. |
 | [`logs`](#logs) | Prints or streams the logs of a running service. |
@@ -28,7 +28,7 @@ Commands that work with a deployed stage (`status`, `ssh`, `command:run`, and `l
 
 - `-s, --stage <stage>` - SST stage name (required)
 - `-c, --cluster <cluster>` - ECS cluster (optional, auto-detected from the stage)
-- `-r, --region <region>` - AWS region (default: `AWS_REGION`, then the active profile's region, then `us-east-1`)
+- `-r, --region <region>` - AWS region (default: `AWS_REGION`, then the active profile's region, then `us-east-1`. `status` and `deploy` first read the `aws` provider's `region` from `sst.config.ts`.)
 
 ## `init`
 
@@ -79,11 +79,29 @@ Deploys the stage with `sst deploy`. Use it instead of `sst deploy` when you use
 npx sst-laravel deploy --stage production
 ```
 
-When it finishes, it saves the app URL for [`status`](#status) and prints the `status --wait` command to check the new tasks. The URL comes from the `url` output that `sst.config.ts` returns (the config from `init` does), or from the load balancer address when the outputs have only one. Without a domain, it also reminds you that the load balancer address serves http only.
+`sst deploy` returns as soon as ECS accepts the new revision, before the new tasks start. `deploy` then waits until every service (web, Reverb, and each worker) runs the revision it deployed, and the health endpoint answers. It exits with an error when:
+
+- ECS rolls the deployment back, or the rollback fails. The deployment circuit breaker rolls back when the new tasks keep failing to start or failing their health checks.
+- The deployment is stopped.
+- The health endpoint returns an error once the rollout is done.
+- The rollout doesn't finish within `--timeout`.
+
+A rolled-back app still answers on its URL, from the previous revision, so the URL alone can't tell a failed deploy from a good one. `deploy` reads the result of the ECS deployment instead. That makes it safe to use in CI: the job fails when the new revision isn't running.
+
+**Options:**
+- `-s, --stage <stage>` - SST stage name (required)
+- `--no-wait` - Return when `sst deploy` finishes, without waiting for the rollout
+- `-t, --timeout <seconds>` - How long to wait for the rollout (default: 1800)
+- `-p, --path <path>` - Health path to request once the rollout is done (default: `/up`)
+- `-r, --region <region>` - AWS region of the app (default: `--region`, then the `aws` provider's `region` in `sst.config.ts`, then `AWS_REGION`, the active profile, and `us-east-1`)
+
+It saves the app URL for [`status`](#status). The URL comes from the `url` output that `sst.config.ts` returns (the config from `init` does), or from the load balancer address when the outputs have only one. Without a domain, it also reminds you that the load balancer address serves http only.
+
+The check needs the `ecs:ListServices`, `ecs:DescribeServices`, `ecs:ListServiceDeployments`, and `ecs:DescribeServiceRevisions` permissions. The role from [`github-iam`](#github-iam) has them.
 
 ## `status`
 
-Checks a deployment in one view: running tasks plus an optional health-endpoint check.
+Checks a deployment in one view: whether each service runs the revision of its last deployment, plus an optional health-endpoint check. It fails when the last deployment was rolled back or stopped, even though the previous revision still answers. Use it after `npx sst deploy`, or after `sst-laravel deploy --no-wait`, to get the same check as `sst-laravel deploy`.
 
 ```bash
 npx sst-laravel status --stage dev --wait
@@ -93,12 +111,12 @@ npx sst-laravel status --stage production --url https://app.example.com
 **Options:**
 - `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
 - `-c, --cluster <arn>` - ECS cluster ARN (skips auto-detection)
-- `-r, --region <region>` - AWS region (default: `AWS_REGION`, then the active profile, then `us-east-1`)
+- `-r, --region <region>` - AWS region (default: the `aws` provider's `region` in `sst.config.ts`, then `AWS_REGION`, the active profile, and `us-east-1`)
 - `-u, --url <url>` - Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved on this machine)
 - `-p, --path <path>` - Health path to request (default: `/up`)
-- `-w, --wait [seconds]` - Keep checking every 15 seconds while tasks start, up to this long (default: 600). Use it right after a deploy, which returns before the new tasks pass the health check.
+- `-w, --wait [seconds]` - Keep checking every 15 seconds while ECS rolls out, up to this long (default: 1800). Use it right after a deploy, which returns before the new tasks pass the health check.
 
-A 502 or 503 right after a deploy means the load balancer has no healthy task yet. Without a domain, the load balancer address only serves `http://`; `status` says so when you pass an `https://` address.
+Without `--wait`, a rollout in progress makes it exit with an error. A 502 or 503 right after a deploy means the load balancer has no healthy task yet. Without a domain, the load balancer address only serves `http://`; `status` says so when you pass an `https://` address.
 
 Laravel's `/up` route doesn't touch the database. To check the database and the migrations, run `npx sst-laravel command:run migrate:status --stage <stage>`.
 

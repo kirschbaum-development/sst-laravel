@@ -175,6 +175,36 @@ export async function findCluster(ecsClient: ECSClient, stage: string, clusterOp
   return { clusterArn, component };
 }
 
+/**
+ * The cluster of every `LaravelService` in sst.config.ts, for checking a
+ * deploy. Throws when one can't be told apart.
+ */
+export async function findStageClusters(ecsClient: ECSClient, stage: string): Promise<EcsCluster[]> {
+  const configPath = findSstConfig();
+  const components = configPath ? extractLaravelComponents(configPath) : [];
+
+  if (!configPath || components.length === 0) {
+    throw new Error('No LaravelService found in sst.config.ts.');
+  }
+
+  const app = extractSstProjectName(configPath);
+  const clusterArns = await listClusterArns(ecsClient);
+
+  return components.map((component) => {
+    const { clusterArn, candidates } = pickCluster(clusterArns, app, stage, component);
+
+    if (!clusterArn) {
+      throw new Error(
+        candidates.length > 1
+          ? `Several clusters match stage "${stage}" and component "${component}": ${candidates.map((arn) => arn.split('/').pop()).join(', ')}.`
+          : `No cluster found for app "${app ?? '(any)'}", stage "${stage}", and component "${component}".`,
+      );
+    }
+
+    return { clusterArn, component };
+  });
+}
+
 export async function findClusterArn(ecsClient: ECSClient, stage: string, clusterOption?: string): Promise<string> {
   return (await findCluster(ecsClient, stage, clusterOption)).clusterArn;
 }

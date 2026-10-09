@@ -411,7 +411,7 @@ web: {
 
 #### `web.tasks`
 - **Type:** `Input<{ [key: string]: Input<{ command: Input<string>; dependencies?: Input<string[]> }> }>`
-- **Description:** Custom long-running commands supervised inside the web container, keyed by task name.
+- **Description:** Custom long-running commands supervised inside the web container, keyed by task name. `dependencies` lists services that must start first: other tasks of the same container, `base` (s6-overlay's setup, which every task depends on anyway), `nginx`, and `php-fpm`. A dependency on anything else fails the deploy before anything is built.
 
 **Example:**
 ```typescript
@@ -458,16 +458,16 @@ web: {
 #### `workers[].horizon`
 - **Type:** `Input<boolean>`
 - **Default:** `false`
-- **Description:** Running horizon?
+- **Description:** Run Laravel Horizon (`php artisan horizon`). When it exits, the container stops with its exit code and ECS replaces the task.
 
 #### `workers[].scheduler`
 - **Type:** `Input<boolean>`
 - **Default:** `false`
-- **Description:** Running scheduler?
+- **Description:** Run the Laravel scheduler (`php artisan schedule:work`). When it exits, the container stops with its exit code and ECS replaces the task.
 
 #### `workers[].tasks`
 - **Type:** `Input<{ [key: string]: Input<{ command: Input<string>; dependencies?: Input<string[]> }> }>`
-- **Description:** Multiple tasks can be run in the worker.
+- **Description:** Custom long-running commands, keyed by task name. s6 restarts them in place when they exit. `dependencies` lists services that must start first: other tasks of the same worker (including `laravel-horizon` and `laravel-scheduler` when enabled), or `base`. A dependency on anything else fails the deploy before anything is built.
 
 **Example:**
 ```typescript
@@ -483,6 +483,7 @@ workers: [
   },
   {
     name: "custom-worker",
+    horizon: true,
     tasks: {
       "my-task": {
         command: "php artisan my:command",
@@ -667,7 +668,7 @@ reverb: {
 #### `config.php`
 - **Type:** `Input<number>`
 - **Default:** `8.4`
-- **Description:** PHP version. Available versions: 7.4, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5
+- **Description:** PHP version. Available versions: 8.1, 8.2, 8.3, 8.4, 8.5
 
 #### `config.opcache`
 - **Type:** `Input<boolean>`

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { extractSecretsConfig, extractSstProjectName, resolveVaultSecretPath, stripTsComments } from '../bin/utils/sst-config';
+import { extractAwsRegion, extractSecretsConfig, extractSstProjectName, resolveVaultSecretPath, stripTsComments } from '../bin/utils/sst-config';
 
 function writeTempConfig(content: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-laravel-test-'));
@@ -138,5 +138,25 @@ describe('extractSstProjectName', () => {
 
   it('falls back to the first name without an app() function', () => {
     expect(name('export default { name: "shop" };')).toBe('shop');
+  });
+});
+
+describe('extractAwsRegion', () => {
+  const region = (content: string) => extractAwsRegion(writeTempConfig(content));
+
+  it('reads the region of the aws provider', () => {
+    expect(region(`
+      export default $config({
+        app(input) {
+          return { name: "shop", home: "aws", providers: { aws: { profile: "team", region: "eu-west-1" } } };
+        },
+      });
+    `)).toBe('eu-west-1');
+  });
+
+  it('is null when the region is not a literal, or commented out', () => {
+    expect(region(`export default $config({ app: () => ({ name: "shop", home: "aws" }) });`)).toBeNull();
+    expect(region(`export default $config({ app: () => ({ providers: { aws: { region: process.env.REGION } } }) });`)).toBeNull();
+    expect(region(`export default $config({ app: () => ({ providers: { aws: { /* region: "eu-west-1" */ } } }) });`)).toBeNull();
   });
 });

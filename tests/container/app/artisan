@@ -1,0 +1,49 @@
+#!/usr/bin/env php
+<?php
+
+// A stand-in for Laravel's artisan. The container tests need the commands
+// the images run (Horizon, the scheduler, Reverb, custom tasks) to keep
+// running and leave a trace, not Laravel itself.
+
+$command = $argv[1] ?? 'list';
+$state = '/tmp/sst-laravel-test';
+
+if (!is_dir($state)) {
+    mkdir($state, 0755, true);
+}
+
+$name = str_replace(':', '-', $command);
+
+switch ($command) {
+    // Run by the finish scripts when the process stops.
+    case 'horizon:terminate':
+    case 'schedule:interrupt':
+        touch("$state/$name.ran");
+        exit(0);
+
+    case 'reverb:start':
+        $server = stream_socket_server('tcp://0.0.0.0:8080', $errno, $error);
+
+        if (!$server) {
+            fwrite(STDERR, "reverb:start: $error\n");
+            exit(1);
+        }
+
+        touch("$state/$name.started");
+
+        while ($connection = @stream_socket_accept($server, -1)) {
+            fread($connection, 1024);
+            fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nreverb");
+            fclose($connection);
+        }
+
+        exit(0);
+
+    default:
+        touch("$state/$name.started");
+
+        while (true) {
+            touch("$state/$name.alive");
+            sleep(1);
+        }
+}

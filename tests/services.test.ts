@@ -101,4 +101,44 @@ describe('planServices', () => {
   it('rejects an unsafe worker name before planning anything', () => {
     expect(() => plan({ workers: [{ name: '../escape' }] })).toThrow('Invalid worker name');
   });
+
+  it('stops worker containers when Horizon or the scheduler exits, and restarts everything else in place', () => {
+    const plans = plan({
+      web: { horizon: true, scheduler: true },
+      workers: [{ name: 'queue', horizon: true, scheduler: true, tasks: { pulse: { command: 'php artisan pulse:work' } } }],
+      reverb: true,
+    });
+
+    expect(plans[0].tasks).toEqual({
+      'laravel-horizon': { command: 'php artisan horizon' },
+      'laravel-scheduler': { command: 'php artisan schedule:work' },
+    });
+    expect(plans[1].tasks).toEqual({
+      pulse: { command: 'php artisan pulse:work' },
+      'laravel-horizon': { command: 'php artisan horizon', stopContainerOnExit: true },
+      'laravel-scheduler': { command: 'php artisan schedule:work', stopContainerOnExit: true },
+    });
+    expect(plans[2].tasks).toEqual({ 'laravel-reverb': { command: 'php artisan reverb:start' } });
+  });
+
+  it('lets web tasks depend on nginx and php-fpm, but not worker tasks', () => {
+    const tasks = { pulse: { command: 'php artisan pulse:work', dependencies: ['php-fpm'] } };
+
+    expect(() => plan({ web: { tasks } })).not.toThrow();
+    expect(() => plan({ workers: [{ name: 'queue', tasks }] })).toThrow(
+      'workers[queue].tasks.pulse depends on "php-fpm"',
+    );
+  });
+
+  it('rejects a reserved task name before writing anything', () => {
+    expect(() => plan({ web: { tasks: { base: { command: 'x' } } } })).toThrow('Invalid background task name "base"');
+  });
+
+  it.each([7.4, 8.0])('rejects PHP %s, which has no ServerSideUp v5 image', (php) => {
+    expect(() => plan({ config: { php }, web: {} })).toThrow(`config.php ${php} is not supported`);
+  });
+
+  it.each([8.1, 8.4, 8.5])('accepts PHP %s', (php) => {
+    expect(() => plan({ config: { php }, web: {} })).not.toThrow();
+  });
 });

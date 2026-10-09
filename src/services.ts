@@ -7,7 +7,14 @@ import type {
   LaravelReverbArgs,
   LaravelServiceArgs,
 } from '../laravel-sst';
-import { assertSafeWorkerName, BackgroundTask, buildBackgroundTasks } from './background-tasks';
+import {
+  assertSafeS6ServiceName,
+  assertSafeWorkerName,
+  assertTaskDependencies,
+  BackgroundTask,
+  buildBackgroundTasks,
+  BUILT_IN_S6_SERVICES,
+} from './background-tasks';
 import { buildDefaultPublicPorts, Port } from './load-balancer';
 import { assertLoadBalancerArgs } from './load-balancer-hardening';
 import { buildServiceArgs, findDeprecatedTopLevelKeys, resolveAdvancedArgs } from './service-args';
@@ -102,6 +109,21 @@ export function resolveBlockServiceArgs(
   };
 }
 
+/**
+ * The oldest PHP version with ServerSideUp v5 images. The 7.4 and 8.0 images
+ * stopped at v4, whose s6-overlay doesn't start the background processes
+ * where the package registers them.
+ */
+export const MINIMUM_PHP_VERSION = 8.1;
+
+export function assertSupportedPhpVersion(php: unknown): void {
+  if (typeof php === 'number' && php < MINIMUM_PHP_VERSION) {
+    throw new Error(
+      `config.php ${php} is not supported. The images need PHP ${MINIMUM_PHP_VERSION} or later: ServerSideUp no longer publishes images for older versions.`,
+    );
+  }
+}
+
 export interface PlanServicesOptions {
   /** The app folder, `args.path`. */
   sitePath: Input<string>;
@@ -122,6 +144,8 @@ export function planServices(name: string, args: LaravelArgs, options: PlanServi
   if (!name || name === '.' || name === '..' || /[/\\]/.test(name)) {
     throw new Error(`Invalid LaravelService name "${name}": names must not contain "/" or "\\".`);
   }
+
+  assertSupportedPhpVersion(args.config?.php);
 
   const workers = (args.workers ?? []).map((worker, index) => ({
     worker,
@@ -189,7 +213,7 @@ export function planServices(name: string, args: LaravelArgs, options: PlanServi
       resourceName,
       image: 'worker',
       buildPath: path.resolve(buildPath, `worker-${workerName}`),
-      tasks: buildBackgroundTasks(worker),
+      tasks: buildBackgroundTasks(worker, { stopContainerOnExit: true }),
       serviceArgs,
       scaling: worker.scaling,
       loadBalancer,
@@ -234,6 +258,11 @@ export function planServices(name: string, args: LaravelArgs, options: PlanServi
       environment: {},
       devCommand: `php ${sitePath}/artisan reverb:start`,
     });
+  }
+
+  for (const plan of plans) {
+    Object.keys(plan.tasks).forEach(assertSafeS6ServiceName);
+    assertTaskDependencies(plan.label, plan.tasks, BUILT_IN_S6_SERVICES[plan.image]);
   }
 
   return plans;

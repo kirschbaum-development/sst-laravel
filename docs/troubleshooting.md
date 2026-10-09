@@ -2,10 +2,30 @@
 
 ## The app isn't healthy after a deploy
 
-1. Run `npx sst-laravel status --stage <stage> --wait` to see the running tasks and the `/up` health check in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. The deploy returns before the new tasks pass the health check, so a 502 or 503 in the first minutes only means they are still starting.
+1. Run `npx sst-laravel status --stage <stage> --wait` to see whether each service runs its last deployment, and the `/up` health check, in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. A 502 or 503 in the first minutes after a deploy only means the new tasks are still starting.
 1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors.
 
 The usual causes are a missing `APP_KEY`, wrong environment variable names, a database the containers can't reach, a wrong health check path, or AWS keys in the environment file (see [below](#cd-aws-credentials-are-not-configured)).
+
+## The deploy fails with "rolled back to the previous revision"
+
+```
+[FIX] MyLaravelApp-Web: the deployment of MyLaravelApp-Web-Task:43 failed and ECS rolled back to the previous revision: ...
+```
+
+The new tasks kept failing to start or failing their health checks, so the ECS deployment circuit breaker put the previous revision back. The app still answers, from the previous revision, but your changes are not running. Check the logs of the failing service (`npx sst-laravel logs <web|reverb|worker name> --stage <stage> --no-follow`), fix the cause, and deploy again. In the ECS console, the service's **Deployments** tab shows the failed deployment and its reason.
+
+## "older than ServerSideUp v5" during the build
+
+```
+The serversideup/php base image is older than ServerSideUp v5, probably a copy Docker downloaded before. ...
+```
+
+Docker built the web image on a copy of the base image it downloaded before ServerSideUp v5. That copy starts the background processes from another folder, so it would skip them. Pull the current image for the PHP version of `config.php` (8.4 by default), then deploy again:
+
+```bash
+docker pull serversideup/php:8.4-fpm-nginx
+```
 
 ## https:// times out on the load balancer address
 

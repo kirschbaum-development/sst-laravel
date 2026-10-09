@@ -13,8 +13,8 @@ npx sst-laravel guide                    # same guide as the skill, from the ins
 npx sst-laravel doctor                   # readiness check (tools, Docker, AWS, deps, assets, env, git)
 npx sst-laravel init                     # creates sst.config.ts (minimal)
 composer install && npm run build        # the image copies vendor/ and public/build as they are
-npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy)
-npx sst-laravel status --stage dev --wait   # tasks + /up at the URL the deploy saved, keeps checking while tasks start
+npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy); waits for the rollout, fails on rollback
+npx sst-laravel status --stage dev --wait   # each service runs its last deployment + /up at the URL the deploy saved
 npx sst-laravel command:run migrate:status --stage dev   # checks the database (/up does not)
 npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming
 npx sst remove --stage dev               # deletes everything in the stage
@@ -120,9 +120,9 @@ ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 
 ## If /up is not healthy
 
-1. `npx sst-laravel status --stage <stage> --wait` — tasks + health in one view
-   (`--url <url>` for another address); 502/503 right after a deploy means the
-   tasks are still starting.
+1. `npx sst-laravel status --stage <stage> --wait` — rollout + health in one view
+   (`--url <url>` for another address). "rolled back to the previous revision"
+   means the new tasks failed: the app answers from the old revision.
 2. `npx sst-laravel logs web --stage <stage> --no-follow` — recent errors.
 3. Usual causes: missing `APP_KEY`, wrong env names, DB unreachable, wrong health
    path, AWS keys committed in the env file (use the IAM role instead).
