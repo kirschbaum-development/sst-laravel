@@ -26,7 +26,7 @@ Everything else can be read as you need it.
 | [Load Balancer](load-balancer.md) | The secure defaults of the load balancer, the IP allowlist, and access logs in S3. |
 | [Environment Variables](environment-variables.md) | Environment files, SST secrets, `RemoteEnvVault` (AWS Secrets Manager), and the variables SST Laravel adds. |
 | [Linking Resources](linking-resources.md) | Linked databases, Redis, and buckets, PlanetScale, custom variable names, and IAM permissions. |
-| [Deploying](deploying.md) | The `deploy` command, readiness and status checks, PHP settings, the deployment script, and GitHub Actions. |
+| [Deploying](deploying.md) | The `deploy` command, readiness and status checks, PHP settings, image customization, the deployment script, and GitHub Actions. |
 | [CLI](cli.md) | Every `sst-laravel` command and its options. |
 | [Troubleshooting](troubleshooting.md) | Common errors and how to fix them. |
 | [API Reference](api.md) | Every `LaravelService` and `RemoteEnvVault` option. |

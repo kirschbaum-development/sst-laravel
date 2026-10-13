@@ -5,6 +5,12 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3]
+
+### Added
+
+- `config.phpExtensions` installs additional PHP extensions in web, worker, and Reverb images while keeping the defaults. `config.buildCommands` runs custom shell commands as root during the image build, after extensions are installed and before application files are copied. Containers continue to run as `www-data`.
+
 ## [0.7.2]
 
 ### Fixed

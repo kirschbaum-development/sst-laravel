@@ -14,7 +14,13 @@ ENV AUTORUN_ENABLED=false
 RUN apt-get update \
     && apt-get upgrade -y
 
-RUN install-php-extensions gd intl
+ARG PHP_EXTENSIONS=""
+RUN install-php-extensions gd intl $PHP_EXTENSIONS
+
+# Runtime customization stays before the app copy so app changes reuse it.
+# The component quotes each command for its own shell and stops on failure.
+ARG BUILD_COMMANDS=""
+RUN /bin/sh -c "$BUILD_COMMANDS"
 
 # ENV NVM_VERSION v0.39.7
 # ENV NODE_VERSION 21.6.0

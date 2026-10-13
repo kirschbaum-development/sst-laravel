@@ -68,6 +68,8 @@ values and `config.environment.vars` for settings that aren't secret.
 ```ts
 const database = new sst.aws.Postgres("MyDatabase", { vpc }); // or sst.aws.Mysql, ~$14/mo
 config: { deployment: { script: "infra/deploy.sh" } },  // runs on each start: put `php artisan migrate --force` in it
+config: { phpExtensions: ["imagick", "bcmath"] },      // adds to the default extensions in every image
+config: { buildCommands: ["apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*"] }, // image build, as root
 link: [database],                       // auto-injects DB_*/REDIS_*/AWS_* vars
 link: [{ resource: db, envFrom: (db) => ({ CUSTOM: db.host }) }], // extra vars
 web: { domain: "app.example.com" },     // custom domain (https)
@@ -80,6 +82,15 @@ link: [new sst.Secret("STRIPE_SECRET")],     // SST secret: npx sst secret set S
 config: { environment: { vars: { FEATURE_X: "on" } } }, // values that aren't secret (committed)
 web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
 ```
+
+Image customization applies to web, all workers, and Reverb. `phpExtensions`
+takes extension names only. `buildCommands` runs after extensions and before
+app files or environment are copied: no artisan, Composer install, or app files
+here. Entries are separate `/bin/sh -c` commands in order, in one cached layer;
+nonzero exits fail the build. Use `&&` within an entry. No RUN prefix, Dockerfile
+instructions, or RUN flags. Use absolute paths for generated config. Never put
+secrets in build arguments. Containers still run as www-data. See
+`deploying.md#customizing-the-images`.
 
 ## Load balancer (web and reverb)
 

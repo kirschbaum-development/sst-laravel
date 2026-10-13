@@ -58,6 +58,8 @@ interface SharedServiceArgs {
     workerConfPath: string;
     php?: Input<number>;
     opcache?: Input<boolean>;
+    phpExtensions?: Input<string[]>;
+    buildCommands?: Input<string[]>;
     /** Variables the package adds to every container. */
     injectedEnvironment: Record<string, Input<string | undefined>>;
     vars: NonNullable<NonNullable<LaravelArgs['config']>['environment']>['vars'];
@@ -643,6 +645,39 @@ export interface LaravelArgs extends ClusterArgs {
         php?: Input<number>;
 
         /**
+         * Additional PHP extensions for every web, worker, and Reverb image.
+         * Keeps the base image's extensions and the package's gd and intl.
+         * Use extension names, such as imagick or pdo_pgsql, one per entry.
+         * Installed with ServerSideUp's install-php-extensions before buildCommands.
+         *
+         * @default `[]`
+         */
+        phpExtensions?: Input<string[]>;
+
+        /**
+         * Shell commands to customize every web, worker, and Reverb image.
+         * Runs as root after PHP extensions are installed, before application
+         * files and the generated environment are copied. Each entry runs in
+         * its own /bin/sh -c, in order; a nonzero exit stops the build. Use &&
+         * within an entry to stop if an intermediate command fails.
+         *
+         * Supply commands without the RUN prefix. Dockerfile instructions
+         * (COPY, ENV, etc.) and RUN flags are not supported. Commands share one
+         * cached Docker layer; use absolute paths for files you create. Do not
+         * put secrets in commands: build arguments can appear in image metadata
+         * and build logs. Containers still run as www-data.
+         *
+         * @default `[]`
+         * @example
+         * ```js
+         * buildCommands: [
+         *   'apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*',
+         * ],
+         * ```
+         */
+        buildCommands?: Input<string[]>;
+
+        /**
          * PHP Opcache should be enabled?
          *
          * @default `true`
@@ -794,6 +829,8 @@ export class LaravelService extends Component {
             workerConfPath,
             php: args.config?.php,
             opcache: args.config?.opcache,
+            phpExtensions: args.config?.phpExtensions,
+            buildCommands: args.config?.buildCommands,
             injectedEnvironment:
                 args.config?.environment?.autoInject !== false
                     ? reverbEnvironment
@@ -828,6 +865,8 @@ export class LaravelService extends Component {
             packagePath: shared.packagePath,
             php: shared.php,
             opcache: shared.opcache,
+            phpExtensions: shared.phpExtensions,
+            buildCommands: shared.buildCommands,
             servicesPath: plan.buildPath,
             deployPath: shared.deployPath,
             confPath:

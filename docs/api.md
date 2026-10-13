@@ -670,6 +670,32 @@ reverb: {
 - **Default:** `8.4`
 - **Description:** PHP version. Available versions: 8.1, 8.2, 8.3, 8.4, 8.5
 
+#### `config.phpExtensions`
+- **Type:** `Input<string[]>`
+- **Default:** `[]`
+- **Description:** Additional PHP extension names to install in every web, worker, and Reverb image. Keeps the extensions in the base image and the package's `gd` and `intl`. Installed with ServerSideUp's `install-php-extensions` before `config.buildCommands`. Accepts names such as `imagick` and `pdo_pgsql`, one per entry; version constraints, URLs, and installer flags are not supported. Duplicate names are ignored. Failed installation fails the image build.
+
+```ts
+config: {
+  phpExtensions: ['imagick', 'bcmath'],
+},
+```
+
+#### `config.buildCommands`
+- **Type:** `Input<string[]>`
+- **Default:** `[]`
+- **Description:** Shell commands to customize every web, worker, and Reverb image. Runs as root after PHP extensions are installed, before the application and generated environment are copied. Each entry runs in its own `/bin/sh -c`, in array order. A nonzero exit stops the build; use `&&` within an entry to stop if an intermediate command fails. Files persist between entries; working-directory changes and exports do not. Commands share one cached Docker layer. Multiline scripts are supported.
+
+Supply commands without the `RUN` prefix. Dockerfile instructions (`COPY`, `ENV`, etc.) and `RUN` flags are not supported. Use absolute paths for files you create. Application files, the generated `.env`, linked-resource variables, and `config.environment.vars` are unavailable at this stage. Containers still run as `www-data`. Keep secrets out of commands: build arguments can appear in image metadata and build logs. For application commands at startup, use `config.deployment.script`. See [Customizing the images](deploying.md#customizing-the-images).
+
+```ts
+config: {
+  buildCommands: [
+    'apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*',
+  ],
+},
+```
+
 #### `config.opcache`
 - **Type:** `Input<boolean>`
 - **Default:** `true`

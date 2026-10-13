@@ -63,6 +63,8 @@ const imageOptions = {
   packagePath: '/package',
   servicesPath: '/app/.sst/laravel/web',
   deployPath: '/app/.sst/laravel/deploy',
+  phpExtensions: ['calendar'],
+  buildCommands: ['true'],
 };
 
 describe.each([

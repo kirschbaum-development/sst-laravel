@@ -206,6 +206,8 @@ beforeAll(async () => {
       permissions: [{ actions: ['s3:GetObject'], resources: ['*'] }],
       config: {
         php: 8.3,
+        phpExtensions: pulumi.output(['imagick', 'pdo_pgsql']),
+        buildCommands: pulumi.output(['printf "%s\\n" "it\'s custom" > /etc/sst-laravel-custom']),
         environment: { file: '.env.dev', vars: pulumi.output({ FROM_OUTPUT: 'yes' }) },
         deployment: { script: 'deploy.sh' },
       },
@@ -350,6 +352,18 @@ describe('nodes', () => {
 });
 
 describe('deployed configuration', () => {
+  it('passes shared image customization to web, every worker, and Reverb', () => {
+    for (const name of ['Full-WebImageFull-Web', 'Full-queueImageFull-queue', 'Full-pulseImageFull-pulse', 'Full-ReverbImageFull-Reverb']) {
+      expect(buildArgs(name)).toMatchObject({
+        PHP_EXTENSIONS: 'imagick pdo_pgsql',
+        BUILD_COMMANDS: expect.stringContaining("/bin/sh -c '"),
+      });
+      expect(buildArgs(name).BUILD_COMMANDS).toBe(buildArgs('Full-WebImageFull-Web').BUILD_COMMANDS);
+    }
+    expect(buildArgs('Mini-WebImageMini-Web')).not.toHaveProperty('PHP_EXTENSIONS');
+    expect(buildArgs('Mini-WebImageMini-Web')).not.toHaveProperty('BUILD_COMMANDS');
+  });
+
   it('keeps existing provider settings and user Docker ignore rules', () => {
     expect((globalThis as any).$app.providers).toEqual({ aws: { region: 'us-east-1' }, 'docker-build': { version: '0.0.14' } });
     expect(fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8')).toBe('# user rules\nnode_modules\n.env*\ncustom-exclusion\n\n# sst\n.sst\n\n# sst-laravel\n!.sst/laravel\n');

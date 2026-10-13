@@ -48,3 +48,5 @@ npx sst-laravel guide
 ```
 
 It prints the skill's instructions for the installed version, so you don't need to load the skill or restart. Follow them from the top: the readiness check, the plan for the user, the configuration, the first deploy, the health check, and the report at the end.
+
+When the app needs additional PHP extensions or OS packages, use `config.phpExtensions` (extension names) and `config.buildCommands` (shell commands without a `RUN` prefix). Both apply to web, workers, and Reverb. Build commands run as root after extensions are installed and before app files or environment are copied; containers still run as `www-data`. Each entry runs in a separate shell and a nonzero exit fails the build. Use `&&` within an entry and never include secrets. See [Customizing the images](deploying.md#customizing-the-images); use `config.deployment.script` for application commands at startup.

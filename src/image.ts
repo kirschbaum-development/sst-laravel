@@ -2,6 +2,30 @@ import * as path from 'path';
 import { CustomResourceOptions, Input, output, Resource } from '@pulumi/pulumi';
 import { composeTransform } from './service-args.js';
 
+/** Additional extension names, passed as words to install-php-extensions. */
+export function serializePhpExtensions(extensions: string[]): string {
+  if (!Array.isArray(extensions) || extensions.some((extension) =>
+    typeof extension !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(extension))) {
+    throw new Error('config.phpExtensions must be an array of PHP extension names, such as ["imagick", "pdo_pgsql"].');
+  }
+
+  return [...new Set(extensions)].join(' ');
+}
+
+/**
+ * Each entry gets its own shell, like separate shell-form RUN instructions.
+ * Quoting preserves the command verbatim until that shell executes it; &&
+ * stops the build if an entry fails, even if later entries would succeed.
+ */
+export function serializeBuildCommands(commands: string[]): string {
+  if (!Array.isArray(commands) || commands.some((command) =>
+    typeof command !== 'string' || !command.trim() || command.includes('\0'))) {
+    throw new Error('config.buildCommands must be an array of non-empty shell commands without null bytes.');
+  }
+
+  return commands.map((command) => `/bin/sh -c '${command.replace(/'/g, "'\\''")}'`).join(' && ');
+}
+
 /** Only built images are retained: deleting a shared digest can break the replacement. */
 export function managedImageTransform(environmentFile?: Resource, user?: unknown) {
   return (args: object, opts: CustomResourceOptions, name: string): undefined => {
@@ -31,6 +55,8 @@ export interface ImageOptions {
   packagePath: string;
   php?: Input<number>;
   opcache?: Input<boolean>;
+  phpExtensions?: Input<string[]>;
+  buildCommands?: Input<string[]>;
   /** The generated s6 services of the service (`CUSTOM_CONF_PATH`). */
   servicesPath: string;
   /** The folder with the env file and deployment script (`DEPLOY_PATH`). */
@@ -56,6 +82,8 @@ export function buildImage(options: ImageOptions) {
     args: {
       PHP_VERSION: (options.php ?? 8.4).toString(),
       PHP_OPCACHE_ENABLE: output(options.opcache).apply((opcache) => (opcache === false ? '0' : '1')),
+      ...(options.phpExtensions !== undefined ? { PHP_EXTENSIONS: output(options.phpExtensions).apply(serializePhpExtensions) } : {}),
+      ...(options.buildCommands !== undefined ? { BUILD_COMMANDS: output(options.buildCommands).apply(serializeBuildCommands) } : {}),
       ...(options.confPath ? { CONF_PATH: relative(options.confPath) } : {}),
       CUSTOM_CONF_PATH: relative(options.servicesPath),
       DEPLOY_PATH: relative(options.deployPath),

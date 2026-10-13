@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { output } from '@pulumi/pulumi';
 import type { LaravelArgs } from '../../laravel-sst';
 import { writeS6TaskFiles } from '../../src/background-tasks';
 import { stageDeploymentScript, stageWorkerConf } from '../../src/build-files';
@@ -135,7 +136,17 @@ const kill = (container: string, pid: number, signal = 'TERM') => run(['exec', c
 // The app: a stand-in Laravel in tests/container/app, configured with every
 // kind of background process.
 const appConfig: LaravelArgs = {
-  config: { php: Number(phpVersion) },
+  config: {
+    php: Number(phpVersion),
+    phpExtensions: ['calendar'],
+    buildCommands: [
+      'test "$(id -u)" = 0 && test ! -e /var/www/html/artisan && test ! -e /var/www/html/.env',
+      'apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*',
+      `printf '%s\\n' "it's custom" 'literal $HOME' > /usr/local/share/sst-laravel-build-test
+printf '%s\\n' 'memory_limit=192M' > /usr/local/etc/php/conf.d/zz-sst-laravel-test.ini`,
+      'test -f /usr/local/share/sst-laravel-build-test',
+    ],
+  },
   web: {
     horizon: true,
     scheduler: true,
@@ -157,19 +168,20 @@ const appConfig: LaravelArgs = {
 let context: string;
 const containers: string[] = [];
 
-async function buildPlanImage(app: string, plan: ServicePlan, deployPath: string, confPath: string) {
+async function buildPlanImage(app: string, plan: ServicePlan, deployPath: string, confPath: string, config: LaravelArgs['config']) {
   const image = buildImage({
     role: plan.image,
     sitePath: context,
     absSitePath: context,
     packagePath: packageRoot,
     php: Number(phpVersion),
+    phpExtensions: config?.phpExtensions,
+    buildCommands: config?.buildCommands,
     servicesPath: plan.buildPath,
     deployPath,
     confPath: plan.image === 'worker' ? confPath : undefined,
   });
-  const opcache = await new Promise<string>((resolve) => image.args.PHP_OPCACHE_ENABLE.apply(resolve));
-  const args = { ...image.args, PHP_OPCACHE_ENABLE: opcache } as Record<string, string>;
+  const args = await new Promise<Record<string, string>>((resolve) => output(image.args).apply(resolve));
   // A fixed tag, so the next run builds from the cache of this one.
   const tag = `localhost/sst-laravel-test-${app.toLowerCase()}-${plan.kind}:php${phpVersion}`;
 
@@ -214,7 +226,7 @@ async function buildApp(name: string, config: LaravelArgs) {
 
   for (const plan of plans) {
     writeS6TaskFiles(plan.tasks, plan.buildPath);
-    images[plan.label] = await buildPlanImage(name, plan, deployPath, confPath);
+    images[plan.label] = await buildPlanImage(name, plan, deployPath, confPath, config.config);
   }
 
   return { plans, images, deployPath };
@@ -248,6 +260,45 @@ afterAll(() => {
 
 const plan = (label: string) => app.plans.find((candidate) => candidate.label === label)!;
 const imageFor = (plan: ServicePlan) => app.images[plan.label];
+
+describe('image customization', () => {
+  it.each(['web', 'workers[queue]', 'reverb'])('%s keeps extra extensions, software, and configuration at runtime', (label) => {
+    const container = startContainer(app.images[label]);
+    expect(run(['exec', container, 'php', '-r', 'exit(extension_loaded("calendar") && extension_loaded("gd") && extension_loaded("intl") ? 0 : 1);']).status).toBe(0);
+    expect(run(['exec', container, 'jq', '--version']).output).toMatch(/^jq-/);
+    expect(run(['exec', container, 'cat', '/usr/local/share/sst-laravel-build-test']).output).toBe("it's custom\nliteral $HOME\n");
+    expect(run(['exec', container, 'php', '-r', 'echo ini_get("memory_limit");']).output).toBe('192M');
+    expect(run(['exec', container, 'id', '-u']).output.trim()).toBe('33');
+  });
+
+  it('does not leak customization into another component', () => {
+    const container = startContainer(plain.images.web);
+    expect(run(['exec', container, 'test', '!', '-e', '/usr/local/share/sst-laravel-build-test']).status).toBe(0);
+  });
+
+  it.each(['web', 'worker'] as const)('fails the %s build when a command fails', async (role) => {
+    const image = buildImage({
+      role,
+      sitePath: context,
+      absSitePath: context,
+      packagePath: packageRoot,
+      php: Number(phpVersion),
+      phpExtensions: appConfig.config!.phpExtensions,
+      buildCommands: ['exit 42', 'true'],
+      servicesPath: plan('web').buildPath,
+      deployPath: app.deployPath,
+      confPath: role === 'worker' ? path.join(context, '.sst/laravel/App/conf') : undefined,
+    });
+    const args = await new Promise<Record<string, string>>((resolve) => output(image.args).apply(resolve));
+    const result = run([
+      'build', '--file', image.dockerfile, '--target', 'base',
+      ...Object.entries(args).flatMap(([key, value]) => ['--build-arg', `${key}=${value}`]),
+      context,
+    ], { allowFailure: true });
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(/(?:exit (?:status|code)|exited with (?:status|code)):? 42/);
+  });
+});
 
 describe('application source copy', () => {
   it.each(['web', 'workers[queue]', 'reverb'])('%s excludes all .sst content while keeping app files and the generated environment', (label) => {

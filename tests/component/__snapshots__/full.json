@@ -1416,9 +1416,11 @@
     ],
     "inputs": {
       "buildArgs": {
+        "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
         "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/conf",
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/worker-pulse",
         "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Full/deploy",
+        "PHP_EXTENSIONS": "imagick pdo_pgsql",
         "PHP_OPCACHE_ENABLE": "1",
         "PHP_VERSION": "8.3"
       },
@@ -1488,9 +1490,11 @@
     ],
     "inputs": {
       "buildArgs": {
+        "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
         "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/conf",
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/worker-queue",
         "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Full/deploy",
+        "PHP_EXTENSIONS": "imagick pdo_pgsql",
         "PHP_OPCACHE_ENABLE": "1",
         "PHP_VERSION": "8.3"
       },
@@ -1560,9 +1564,11 @@
     ],
     "inputs": {
       "buildArgs": {
+        "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
         "CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/conf",
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/worker-reverb",
         "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Full/deploy",
+        "PHP_EXTENSIONS": "imagick pdo_pgsql",
         "PHP_OPCACHE_ENABLE": "1",
         "PHP_VERSION": "8.3"
       },
@@ -1632,8 +1638,10 @@
     ],
     "inputs": {
       "buildArgs": {
+        "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Full/web",
         "DEPLOY_PATH": "/pkg/@kirschbaum-development/laravel/Full/deploy",
+        "PHP_EXTENSIONS": "imagick pdo_pgsql",
         "PHP_OPCACHE_ENABLE": "1",
         "PHP_VERSION": "8.3"
       },

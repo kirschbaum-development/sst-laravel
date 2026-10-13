@@ -132,6 +132,35 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
+## Customizing the images
+
+Use `config.phpExtensions` to install additional PHP extensions and `config.buildCommands` to install OS packages or write configuration files. Both apply to every web, worker, and Reverb image in this `LaravelService`:
+
+```ts
+const app = new LaravelService('MyLaravelApp', {
+  vpc,
+  web: {},
+  workers: [{ name: 'background', horizon: true }],
+  config: {
+    phpExtensions: ['imagick', 'bcmath'],
+    buildCommands: [
+      'apt-get update && apt-get install -y --no-install-recommends poppler-utils && rm -rf /var/lib/apt/lists/*',
+      'printf "%s\\n" "upload_max_filesize=64M" "post_max_size=64M" > /usr/local/etc/php/conf.d/zz-custom.ini',
+    ],
+  },
+});
+```
+
+Extensions are added to the ones in the ServerSideUp base image and the package's `gd` and `intl`. Specify one extension name per entry, such as `imagick` or `pdo_pgsql`; version constraints, URLs, and installer flags are not supported by this option. The package uses ServerSideUp's [extension installer](https://serversideup.net/open-source/docker-php/docs/customizing-the-image/installing-additional-php-extensions). An unsupported extension or failed installation fails the build.
+
+Build commands run **as root, after extension installation and before application files are copied**. Each entry executes in its own `/bin/sh -c`, in array order. Files persist between entries, but `cd`, shell variables, and exports do not. A nonzero exit from an entry stops the build; join dependent commands inside an entry with `&&` so an earlier failure is not hidden by a later success. Multiline shell scripts are supported.
+
+Supply the shell command itself, without `RUN`. Dockerfile instructions such as `COPY`, `ENV`, and `USER`, and flags such as `RUN --mount`, are not supported. Use absolute paths for files you create. The application source, generated `.env`, linked-resource variables, and `config.environment.vars` are not available at this point; these commands are for preparing the runtime. Containers still start as `www-data`.
+
+Commands run in one cached Docker layer. Changing a command rebuilds that layer and the layers after it; changing only application files can reuse the installation layers. An omitted option or an empty array adds no extensions or commands. The package continues to manage the application copy, environment, deployment script, and background processes.
+
+Keep secrets out of both options: Docker build arguments can appear in image metadata and build logs. For commands that need the application and its environment at container startup, use the [deployment script](#deployment-script).
+
 ## Deployment script
 
 A deployment script runs each time a container starts. Use it for migrations, caching, and similar steps:
