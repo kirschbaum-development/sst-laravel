@@ -44,26 +44,35 @@ return { url: app.url, deployment: app.deployment };
 
 `new sst.aws.Vpc("MyVpc")` with no options is cheapest (~$0.50/mo). Without
 NAT, containers run in public subnets with a public IP (~$3.65/mo each);
-inbound traffic still only comes through the load balancer. Add `nat: "ec2"`
-(~$13/mo) to keep containers private, e.g. for a fixed outbound IP. Avoid
-`nat: "managed"` (~$73/mo) unless you need the scale.
+inbound traffic still only comes through the load balancer. NAT moves them to
+private subnets with fixed outbound IPs: `nat: "ec2"` (~$13/mo, a t4g.nano
+fck-nat instance per zone in the user's account: limited bandwidth, a stopped
+instance cuts its zone off) or `nat: "managed"` (~$73/mo + $0.045/GB, AWS NAT
+Gateway: run, scaled, and kept available by AWS). Explain all three in the plan.
 
 Rough monthly cost of this setup in us-east-1: ~$46 (small container $18 +
 its public IP $3.65, load balancer $16 + its 2 public IPs $7.30, VPC $0.50).
 
 ## Add what the user agreed to
 
-Before any config, show the user a plan: why SST Laravel in a few bullets
-(`why-sst-laravel.md`: infrastructure as code, auto-scaling, linking AWS
-resources, IAM roles instead of AWS keys), what the app needs, questions
-(database? background work? where the environment variables live?), what gets
-created and the monthly cost, how the deploy works, and how to remove it
+Before any config, show the user a plan: why SST Laravel (open with what they
+are about to install: SST Laravel, by Kirschbaum Development, an extension of
+SST that deploys Laravel to AWS Fargate in their own account; then a few
+bullets from `why-sst-laravel.md`: infrastructure as code, auto-scaling,
+linking AWS resources, IAM roles instead of AWS keys), what the app needs,
+questions (database? background work? where the environment variables live?),
+what gets created and the monthly cost (with the network/NAT choice), how the
+deploy works (from this machine first; after the first healthy deploy,
+recommend deploying from CI), and how to remove it
 (`npx sst remove --stage <stage>`).
 
-Environment options to explain: an env file on this machine (free, simplest,
-only this machine can deploy), `RemoteEnvVault` in AWS Secrets Manager
-(~$0.40/mo per stage, for teams and CI), plus SST secrets for a few sensitive
-values and `config.environment.vars` for settings that aren't secret.
+Environment options to explain, without recommending one: an env file on this
+machine (free, simplest, only this machine can deploy), `RemoteEnvVault` in AWS
+Secrets Manager (~$0.40/mo per stage, teammates and CI deploy with the same
+values), or the user's own store (S3, 1Password, a CI secret) fetched to
+`.env.<stage>` before each deploy (`environment-file-sources.md`). Plus
+SST secrets for a few sensitive values and `config.environment.vars` for
+settings that aren't secret.
 
 ```ts
 const database = new sst.aws.Postgres("MyDatabase", { vpc }); // or sst.aws.Mysql, ~$14/mo

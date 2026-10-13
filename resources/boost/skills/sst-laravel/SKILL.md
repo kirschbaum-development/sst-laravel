@@ -41,7 +41,7 @@ Find the Laravel root. Inspect `composer.json`, `package.json`, `.env.example`, 
 - Reverb;
 - mail and external services;
 - a custom domain and DNS provider;
-- how environment variables are managed today: stage env files, `RemoteEnvVault` or `sst.Secret` in an SST config, CI workflows in `.github/workflows`.
+- how environment variables are managed today: stage env files, `RemoteEnvVault` or `sst.Secret` in an SST config, a secrets tool (1Password `op://` references, `doppler.yaml`, `.infisical.json`), CI workflows in `.github/workflows`.
 
 Install the package if `package.json` does not list it yet. `sst.config.ts` imports it, and `npx sst-laravel` only runs this CLI once it is installed — before that, `npx` looks for a different, unscoped package:
 
@@ -79,12 +79,12 @@ Fix anything marked `FIX` before continuing; `warn` items are worth a look. Dock
 
 Before you write any configuration, send the user one message with the plan. Use plain words, and explain each AWS piece in one short line. Cover:
 
-1. **Why SST Laravel.** Three to five short bullets from `why-sst-laravel.md`: SST and infrastructure as code (the whole setup lives in `sst.config.ts` and runs in the user's own AWS account), auto-scaling, linking any AWS resource in a few lines, and the security it brings (an IAM role instead of long-lived AWS keys, a private network for the database). Point to `node_modules/@kirschbaum-development/sst-laravel/docs/why-sst-laravel.md` for more. Skip this when the project already uses SST Laravel.
+1. **Why SST Laravel.** Open with one or two sentences that say what the user is about to install, for example: "You are about to install SST Laravel, by Kirschbaum Development. It's an extension of SST, an open-source framework that sets up cloud infrastructure from code, and it deploys Laravel apps to AWS: your app runs in containers on AWS Fargate, in your own AWS account." Then three to five short bullets from `why-sst-laravel.md`: SST and infrastructure as code (the whole setup lives in `sst.config.ts` and runs in the user's own AWS account), auto-scaling, linking any AWS resource in a few lines, and the security it brings (an IAM role instead of long-lived AWS keys, a private network for the database). Point to `node_modules/@kirschbaum-development/sst-laravel/docs/why-sst-laravel.md` for more. Skip this when the project already uses SST Laravel.
 2. **What you found.** The needs from step 1, for example: "stores users and sessions in a database", "has queued jobs", "runs scheduled tasks", "saves uploads to the local disk".
-3. **Questions.** Only the decisions you can't make yourself. Give your recommendation and its monthly cost for each, and ask them all at once (with your question or choice tool when you have one). Usually:
+3. **Questions.** Only the decisions you can't make yourself. Give the monthly cost of each option and, except for environment variables, your recommendation. Ask them all at once (with your question or choice tool when you have one). Usually:
    - **Database**, whenever the app uses one. See [Database choices](#database-choices).
    - **Background work**, when the app has queued jobs or scheduled tasks. For a first deploy, recommend running the scheduler and a queue worker inside the web container (no extra cost, see `workers.md`). A separate worker container costs about $22/month. Without either, jobs need `QUEUE_CONNECTION=sync` and scheduled tasks don't run.
-   - **Environment variables.** Always ask, unless the project already has a setup. Explain the options in plain words; see [Environment choices](#environment-choices).
+   - **Environment variables.** Always ask, unless the project already has a setup. Explain the options in plain words and don't mark one as recommended; see [Environment choices](#environment-choices).
    - **Domain.** Recommend none for the first deploy: the app gets a load balancer address (http only). A domain can come later.
    - **AWS account, region, and stage.** Show the account ID, identity, and region that `doctor` reported, so the user confirms where the resources go and who pays for them. Recommend the `dev` stage.
 4. **What will be created** in their AWS account, with the rough monthly cost (on-demand prices in us-east-1; other regions cost a bit more):
@@ -97,8 +97,12 @@ Before you write any configuration, send the user one message with the plan. Use
    | Network (VPC) | The private network everything runs in | $0.50 |
    | Logs and image registry | Container logs (CloudWatch) and the stored app images (ECR) | Small, grows with traffic and deploys |
 
-   That is about $46/month for the web-only setup. Add what the user picks: a database (about $14), Redis (about $12, or $9 with Valkey), a worker container (about $22), a NAT gateway (`nat: "ec2"`, about $13), environment variables in AWS Secrets Manager (about $0.40). A `medium` container costs $36 instead of $18, a `large` one $72.
+   That is about $46/month for the web-only setup. Add what the user picks: a database (about $14), Redis (about $12, or $9 with Valkey), a worker container (about $22), NAT (`nat: "ec2"` about $13, `nat: "managed"` about $73), environment variables in AWS Secrets Manager (about $0.40). A `medium` container costs $36 instead of $18, a `large` one $72.
+
+   Then explain how the containers reach the internet, from [Network choices](#network-choices): the plan uses no NAT, and the two NAT options it could use instead, with what each costs and changes.
 5. **How the deploy works.** `npx sst-laravel deploy` builds a Docker image of the app on this machine, uploads it to a private image registry in the user's AWS account, and creates or updates the resources above. The first deploy takes the longest (on an ARM machine, the x86 image builds under emulation, which is slower). Later deploys roll out the new image without downtime.
+
+   Say that the first deploys run from this machine, and that once the app is healthy, the next step should be deploying from CI, such as GitHub Actions. Then a deploy doesn't depend on one person's laptop, Docker, and AWS login: every deploy builds from a clean checkout of the repository, and with `npx sst-laravel github-iam` the workflow gets an IAM role instead of stored AWS keys. You'll offer to set it up after the first healthy deploy.
 6. **How to undo it.** `npx sst remove --stage <stage>` deletes everything in the stage. With the config from `init`, that includes a database and its data on every stage except `production`.
 
 Wait for the answers. The user's yes to the plan approves the first deploy of that plan (see the safety rules).
@@ -115,17 +119,28 @@ SQLite only fits a throwaway demo: the file lives inside the container, so every
 
 ### Environment choices
 
-The app's environment variables (`APP_KEY`, mail, payment, and API keys) have to reach the containers. Give your recommendation, and let the user pick between:
+The app's environment variables (`APP_KEY`, mail, payment, and API keys) have to reach the containers. Which place fits depends on how the user and their team work, so don't recommend one. Explain the trade-offs and let the user pick between:
 
-- **An env file on this machine** (`.env.dev`, ignored by git). Each deploy copies it into the app image as `.env`. It costs nothing and needs no extra setup. But only a machine with the file can deploy: teammates and CI need a copy passed around by hand, and the copies drift apart. Recommend it for one person trying SST Laravel out.
-- **AWS Secrets Manager** (`RemoteEnvVault`). The same file lives in the user's AWS account, at `/<app>/<stage>/env`. `npx sst-laravel env:push` uploads it, `env:pull` downloads it to edit, and `npx sst-laravel deploy` fetches it before each build. Anyone with AWS access to the stage, and CI, deploys with the same values and no file to pass around. About $0.40/month per stage. Recommend it for teams, CI, and any stage that will become production.
+- **An env file on this machine** (`.env.dev`, ignored by git). Each deploy copies it into the app image as `.env`. It costs nothing and needs no extra setup. But only a machine with the file can deploy: teammates and CI need a copy passed around by hand, and the copies drift apart.
+- **AWS Secrets Manager** (`RemoteEnvVault`). The same file lives in the user's AWS account, at `/<app>/<stage>/env`. `npx sst-laravel env:push` uploads it, `env:pull` downloads it to edit, and `npx sst-laravel deploy` fetches it before each build. Anyone with AWS access to the stage, and CI, deploys with the same values and no file to pass around. About $0.40/month per stage.
+- **A store the user already has** (an S3 bucket, 1Password, Doppler, or a secret in their CI). The values stay where the team keeps them. A step before each deploy writes them to `.env.<stage>`, and the deploy copies that file like the first option. Locally that's a script that runs both; in CI, a workflow step before the deploy. It costs what the tool costs.
 
-On top of either one, the user can add:
+On top of any of these, the user can add:
 
 - **SST secrets** for the most sensitive values (`new sst.Secret("STRIPE_SECRET")`, linked to the service). SST stores the value encrypted in the user's AWS account, the user sets it with `npx sst secret set`, and it never sits in a file on a laptop. SST Laravel writes it into the containers' `.env` under the same name. Each one is a line in `sst.config.ts` and a value to set, so it suits a handful of values, not the whole file.
 - **Plain values in `sst.config.ts`** (`config.environment.vars`) for settings that aren't secret and belong with the code. They are committed to git, so never put a secret there.
 
-When the repository has CI workflows (`.github/workflows`) or several people committing, recommend `RemoteEnvVault`. When it already uses one of these setups, keep it and say so instead of asking.
+Tell the user what you found that bears on the choice, such as CI workflows in `.github/workflows`, several people committing, or a secrets tool, and leave the choice to them. When the project already uses one of these setups, keep it and say so instead of asking.
+
+### Network choices
+
+The VPC is the private network the app runs in. The containers need to reach the internet to pull their image and to call outside services (mail, payments, APIs). There are three ways to do that (prices for the default 2 zones):
+
+- **No NAT** (what `init` creates, and the cheapest). The containers run in the public subnets, each with its own public IP (about $3.65/month per container). Inbound traffic still only comes through the load balancer: the containers accept no connections from outside the VPC. The outbound IP changes whenever a container is replaced, so a service that only accepts known IPs can't allow it.
+- **`nat: "ec2"`** (about $13/month: $6 for the instances, $7.30 for their 2 public IPs). SST runs a small EC2 instance (`t4g.nano` with the fck-nat image) in each zone, and the containers move to private subnets with no public IP. The outbound IPs stay fixed. The instances run in the user's account: their bandwidth is limited (a bigger `nat.ec2.instance` raises it), and if one stops, the containers in its zone can't reach the internet until it's back.
+- **`nat: "managed"`** (about $73/month, plus $0.045 for every GB that goes through it, image pulls included). An AWS NAT Gateway in each zone does the same job, with fixed outbound IPs and private subnets. AWS runs it, keeps it available, and scales it with the traffic. It's about five times the price of `ec2`.
+
+Use no NAT unless the user asks for NAT. Suggest `nat: "ec2"` when the app calls a service that only accepts known IP addresses, or when the user doesn't want public IPs on the containers. `nat: "managed"` fits when the app sends a lot of traffic out, or the team doesn't want to depend on instances in their account. NAT can be added later; the containers move to the private subnets in that deploy.
 
 ## 3. Prepare the configuration
 
@@ -189,6 +204,7 @@ Then connect it the way the user chose:
   ```
 
   The user sets each value in their own terminal before the deploy, which fails while a secret has no value: `npx sst secret set STRIPE_SECRET <value> --stage <stage>`.
+- **The user's own store.** Keep the `file` entry from `init`, and follow `environment-file-sources.md`: it has the commands for S3, 1Password (a mounted Environment, `op environment read`, or `op inject`), a GitHub Actions secret, and Doppler. Write a script that fetches the file and then deploys, so they run together. The user moves the values from the stage file you prepared into their store; creating a bucket or a 1Password item is theirs to approve. When the file is missing, the deploy only warns and the containers start without the variables, so the script must stop when the fetch fails. Keep the file ignored by git.
 - **Values in the config.** Add the settings that aren't secret to `config.environment.vars`.
 
 Do not replace an existing environment setup only to follow this one. Never show the contents of an environment file.
@@ -197,7 +213,7 @@ Do not replace an existing environment setup only to follow this one. Never show
 
 Add or import only the resources in the agreed plan. Use `docs/llms.txt` and `docs/api.md` for the exact `LaravelService` options.
 
-- The default VPC has no NAT gateway (cheapest). Containers then run in public subnets with a public IP, and inbound traffic still only comes through the load balancer. Add `nat: "ec2"` only when containers must stay in private subnets, for example for a fixed outbound IP. Avoid `nat: "managed"` unless scale demands it.
+- Keep the VPC from `init` (no NAT) unless the user chose NAT in the plan; then add `nat: "ec2"` or `nat: "managed"` to it. See [Network choices](#network-choices).
 - Link a database, Redis, bucket, or SST secret when SST manages it.
 - Import an existing resource only after you verify its identifiers and ownership.
 - Run Horizon, the scheduler, or a queue worker where the plan says: in the web container (`web.horizon`, `web.scheduler`, `web.tasks`) or in a `workers` entry.
@@ -267,4 +283,4 @@ Finish only when the application is healthy or a concrete external blocker remai
 - remaining work, such as a database the user skipped, a production domain, CI, or cost review;
 - when a blocker remains: the exact error and what you checked (running tasks, the health endpoint, recent logs).
 
-After the first healthy deployment, offer production hardening or GitHub Actions as a separate next step. Do not expand the first deployment into CI work without user agreement.
+After the first healthy deployment, recommend deploying from CI as the next step, and offer to set it up (see `deploying.md#deploying-from-github-actions`). The workflow needs the environment too: with `RemoteEnvVault` the deploy fetches it, with the user's own store the workflow fetches the file first, and with an env file on this machine the user saves it as a CI secret that a step writes before the deploy, or moves to one of the other two (see `environment-file-sources.md`). Offer production hardening as well. Do not expand the first deployment into CI work without user agreement.

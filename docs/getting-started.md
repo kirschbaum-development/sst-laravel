@@ -82,7 +82,17 @@ The generated file keeps commented-out examples for a domain, a database, worker
 
 Fargate containers only run inside a VPC. `new sst.aws.Vpc("MyVpc")` with no options is the cheapest (about $0.50/month). Without a NAT gateway, containers run in the public subnets with a public IP (about $3.65/month each); inbound traffic still only comes through the load balancer.
 
-Add `nat: "ec2"` (about $13/month) to keep containers in private subnets, for example when a third party needs a fixed outbound IP. Avoid `nat: "managed"` (about $73/month) unless you need the scale.
+With NAT, containers run in the private subnets instead, and reach the internet through it. SST has two kinds:
+
+| | No NAT (default) | `nat: "ec2"` | `nat: "managed"` |
+| --- | --- | --- | --- |
+| Monthly cost (2 zones) | $3.65 per container | About $13 | About $73, plus $0.045 per GB through it |
+| Containers run in | Public subnets, with a public IP | Private subnets | Private subnets |
+| Outbound IP | Changes when a container is replaced | Fixed | Fixed |
+| What does the work | Nothing extra | A `t4g.nano` EC2 instance per zone with [fck-nat](https://github.com/AndrewGuenther/fck-nat), in your account | An AWS NAT Gateway per zone, run by AWS |
+| Limits | None | Limited bandwidth (`nat.ec2.instance` sizes it up). If an instance stops, its zone has no internet access until it's back | Scales with traffic, and AWS keeps it available |
+
+Add `nat: "ec2"` when a third party needs a fixed outbound IP, or to keep public IPs off the containers. Use `nat: "managed"` when the app sends a lot of traffic out, or you don't want to depend on instances in your account.
 
 To reuse an existing VPC instead of creating one:
 

@@ -206,4 +206,6 @@ npx sst-laravel github-iam --branch main
 
 It creates the GitHub OIDC provider in your AWS account if it's missing, creates the role, and prints the workflow steps to add. The role trusts only your repository (detected from the git remote, or set with `--repo`) and the branch you pass (all branches by default). It gets the `AdministratorAccess` policy, so restrict the branch to the ones that should deploy. See the [CLI reference](cli.md#github-iam) for all options.
 
+The workflow needs your environment variables. With [`RemoteEnvVault`](environment-variables.md#aws-secrets-manager-remoteenvvault), the deploy fetches them. With `config.environment.file`, write the file in a step before the deploy, from S3, 1Password, or a GitHub Actions secret: [Environment File Sources](environment-file-sources.md) has the steps.
+
 The printed workflow deploys with `npx sst-laravel deploy`, so the job fails when ECS rolls the new revision back. A workflow that runs `npx sst deploy` stays green in that case: add a step with `npx sst-laravel status --stage production --wait` after it.

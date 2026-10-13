@@ -13,6 +13,7 @@ On top of these, SST Laravel [adds variables](#variables-sst-laravel-adds) for l
 
 - **An environment file** is the simplest and costs nothing, but only a machine that has the file can deploy. It suits one person, or trying SST Laravel out.
 - **`RemoteEnvVault`** keeps the file in your AWS account (about $0.40/month per stage), so teammates and CI deploy with the same values without passing a file around. It suits teams, CI, and production.
+- **Your own store**, such as S3, 1Password, or a GitHub Actions secret, keeps the values where your team already has them. A step before each deploy writes them to the environment file. See [Environment File Sources](environment-file-sources.md).
 - **SST secrets** keep the most sensitive values out of any file. SST Laravel writes them into the `.env` that the environment file or `RemoteEnvVault` provides, so use them with one of the two.
 - **Variables in the config** are committed with the code, so use them only for values that aren't secret.
 
@@ -45,6 +46,8 @@ const app = new LaravelService('MyLaravelApp', {
 ```
 
 Keep the file out of Git, and don't put AWS access keys in it. See [Troubleshooting](troubleshooting.md#cd-aws-credentials-are-not-configured).
+
+The deploy reads the file when it starts, so the file can come from anywhere: S3, 1Password, a GitHub Actions secret, or another tool your team uses. Fetch it in a step before the deploy. [Environment File Sources](environment-file-sources.md) shows how, on your machine and in CI.
 
 ## Variables in the config
 

@@ -25,6 +25,7 @@ Everything else can be read as you need it.
 | [Reverb](reverb.md) | A dedicated Laravel Reverb service for WebSockets, with its own domain. |
 | [Load Balancer](load-balancer.md) | The secure defaults of the load balancer, the IP allowlist, and access logs in S3. |
 | [Environment Variables](environment-variables.md) | Environment files, SST secrets, `RemoteEnvVault` (AWS Secrets Manager), and the variables SST Laravel adds. |
+| [Environment File Sources](environment-file-sources.md) | Fetch the environment file from S3, 1Password, or a GitHub Actions secret before each deploy, on your machine and in CI. |
 | [Linking Resources](linking-resources.md) | Linked databases, Redis, and buckets, PlanetScale, custom variable names, and IAM permissions. |
 | [Deploying](deploying.md) | The `deploy` command, readiness and status checks, PHP settings, image customization, the deployment script, and GitHub Actions. |
 | [CLI](cli.md) | Every `sst-laravel` command and its options. |
