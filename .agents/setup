@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb to build and test this package: npm dependencies, the
+# compiled CLI, and the SST platform, Pulumi, and docker-build provider that
+# the component and lifecycle tests need. Safe to rerun; warm runs take seconds.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+repo_root="$PWD"
+
+step() {
+  local label="$1"; shift
+  local start=$SECONDS
+  echo "==> $label"
+  "$@"
+  echo "    $label took $((SECONDS - start))s"
+}
+
+# npm 10 crashes resolving vitest's optional peers ("reading 'edgesOut'").
+# CI uses Node 24, which ships npm 11.
+ensure_npm() {
+  if [ "$(npm --version | cut -d. -f1)" -lt 11 ]; then
+    npm install -g --no-audit --no-fund npm@11
+  fi
+  npm --version
+}
+
+# The package has no committed lockfile, like CI.
+install_dependencies() {
+  npm install --no-audit --no-fund
+}
+
+# test:component installs the platform here when it is missing; installing it
+# now keeps it in the snapshot. It also installs SST's Pulumi in
+# ~/.config/sst/bin, which test:lifecycle uses.
+install_sst_platform() {
+  (cd tests/component/fixture && "$repo_root/node_modules/.bin/sst" install)
+}
+
+# The component tests call the docker-build provider version SST selected.
+install_docker_build_provider() {
+  local version
+  version="$(node -p 'require("./tests/component/fixture/.sst/platform/package.json").dependencies["@pulumi/docker-build"]')"
+  "$HOME/.config/sst/bin/pulumi" plugin install resource docker-build "$version"
+}
+
+write_orb_guidance() {
+  local guidance="$HOME/.config/amp/AGENTS.md"
+  local marker="# sst-laravel orb notes"
+  mkdir -p "$(dirname "$guidance")"
+  grep -Fqx "$marker" "$guidance" 2>/dev/null && return 0
+  cat >> "$guidance" <<'NOTES'
+
+# sst-laravel orb notes
+- `.agents/setup` installed npm dependencies, built `dist/`, the SST platform in `tests/component/fixture/.sst/platform`, SST's Pulumi in `~/.config/sst/bin`, and the docker-build provider. `npm test`, `npm run test:component`, and `npm run test:lifecycle` run without further installs.
+- The Docker daemon is not running by default. Before `npm run test:containers`, start it with `amp orb service start dockerd --command "sudo dockerd --group $(id -gn)"`. The images need a few GB of memory; the first build takes several minutes.
+NOTES
+}
+
+step "npm 11" ensure_npm
+step "npm install" install_dependencies
+step "build CLI" npm run build
+step "SST platform" install_sst_platform
+step "docker-build provider" install_docker_build_provider
+step "orb guidance" write_orb_guidance

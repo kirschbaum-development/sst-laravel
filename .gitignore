@@ -6,4 +6,6 @@ sst.config.ts
 .sst
 vendor
 composer.lock
-.agents
+.agents/*
+!.agents/setup
+.amp/portals/*
