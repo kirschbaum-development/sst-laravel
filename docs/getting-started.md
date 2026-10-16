@@ -102,7 +102,7 @@ const vpc = sst.aws.Vpc.get("MyVpc", "vpc-12345678901234567");
 
 ## Create the environment file
 
-The configuration above copies `.env.dev` into the containers as their `.env` when you deploy the `dev` stage. Copy `.env.example` to `.env.dev` and check that:
+The configuration above makes `.env.dev` the containers' environment when you deploy the `dev` stage. Copy `.env.example` to `.env.dev` and check that:
 
 - `APP_KEY` is set and `APP_DEBUG` is `false`;
 - the file is ignored by Git (`git check-ignore .env.dev`);

@@ -67,7 +67,11 @@ RUN --mount=type=bind,target=/app-source \
     && chown -R www-data:www-data /var/www/html
 COPY --chown=www-data:www-data $DEPLOY_PATH/.env /var/www/html/.env
 
-# Copy the deployment script the component writes into .sst/laravel
+# Copy the deployment script the component writes into .sst/laravel, and the
+# script that writes the variables ECS sets to the app's .env. It runs before
+# ServerSideUp's 50-laravel-automations.sh, which exits the worker image's
+# entrypoint loop when automations are off.
+COPY --chmod=755 $DEPLOY_PATH/45-sst-laravel-env.sh /etc/entrypoint.d/45-sst-laravel-env.sh
 COPY --chmod=755 $DEPLOY_PATH/60-deploy.sh /etc/entrypoint.d/60-deploy.sh
 
 # Copy generated s6-overlay background task definitions (no-op when none are configured)

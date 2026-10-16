@@ -89,8 +89,17 @@ reverb: { domain: "ws.example.com" },   // WebSockets (or `reverb: true`)
 config: { environment: { secrets: env } },  // RemoteEnvVault instead of file; env:push before deploy
 link: [new sst.Secret("STRIPE_SECRET")],     // SST secret: npx sst secret set STRIPE_SECRET <value> --stage <stage>
 config: { environment: { vars: { FEATURE_X: "on" } } }, // values that aren't secret (committed)
+config: { environment: { file: `.env.${$app.stage}`, kms: true } }, // env encrypted with a KMS key only the services decrypt (~$1/mo)
 web: { advanced: { architecture: "arm64" } }, // SST escape hatch (experts only)
 ```
+
+The environment (file or RemoteEnvVault, plus the injected variables) is not
+in the image: the deploy uploads it to a private S3 bucket only the services'
+execution roles can read, ECS sets it when a container starts, and the
+container writes it to `.env`. Multi-line values go to a Secrets Manager
+secret. Variables the image sets (`PHP_*`, `NGINX_*`, `AUTORUN_*`) are left out;
+set them in `config.environment.vars`. `config.environment.inImage: true`
+copies the `.env` into the image as before 0.8 (deprecated).
 
 Image customization applies to web, all workers, and Reverb. `phpExtensions`
 takes extension names only. `buildCommands` runs after extensions and before

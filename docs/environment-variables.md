@@ -2,24 +2,24 @@
 
 There are multiple ways to configure environment variables:
 
-- an [environment file](#environment-file) from your project, copied into the containers as their `.env`;
+- an [environment file](#environment-file) from your project, which becomes the containers' environment;
 - [individual variables](#variables-in-the-config) set in `sst.config.ts`;
 - [SST secrets](#sst-secrets) linked to the service;
 - [`RemoteEnvVault`](#aws-secrets-manager-remoteenvvault), which stores the file in AWS Secrets Manager.
 
-On top of these, SST Laravel [adds variables](#variables-sst-laravel-adds) for linked resources and a few Laravel settings.
+On top of these, SST Laravel [adds variables](#variables-sst-laravel-adds) for linked resources and a few Laravel settings. The containers get all of them [from S3 when they start](#how-the-containers-get-the-variables), so no secret is stored in the container image.
 
 ## Which one to use
 
 - **An environment file** is the simplest and costs nothing, but only a machine that has the file can deploy. It suits one person, or trying SST Laravel out.
 - **`RemoteEnvVault`** keeps the file in your AWS account (about $0.40/month per stage), so teammates and CI deploy with the same values without passing a file around. It suits teams, CI, and production.
 - **Your own store**, such as S3, 1Password, or a GitHub Actions secret, keeps the values where your team already has them. A step before each deploy writes them to the environment file. See [Environment File Sources](environment-file-sources.md).
-- **SST secrets** keep the most sensitive values out of any file. SST Laravel writes them into the `.env` that the environment file or `RemoteEnvVault` provides, so use them with one of the two.
+- **SST secrets** keep the most sensitive values out of your environment file. SST Laravel adds them to the environment that the environment file or `RemoteEnvVault` provides, so use them with one of the two.
 - **Variables in the config** are committed with the code, so use them only for values that aren't secret.
 
 ## Environment file
 
-If you want SST Laravel to copy an environment file, configure the `config.environment.file` entry. The configuration below copies a file named `.env.$STAGE` (e.g. `.env.production`) into the deployment containers as your `.env` file.
+If you want SST Laravel to use an environment file, configure the `config.environment.file` entry. The configuration below uses a file named `.env.$STAGE` (e.g. `.env.production`) as the containers' environment.
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
@@ -80,7 +80,7 @@ const app = new LaravelService('MyLaravelApp', {
 });
 ```
 
-This will automatically inject the environment variables into the `.env` file of your Laravel application. Read more about [SST Secrets](https://sst.dev/docs/component/secret/).
+This will automatically add them to the environment of your Laravel application. Read more about [SST Secrets](https://sst.dev/docs/component/secret/).
 
 ## AWS Secrets Manager (RemoteEnvVault)
 
@@ -179,3 +179,37 @@ SST Laravel fills in some variables for you, with both environment files and `Re
 SST Laravel adds them after your variables. Laravel reads the last value of a variable, so the values of linked resources win over the same variables in your environment, such as `DB_CONNECTION=sqlite` copied from `.env.example`. `LOG_CHANNEL` and `APP_URL` are only added when your environment doesn't set them.
 
 To stop SST Laravel from injecting variables for linked resources, set `config.environment.autoInject` to `false`. See [Disabling the auto-inject of environment variables](linking-resources.md#disabling-the-auto-inject-of-environment-variables).
+
+## How the containers get the variables
+
+The deploy reads your environment file or `RemoteEnvVault`, adds the variables above, and uploads the result to a private S3 bucket that SST Laravel creates for each component. When a container starts, ECS reads the file and sets the variables, and the container writes them to the app's `.env` too, so `php artisan` commands and code that reads the file work as before. Nothing secret is stored in the container image.
+
+- **Only the services can read the bucket.** Its policy denies reading the files to everyone except the services' ECS execution roles, even users with broad read permissions such as `ReadOnlyAccess`. Public access is blocked and plain HTTP is refused.
+- **Each change gets a new file.** A new environment gives the services a new task definition, so ECS rolls them out, and a rollback gets the environment it was deployed with. Replaced files are deleted after 30 days.
+- **Values that span lines**, such as a Passport private key, go to a Secrets Manager secret instead (`/{app-name}/{stage}/sst-laravel/{component}/multiline-env`), since an ECS environment file can't hold them. It costs about $0.40 a month, and only exists when you have such values.
+- **`${VAR}` references are filled in** the way Laravel fills them in, from the variables in `config.environment.vars` and from earlier lines.
+- **Variables the container image sets**, such as `PHP_MEMORY_LIMIT`, `NGINX_*`, or `AUTORUN_*`, are left out, with a warning in the deploy output. Laravel never let the `.env` override them. To change them, set them in `config.environment.vars`.
+
+Execution roles that you bring with `advanced.executionRole` get a policy attached that lets them read the bucket. With a deploy role of your own, it needs to create the bucket, the IAM policy, and the secret, and to upload to the bucket.
+
+### Encrypting with your own KMS key
+
+Set `config.environment.kms` to `true` to encrypt the environment with a customer-managed KMS key that only the services can decrypt. Even someone who can read the bucket or the secret can't read the values, and CloudTrail logs every decryption. The key costs about $1 a month.
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  // ...
+  config: {
+    environment: {
+      secrets: env,
+      kms: true,
+    }
+  }
+});
+```
+
+### Keeping the environment in the image
+
+Versions before 0.8 copied the environment into the container image as its `.env`, where anyone who can pull the image can read it. To keep doing that for now, set `config.environment.inImage` to `true`. The option will be removed in a future version.
+
+Images built by those versions still contain the environment. After upgrading, rotate the secrets that were in it, and delete the old images from ECR when you no longer need to roll back to them.

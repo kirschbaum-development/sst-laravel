@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseEnvFile, toEnvFileContent } from '../src/dotenv';
+import { loadEnvFile, parseEnvFile, toEcsEnvFileContent, toEnvFileContent } from '../src/dotenv';
 
 describe('toEnvFileContent', () => {
   it('renders plain alphanumeric values without quotes', () => {
@@ -134,5 +134,60 @@ describe('parseEnvFile', () => {
 
   it('skips comments and blank lines', () => {
     expect(parseEnvFile('# comment\n\n  # indented\nA=1')).toEqual({ A: '1' });
+  });
+});
+
+describe('loadEnvFile', () => {
+  it('expands ${VAR} from the container first, then from earlier lines, the way phpdotenv does', () => {
+    const content = [
+      'APP_NAME="My App"',
+      'REVERB_HOST=file-host',
+      'VITE_APP_NAME="${APP_NAME}"',
+      'VITE_REVERB_HOST=${REVERB_HOST}',
+      'LATER="${DEFINED_BELOW}"',
+      'DEFINED_BELOW=too-late',
+    ].join('\n');
+
+    expect(loadEnvFile(content, { REVERB_HOST: 'ws.example.com' })).toEqual({
+      APP_NAME: 'My App',
+      REVERB_HOST: 'file-host',
+      VITE_APP_NAME: 'My App',
+      VITE_REVERB_HOST: 'ws.example.com',
+      LATER: '${DEFINED_BELOW}',
+      DEFINED_BELOW: 'too-late',
+    });
+  });
+
+  it('keeps single-quoted and escaped references literal', () => {
+    expect(loadEnvFile("A=x\nB='${A}'\nC=\"\\${A}\"\nD=\"a\\\\${A}\"")).toEqual({ A: 'x', B: '${A}', C: '${A}', D: 'a\\x' });
+  });
+
+  it('ends an unquoted value at a #, as phpdotenv does', () => {
+    expect(loadEnvFile("APP_DEBUG=false # off in production\nHASH=abc#def ghi\nEMPTY=\nCOMMENTED= # nothing\nQUOTED='a' # c"))
+      .toEqual({ APP_DEBUG: 'false', HASH: 'abc', EMPTY: '', COMMENTED: '', QUOTED: 'a' });
+  });
+
+  it('reads double-quoted values spanning lines', () => {
+    expect(loadEnvFile('KEY="-----BEGIN\nline\\tend\n-----END"\nNEXT=1')).toEqual({
+      KEY: '-----BEGIN\nline\tend\n-----END',
+      NEXT: '1',
+    });
+  });
+
+  it('rejects what phpdotenv rejects instead of guessing', () => {
+    expect(() => loadEnvFile('APP_NAME=My App')).toThrow('APP_NAME');
+    expect(() => loadEnvFile('APP_KEY="unterminated')).toThrow('APP_KEY');
+    expect(() => loadEnvFile("RAW='first\nsecond'")).toThrow('RAW');
+    expect(() => loadEnvFile('NAME="a" trailing')).toThrow('NAME');
+  });
+});
+
+describe('toEcsEnvFileContent', () => {
+  it('writes values raw, since ECS keeps quotes and spaces as part of the value', () => {
+    expect(toEcsEnvFileContent({ APP_NAME: 'My App', QUOTED: '"x"', URL: 'a=b#c' })).toBe('APP_NAME=My App\nQUOTED="x"\nURL=a=b#c\n');
+  });
+
+  it('refuses values that span lines', () => {
+    expect(() => toEcsEnvFileContent({ KEY: 'a\nb' })).toThrow('KEY');
   });
 });
