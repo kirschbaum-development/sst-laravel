@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { ComponentResource, Input, output, rootStackResource, runtime } from '@pulumi/pulumi';
+import { ComponentResource, Input, Output, output, rootStackResource, runtime, unsecret } from '@pulumi/pulumi';
 import type { LaravelArgs, LaravelLink } from '../laravel-sst';
 import { buildLinkedEnvironment } from './links';
-import { EnvFile, isImageVariable } from './env-file-resource';
+import { EnvFile, EnvFileInputs, isImageVariable, stableStringify } from './env-file-resource';
 import { EnvStorage, envFileStorageInput } from './env-storage';
 import { parseEnvFile } from './dotenv';
 import { fingerprintSecrets, pullSecrets } from './secrets-manager';
@@ -38,15 +38,22 @@ export interface EnvironmentFileOptions {
   runtimeEnvironment?: Input<Record<string, Input<string>>>;
 }
 
+export interface EnvironmentFile {
+  resource: EnvFile;
+  /** With `storage`, the uploaded env file, for the services' `environmentFiles`. */
+  objectArn?: Output<string>;
+}
+
 /**
  * Creates the resource that provides the containers' environment, from
  * `config.environment.file` or a `RemoteEnvVault` (which wins when both are
- * set). With `storage`, it uploads the variables for ECS to set, and the
- * images copy a placeholder `.env`. Otherwise it writes the `.env` the images
- * copy. Returns it, so the images can depend on it. Without either source,
- * the images get no `.env` of their own.
+ * set). With `storage`, it uploads the variables for ECS to set, once the
+ * bucket's policies are in place, and the images copy a placeholder `.env`.
+ * Otherwise it writes the `.env` the images copy. Returns it, so the images
+ * or the services can depend on it. Without either source, the images get no
+ * `.env` of their own.
  */
-export function prepareEnvironmentFile(options: EnvironmentFileOptions): EnvFile | undefined {
+export function prepareEnvironmentFile(options: EnvironmentFileOptions): EnvironmentFile | undefined {
   const { envFilePath, environment } = options;
   const secrets = environment?.secrets;
   const file = environment?.file as string | undefined;
@@ -89,7 +96,8 @@ export function prepareEnvironmentFile(options: EnvironmentFileOptions): EnvFile
     ? buildLinkedEnvironment(options.links, options.variables)
     : { linkedEnvironment: {}, linkedSecrets: [] };
 
-  const inputs = {
+  const resourceName = secrets ? `${options.name}-RemoteEnv` : `${options.name}-EnvFile`;
+  const shared = {
     envFilePath,
     autoInject,
     appUrl: options.appUrl,
@@ -97,17 +105,14 @@ export function prepareEnvironmentFile(options: EnvironmentFileOptions): EnvFile
     linkedSecrets,
     ...(options.storage
       ? {
-          storage: envFileStorageInput(options.storage),
+          storage: envFileStorageInput(options.storage, resourceName),
           runtimeEnvironment: options.runtimeEnvironment,
         }
       : {}),
   };
-
-  if (secrets) {
-    return new EnvFile(
-      `${options.name}-RemoteEnv`,
-      {
-        ...inputs,
+  const inputs: EnvFileInputs = secrets
+    ? {
+        ...shared,
         secretPath: secrets.path,
         fingerprint: output(secrets.path).apply(async (secretPath) => {
           const variables = await pullSecrets(secretPath);
@@ -118,28 +123,48 @@ export function prepareEnvironmentFile(options: EnvironmentFileOptions): EnvFile
 
           return fingerprintSecrets(variables);
         }),
-      },
-      {
-        parent: options.parent,
-        aliases: [
-          // Its name before it handled env files too, under the component
-          // (0.6.1) and before it had a parent.
-          { name: `${options.name}-RemoteEnv.sst.aws.RemoteEnvFile` },
-          { name: `${options.name}-RemoteEnv.sst.aws.RemoteEnvFile`, parent: rootStackResource },
-        ],
-      },
-    );
-  }
-
-  return new EnvFile(
-    `${options.name}-EnvFile`,
+      }
+    : {
+        ...shared,
+        sourcePath,
+        fingerprint: source ? createHash('sha256').update(source).digest('hex') : 'missing',
+      };
+  const objectKey = options.storage ? envFileObjectKey(inputs) : undefined;
+  const resource = new EnvFile(
+    resourceName,
+    { ...inputs, objectKey },
     {
-      ...inputs,
-      sourcePath,
-      fingerprint: source ? createHash('sha256').update(source).digest('hex') : 'missing',
+      parent: options.parent,
+      dependsOn: options.storage?.policies,
+      aliases: secrets
+        ? [
+            // Its name before it handled env files too, under the component
+            // (0.6.1) and before it had a parent.
+            { name: `${options.name}-RemoteEnv.sst.aws.RemoteEnvFile` },
+            { name: `${options.name}-RemoteEnv.sst.aws.RemoteEnvFile`, parent: rootStackResource },
+          ]
+        : undefined,
     },
-    { parent: options.parent },
   );
+
+  return { resource, objectArn: objectKey && options.storage?.objectArn(objectKey) };
+}
+
+/**
+ * Where the env file goes in the bucket: named after a hash of everything it
+ * is written from, the source's fingerprint included, so it changes when the
+ * variables do. Local paths are left out, so every machine deploying the same
+ * variables uploads to the same key and the services keep their task
+ * definition. Worked out before the upload, so the services' execution roles
+ * don't wait for it (see `EnvFileInputs.objectKey`). The hash reveals nothing
+ * of the values, so the key isn't kept secret.
+ */
+export function envFileObjectKey(inputs: EnvFileInputs): Output<string> {
+  const { envFilePath: _envFilePath, sourcePath: _sourcePath, ...written } = inputs;
+
+  return unsecret(output(written).apply((resolved) =>
+    `env/${createHash('sha256').update(stableStringify(resolved)).digest('hex')}.env`,
+  ));
 }
 
 /**

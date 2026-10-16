@@ -31,7 +31,9 @@ export function stageDeploymentScript(absSitePath: string, script: string | unde
  * When ECS sets the app's variables (`SST_LARAVEL_ENV_KEYS` lists them), it
  * writes them to `.env` as well, quoted the way `toEnvFileContent` quotes
  * them, so code and shells that read the file find what they did when the
- * image carried it. The images source it, so it returns instead of exiting.
+ * image carried it. ECS leaves out the variables with empty values, so a
+ * listed variable that isn't set is written empty, as Laravel would have read
+ * it. The images source it, so it returns instead of exiting.
  */
 export const ENVIRONMENT_SCRIPT = `#!/bin/sh
 # Written by sst-laravel. ECS sets the app's environment variables; this
@@ -41,9 +43,12 @@ php <<'PHP' || return 1
 <?php
 $lines = [];
 foreach (explode(',', getenv('SST_LARAVEL_ENV_KEYS')) as $key) {
-    $value = getenv($key);
-    if ($key === '' || $value === false) {
+    if ($key === '') {
         continue;
+    }
+    $value = getenv($key);
+    if ($value === false) {
+        $value = '';
     }
     if (!preg_match('/[\\s"\\'$\\\\\\\\#]/', $value)) {
         $lines[] = "$key=$value";

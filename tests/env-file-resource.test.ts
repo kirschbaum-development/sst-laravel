@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createHash } from 'crypto';
 import { toEnvFileContent } from '../src/dotenv';
 
 const aws = vi.hoisted(() => ({
   secrets: null as Record<string, string> | null,
-  objects: new Map<string, { body: string; encryption: unknown; tags?: unknown }>(),
-  multiline: null as { name: string; value: string; kmsKeyId?: string; versions: number } | null,
+  objects: new Map<string, { body: string; encryption: unknown; tags?: Array<{ Key: string; Value: string }>; lastModified: Date }>(),
+  multiline: null as { name: string; value: string; kmsKeyId?: string; versions: number; deleted?: boolean } | null,
   deletedSecrets: [] as string[],
+  failSecretWrites: false,
 }));
 const vault = aws;
 
@@ -31,14 +31,27 @@ vi.mock('@aws-sdk/client-secrets-manager', () => ({
         return { SecretString: JSON.stringify(aws.secrets) };
       }
 
+      if (aws.failSecretWrites && name !== 'DeleteSecret') {
+        throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
+      }
+
       if (name === 'CreateSecret') {
+        if (aws.multiline?.deleted) {
+          throw Object.assign(new Error('You can\'t create this secret because a secret with this name is already scheduled for deletion.'), { name: 'InvalidRequestException' });
+        }
+
         aws.multiline = { name: input.Name, value: input.SecretString, kmsKeyId: input.KmsKeyId, versions: 1 };
         return { ARN: `arn:aws:secretsmanager:us-east-1:123456789012:secret:${input.Name}-AbCdEf`, VersionId: 'v1' };
       }
 
+      if (name === 'RestoreSecret') {
+        aws.multiline!.deleted = false;
+        return {};
+      }
+
       if (name === 'PutSecretValue' || name === 'UpdateSecret') {
-        if (!aws.multiline) {
-          throw notFound('ResourceNotFoundException');
+        if (!aws.multiline || aws.multiline.deleted) {
+          throw aws.multiline ? Object.assign(new Error('marked for deletion'), { name: 'InvalidRequestException' }) : notFound('ResourceNotFoundException');
         }
 
         if (name === 'UpdateSecret') {
@@ -63,6 +76,7 @@ vi.mock('@aws-sdk/client-secrets-manager', () => ({
   CreateSecretCommand: command('CreateSecret'),
   PutSecretValueCommand: command('PutSecretValue'),
   UpdateSecretCommand: command('UpdateSecret'),
+  RestoreSecretCommand: command('RestoreSecret'),
   DeleteSecretCommand: command('DeleteSecret'),
 }));
 
@@ -73,7 +87,17 @@ vi.mock('@aws-sdk/client-s3', () => ({
         aws.objects.set(input.Key, {
           body: input.Body,
           encryption: { ServerSideEncryption: input.ServerSideEncryption, SSEKMSKeyId: input.SSEKMSKeyId },
+          lastModified: new Date(),
         });
+        return {};
+      }
+
+      if (name === 'GetObjectTagging') {
+        return { TagSet: aws.objects.get(input.Key)?.tags ?? [] };
+      }
+
+      if (name === 'DeleteObject') {
+        aws.objects.delete(input.Key);
         return {};
       }
 
@@ -89,7 +113,11 @@ vi.mock('@aws-sdk/client-s3', () => ({
       }
 
       if (name === 'ListObjectsV2') {
-        return { Contents: [...aws.objects.keys()].filter((key) => key.startsWith(input.Prefix)).map((Key) => ({ Key })) };
+        return {
+          Contents: [...aws.objects.entries()]
+            .filter(([key]) => key.startsWith(input.Prefix))
+            .map(([Key, object]) => ({ Key, LastModified: object.lastModified })),
+        };
       }
 
       throw new Error(`unexpected ${name}`);
@@ -98,6 +126,8 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: command('PutObject'),
   PutObjectTaggingCommand: command('PutObjectTagging'),
   ListObjectsV2Command: command('ListObjectsV2'),
+  GetObjectTaggingCommand: command('GetObjectTagging'),
+  DeleteObjectCommand: command('DeleteObject'),
 }));
 
 import { buildEnvFileContent, envFileProvider, ResolvedEnvFileInputs } from '../src/env-file-resource';
@@ -111,6 +141,7 @@ beforeEach(() => {
   aws.objects.clear();
   aws.multiline = null;
   aws.deletedSecrets = [];
+  aws.failSecretWrites = false;
 });
 
 describe('buildEnvFileContent', () => {
@@ -204,10 +235,11 @@ describe('envFileProvider', () => {
 });
 
 describe('envFileProvider with storage', () => {
-  const storage = { bucket: 'env-bucket', region: 'us-east-1', partition: 'aws', secretName: '/app/production/sst-laravel/App/multiline-env' };
-  const sha256 = (content: string) => createHash('sha256').update(content).digest('hex');
+  const storage = { bucket: 'env-bucket', region: 'us-east-1', partition: 'aws', secretName: '/app/production/sst-laravel/App/multiline-env/App-EnvFile' };
+  const days = (count: number) => new Date(Date.now() - count * 24 * 60 * 60 * 1000);
+  const supersededAt = (key: string) => aws.objects.get(key)!.tags?.find((tag) => tag.Key === 'sst-laravel-superseded-at')?.Value;
 
-  function s3Inputs(source: string): ResolvedEnvFileInputs {
+  function s3Inputs(source: string, objectKey = 'env/first.env'): ResolvedEnvFileInputs {
     const sourcePath = path.join(tempDir(), '.env.production');
     fs.writeFileSync(sourcePath, source);
 
@@ -218,6 +250,7 @@ describe('envFileProvider with storage', () => {
       appUrl: 'https://example.com',
       linkedEnvironment: { DB_PASSWORD: 'p$ss #1' },
       storage,
+      objectKey,
       runtimeEnvironment: {},
     };
   }
@@ -227,6 +260,8 @@ describe('envFileProvider with storage', () => {
     'APP_NAME="My App"',
     'VITE_APP_NAME="${APP_NAME}"',
     'PHP_MEMORY_LIMIT=1G',
+    'SSL_CA=/etc/ssl/rds.pem',
+    'MAIL_PASSWORD=',
     'PASSPORT_PRIVATE_KEY="-----BEGIN',
     'abc',
     '-----END"',
@@ -240,19 +275,19 @@ describe('envFileProvider with storage', () => {
       'APP_KEY=base64:test',
       'APP_NAME=My App',
       'VITE_APP_NAME=My App',
+      'SSL_CA=/etc/ssl/rds.pem',
+      'MAIL_PASSWORD=',
       'APP_URL=https://example.com',
       'LOG_CHANNEL=stderr',
       'DB_PASSWORD=p$ss #1',
-      'SST_LARAVEL_ENV_KEYS=APP_KEY,APP_NAME,VITE_APP_NAME,PASSPORT_PRIVATE_KEY,APP_URL,LOG_CHANNEL,DB_PASSWORD',
+      // Lists MAIL_PASSWORD too, which ECS leaves out for being empty.
+      'SST_LARAVEL_ENV_KEYS=APP_KEY,APP_NAME,VITE_APP_NAME,SSL_CA,MAIL_PASSWORD,PASSPORT_PRIVATE_KEY,APP_URL,LOG_CHANNEL,DB_PASSWORD',
       '',
     ].join('\n');
-    const key = `env/${sha256(expected)}.env`;
 
-    expect(aws.objects.get(key)).toEqual({ body: expected, encryption: { ServerSideEncryption: 'AES256', SSEKMSKeyId: undefined } });
+    expect(aws.objects.get('env/first.env')).toMatchObject({ body: expected, encryption: { ServerSideEncryption: 'AES256', SSEKMSKeyId: undefined } });
     expect(JSON.parse(aws.multiline!.value)).toEqual({ PASSPORT_PRIVATE_KEY: '-----BEGIN\nabc\n-----END' });
     expect(outs).toMatchObject({
-      objectKey: key,
-      objectArn: `arn:aws:s3:::env-bucket/${key}`,
       ssm: { PASSPORT_PRIVATE_KEY: `arn:aws:secretsmanager:us-east-1:123456789012:secret:${storage.secretName}-AbCdEf:PASSPORT_PRIVATE_KEY::v1` },
       ignoredVariables: ['PHP_MEMORY_LIMIT'],
     });
@@ -260,22 +295,50 @@ describe('envFileProvider with storage', () => {
     expect(fs.existsSync(inputs.envFilePath)).toBe(false);
   });
 
-  it('uploads a changed environment under a new name and lets the previous file expire', async () => {
+  it('uploads a changed environment to its new key, then marks the previous file as replaced', async () => {
     const first = s3Inputs(source);
     const { outs: olds } = await envFileProvider.create!(first);
 
     fs.writeFileSync(first.sourcePath!, source.replace('base64:test', 'base64:rotated'));
-    const changed = { ...first, fingerprint: 'g' };
+    const changed = { ...first, fingerprint: 'g', objectKey: 'env/second.env' };
 
     expect((await envFileProvider.diff!('id', olds, changed)).changes).toBe(true);
 
+    const before = Date.now();
     const { outs } = await envFileProvider.update!('id', olds, changed);
 
-    expect(outs.objectKey).not.toBe(olds.objectKey);
-    expect(aws.objects.get(olds.objectKey!)!.tags).toEqual([{ Key: 'sst-laravel-superseded', Value: 'true' }]);
-    expect(aws.objects.get(outs.objectKey!)!.tags).toBeUndefined();
+    expect(aws.objects.get('env/second.env')!.body).toContain('APP_KEY=base64:rotated');
+    expect(Date.parse(supersededAt('env/first.env')!)).toBeGreaterThanOrEqual(before);
+    expect(aws.objects.get('env/second.env')!.tags).toBeUndefined();
     // A new secret version, so the earlier task definition keeps its values.
     expect(outs.ssm!.PASSPORT_PRIVATE_KEY).toMatch(/::v2$/);
+  });
+
+  it('leaves the previous file alone when the update fails', async () => {
+    const first = s3Inputs(source);
+    const { outs: olds } = await envFileProvider.create!(first);
+
+    aws.failSecretWrites = true;
+
+    await expect(envFileProvider.update!('id', olds, { ...first, fingerprint: 'g', objectKey: 'env/second.env' })).rejects.toThrow('denied');
+    expect(aws.objects.get('env/first.env')!.tags).toBeUndefined();
+  });
+
+  it('deletes the files replaced more than 30 days ago, counting from when they were replaced', async () => {
+    const put = (key: string, uploaded: number, replaced?: number) => aws.objects.set(key, {
+      body: '',
+      encryption: {},
+      lastModified: days(uploaded),
+      ...(replaced === undefined ? {} : { tags: [{ Key: 'sst-laravel-superseded-at', Value: days(replaced).toISOString() }] }),
+    });
+
+    put('env/expired.env', 90, 31);
+    put('env/replaced-recently.env', 90, 29);
+    put('env/old-but-current-elsewhere.env', 90);
+
+    await envFileProvider.create!(s3Inputs('APP_KEY=x'));
+
+    expect([...aws.objects.keys()].sort()).toEqual(['env/first.env', 'env/old-but-current-elsewhere.env', 'env/replaced-recently.env']);
   });
 
   it('re-uploads when the file is gone, and leaves an unchanged environment alone', async () => {
@@ -290,25 +353,36 @@ describe('envFileProvider with storage', () => {
 
   it('encrypts with the KMS key when there is one', async () => {
     const inputs = { ...s3Inputs(source), storage: { ...storage, kmsKeyArn: 'arn:aws:kms:us-east-1:123456789012:key/k' } };
-    const { outs } = await envFileProvider.create!(inputs);
+    await envFileProvider.create!(inputs);
 
-    expect(aws.objects.get(outs.objectKey!)!.encryption).toEqual({ ServerSideEncryption: 'aws:kms', SSEKMSKeyId: 'arn:aws:kms:us-east-1:123456789012:key/k' });
+    expect(aws.objects.get('env/first.env')!.encryption).toEqual({ ServerSideEncryption: 'aws:kms', SSEKMSKeyId: 'arn:aws:kms:us-east-1:123456789012:key/k' });
     expect(aws.multiline!.kmsKeyId).toBe('arn:aws:kms:us-east-1:123456789012:key/k');
+  });
+
+  it('brings back a secret still in its recovery window', async () => {
+    const { outs } = await envFileProvider.create!(s3Inputs(source));
+    await envFileProvider.delete!('id', outs);
+    aws.multiline!.deleted = true;
+
+    const { outs: again } = await envFileProvider.create!(s3Inputs(source));
+
+    expect(aws.multiline!.deleted).toBe(false);
+    expect(again.ssm!.PASSPORT_PRIVATE_KEY).toMatch(/::v2$/);
   });
 
   it('takes RemoteEnvVault values as they are, without expanding them', async () => {
     aws.secrets = { A: '${B}', B: 'x' };
-    const { outs } = await envFileProvider.create!({ envFilePath: '/unused', secretPath: '/app/production/env', fingerprint: 'f', autoInject: false, storage });
+    await envFileProvider.create!({ envFilePath: '/unused', secretPath: '/app/production/env', fingerprint: 'f', autoInject: false, storage, objectKey: 'env/vault.env' });
 
-    expect(aws.objects.get(outs.objectKey!)!.body).toBe('A=${B}\nB=x\nSST_LARAVEL_ENV_KEYS=A,B\n');
+    expect(aws.objects.get('env/vault.env')!.body).toBe('A=${B}\nB=x\nSST_LARAVEL_ENV_KEYS=A,B\n');
   });
 
-  it('lets the files expire and schedules the secret for deletion when removed', async () => {
+  it('marks the file as replaced and schedules its own secret for deletion when removed', async () => {
     const { outs } = await envFileProvider.create!(s3Inputs(source));
 
     await envFileProvider.delete!('id', outs);
 
-    expect(aws.objects.get(outs.objectKey!)!.tags).toEqual([{ Key: 'sst-laravel-superseded', Value: 'true' }]);
+    expect(supersededAt('env/first.env')).toBeDefined();
     expect(aws.deletedSecrets).toEqual([`${outs.secretArn}:7`]);
   });
 });

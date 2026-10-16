@@ -174,6 +174,10 @@ describe('loadEnvFile', () => {
     });
   });
 
+  it('reads quoted names, as phpdotenv does', () => {
+    expect(loadEnvFile('"APP_NAME"=Laravel\nexport \'B\'="x y"')).toEqual({ APP_NAME: 'Laravel', B: 'x y' });
+  });
+
   it('rejects what phpdotenv rejects instead of guessing', () => {
     expect(() => loadEnvFile('APP_NAME=My App')).toThrow('APP_NAME');
     expect(() => loadEnvFile('APP_KEY="unterminated')).toThrow('APP_KEY');

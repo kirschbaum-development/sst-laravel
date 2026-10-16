@@ -13,7 +13,10 @@ export interface EnvFileStorage {
   partition: string;
   /** The customer-managed key that encrypts the env file and the secret. */
   kmsKeyArn?: string;
-  /** The Secrets Manager secret that holds the values that span lines. */
+  /**
+   * The Secrets Manager secret that holds the values that span lines. Each
+   * `EnvFile` has its own, as it deletes it when it is removed.
+   */
   secretName: string;
 }
 
@@ -32,6 +35,13 @@ export interface EnvFileInputs {
   linkedSecrets?: Input<Array<{ name: Input<string>; value: Input<string> }>>;
   /** Upload the variables for ECS instead of writing the file the images copy. */
   storage?: Input<EnvFileStorage>;
+  /**
+   * Where the env file is uploaded to in the bucket, set with `storage`. It
+   * changes with the other inputs (`envFileObjectKey`), and is known before
+   * the upload, so the services' execution roles, which the bucket policy
+   * names, don't wait for it, and the upload can wait for the bucket policy.
+   */
+  objectKey?: Input<string>;
   /** The containers' own variables, which `${VAR}` in the env file can read. */
   runtimeEnvironment?: Input<Record<string, Input<string>>>;
 }
@@ -49,13 +59,11 @@ export interface ResolvedEnvFileInputs {
     value: string;
   }>;
   storage?: EnvFileStorage;
+  objectKey?: string;
   runtimeEnvironment?: Record<string, string>;
 }
 
 export interface EnvFileOutputs extends ResolvedEnvFileInputs {
-  /** The uploaded env file, for `environmentFiles`. */
-  objectArn?: string;
-  objectKey?: string;
   /** The values that span lines, as `ssm` references to `secretArn`. */
   ssm?: Record<string, string>;
   secretArn?: string;
@@ -63,10 +71,18 @@ export interface EnvFileOutputs extends ResolvedEnvFileInputs {
   ignoredVariables?: string[];
 }
 
-const OUTPUT_KEYS = ['objectArn', 'objectKey', 'ssm', 'secretArn', 'ignoredVariables'];
+const OUTPUT_KEYS = ['ssm', 'secretArn', 'ignoredVariables'];
 
-/** The tag that lets the bucket's lifecycle rule expire an env file. */
-export const SUPERSEDED_TAG = 'sst-laravel-superseded';
+/**
+ * The tag a deploy puts on the env file it replaces, with the time. S3's
+ * lifecycle rules count from when an object was uploaded, not from when it
+ * was tagged, so later deploys delete the files replaced more than
+ * `SUPERSEDED_ENV_FILE_DAYS` ago themselves.
+ */
+export const SUPERSEDED_TAG = 'sst-laravel-superseded-at';
+
+/** Days an env file is kept after a deploy replaces it, to roll back to. */
+export const SUPERSEDED_ENV_FILE_DAYS = 30;
 
 /** Lists the variables of the env file, so the container can write its `.env`. */
 export const ENV_KEYS_VARIABLE = 'SST_LARAVEL_ENV_KEYS';
@@ -85,10 +101,12 @@ const IMAGE_VARIABLES = [
   'PHP_MAX_INPUT_TIME', 'PHP_MAX_INPUT_VARS', 'PHP_MEMORY_LIMIT', 'PHP_OPEN_BASEDIR', 'PHP_POST_MAX_SIZE',
   'PHP_REALPATH_CACHE_SIZE', 'PHP_REALPATH_CACHE_TTL', 'PHP_SESSION_COOKIE_HTTPONLY', 'PHP_SESSION_COOKIE_SECURE',
   'PHP_SHA256', 'PHP_UPLOAD_MAX_FILE_SIZE', 'PHP_URL', 'PHP_VERSION', 'PHP_ZEND_DETECT_UNICODE',
-  'PHP_ZEND_MULTIBYTE', 'SHOW_WELCOME_MESSAGE', 'TRUSTED_PROXY', ENV_KEYS_VARIABLE,
+  'PHP_ZEND_MULTIBYTE', 'SHOW_WELCOME_MESSAGE', 'SSL_CERTIFICATE_FILE', 'SSL_MODE', 'SSL_PRIVATE_KEY_FILE',
+  'TRUSTED_PROXY', ENV_KEYS_VARIABLE,
 ];
 
-const IMAGE_VARIABLE_PREFIXES = ['AUTORUN_', 'NGINX_', 'PHP_FPM_', 'PHP_OPCACHE_', 'S6_', 'SSL_'];
+/** The images' own settings, with names no app uses for anything else. */
+const IMAGE_VARIABLE_PREFIXES = ['AUTORUN_', 'NGINX_', 'PHP_FPM_', 'PHP_OPCACHE_', 'S6_'];
 
 export function isImageVariable(name: string): boolean {
   return IMAGE_VARIABLES.includes(name) || IMAGE_VARIABLE_PREFIXES.some((prefix) => name.startsWith(prefix));
@@ -116,7 +134,7 @@ export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, En
 
   async delete(_, olds) {
     if (olds.storage && olds.objectKey) {
-      await markSuperseded(olds.storage, olds.objectKey);
+      await markSuperseded(olds.storage, olds.objectKey, new Date());
     }
 
     if (olds.storage && olds.secretArn) {
@@ -133,8 +151,6 @@ export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, En
  * depend on it, so they are built after it is written.
  */
 export class EnvFile extends dynamic.Resource {
-  /** The env file in S3, for the services' `environmentFiles`. */
-  public readonly objectArn!: Output<string | undefined>;
   /** The values that span lines, for the services' `ssm`. */
   public readonly ssm!: Output<Record<string, string> | undefined>;
   /** Variables of the env file left out because the images set them. */
@@ -144,7 +160,7 @@ export class EnvFile extends dynamic.Resource {
     super(
       envFileProvider,
       `${name}.sst.aws.EnvFile`,
-      { ...args, objectArn: undefined, ssm: undefined, ignoredVariables: undefined },
+      { ...args, ssm: undefined, ignoredVariables: undefined },
       opts,
     );
   }
@@ -214,18 +230,24 @@ async function matchesEnvironmentFile(inputs: ResolvedEnvFileInputs) {
 }
 
 /**
- * Uploads the variables as an env file named after its content, so a change
- * gives the services a new task definition, and an earlier one stays
- * available to roll back to until the bucket's lifecycle rule expires it.
- * Values that span lines go to a Secrets Manager secret, referenced by
- * version for the same reason.
+ * Uploads the variables as an env file at `objectKey`, which changes with
+ * the inputs, so a change gives the services a new task definition, and an
+ * earlier one stays available to roll back to. Values that span lines go to
+ * a Secrets Manager secret, referenced by version for the same reason. Only
+ * once both are written is the file it replaces marked as replaced, and the
+ * files replaced long ago deleted.
  */
 async function uploadEnvironment(
   inputs: ResolvedEnvFileInputs,
   storage: EnvFileStorage,
   olds?: EnvFileOutputs,
-): Promise<Pick<EnvFileOutputs, 'objectArn' | 'objectKey' | 'ssm' | 'secretArn' | 'ignoredVariables'>> {
-  const { createHash } = await import('node:crypto');
+): Promise<Pick<EnvFileOutputs, 'ssm' | 'secretArn' | 'ignoredVariables'>> {
+  const objectKey = inputs.objectKey;
+
+  if (!objectKey) {
+    throw new Error('The env file has no objectKey to upload to.');
+  }
+
   const { variables, ignoredVariables } = buildContainerVariables(await readSource(inputs), inputs);
   const plain: Record<string, string> = {};
   const multiline: Record<string, string> = {};
@@ -234,37 +256,41 @@ async function uploadEnvironment(
     (/[\r\n]/.test(value) ? multiline : plain)[key] = value;
   }
 
+  // ECS leaves out empty values, so the container learns them from this list.
   plain[ENV_KEYS_VARIABLE] = Object.keys(variables).join(',');
 
-  const content = toEcsEnvFileContent(plain);
-  const objectKey = `env/${createHash('sha256').update(content).digest('hex')}.env`;
   const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
 
   await new S3Client({ region: storage.region }).send(new PutObjectCommand({
     Bucket: storage.bucket,
     Key: objectKey,
-    Body: content,
+    Body: toEcsEnvFileContent(plain),
     ContentType: 'text/plain',
     ...(storage.kmsKeyArn
       ? { ServerSideEncryption: 'aws:kms' as const, SSEKMSKeyId: storage.kmsKeyArn }
       : { ServerSideEncryption: 'AES256' as const }),
   }));
 
-  if (olds?.storage?.bucket === storage.bucket && olds.objectKey && olds.objectKey !== objectKey) {
-    await markSuperseded(storage, olds.objectKey);
-  }
-
+  const sameSecret = olds?.storage?.secretName === storage.secretName;
   const secret = Object.keys(multiline).length > 0
-    ? await putMultilineSecret(storage, multiline, olds?.storage?.kmsKeyArn !== storage.kmsKeyArn)
+    ? await putMultilineSecret(storage, multiline, sameSecret && olds?.storage?.kmsKeyArn !== storage.kmsKeyArn)
     : undefined;
 
+  if (olds?.storage && olds.secretArn && !sameSecret) {
+    await deleteMultilineSecret(olds.storage, olds.secretArn);
+  }
+
+  if (olds?.storage?.bucket === storage.bucket && olds.objectKey && olds.objectKey !== objectKey) {
+    await markSuperseded(storage, olds.objectKey, new Date());
+  }
+
+  await deleteExpiredEnvFiles(storage, objectKey, new Date());
+
   return {
-    objectArn: `arn:${storage.partition}:s3:::${storage.bucket}/${objectKey}`,
-    objectKey,
     ssm: secret
       ? Object.fromEntries(Object.keys(multiline).map((key) => [key, `${secret.arn}:${key}::${secret.versionId}`]))
       : {},
-    secretArn: secret?.arn ?? (olds?.storage ? olds.secretArn : undefined),
+    secretArn: secret?.arn ?? (sameSecret ? olds?.secretArn : undefined),
     ignoredVariables,
   };
 }
@@ -297,21 +323,64 @@ export function buildContainerVariables(
   return { variables, ignoredVariables };
 }
 
-async function markSuperseded(storage: EnvFileStorage, objectKey: string) {
+async function markSuperseded(storage: EnvFileStorage, objectKey: string, now: Date) {
   const { S3Client, PutObjectTaggingCommand } = await import('@aws-sdk/client-s3');
 
   try {
     await new S3Client({ region: storage.region }).send(new PutObjectTaggingCommand({
       Bucket: storage.bucket,
       Key: objectKey,
-      Tagging: { TagSet: [{ Key: SUPERSEDED_TAG, Value: 'true' }] },
+      Tagging: { TagSet: [{ Key: SUPERSEDED_TAG, Value: now.toISOString() }] },
     }));
   } catch (error) {
-    // Already gone: expired, or removed with its bucket.
+    // Already gone, or removed with its bucket.
     if (!isNotFound(error)) {
       throw error;
     }
   }
+}
+
+/**
+ * Deletes the env files replaced more than `SUPERSEDED_ENV_FILE_DAYS` ago.
+ * A file can't have been replaced before it was uploaded, so only the ones
+ * uploaded that long ago need their tags read.
+ */
+async function deleteExpiredEnvFiles(storage: EnvFileStorage, currentKey: string, now: Date) {
+  const { S3Client, ListObjectsV2Command, GetObjectTaggingCommand, DeleteObjectCommand } = await import(
+    '@aws-sdk/client-s3'
+  );
+  const client = new S3Client({ region: storage.region });
+  const cutoff = now.getTime() - SUPERSEDED_ENV_FILE_DAYS * 24 * 60 * 60 * 1000;
+  let token: string | undefined;
+
+  do {
+    const page = await client.send(new ListObjectsV2Command({
+      Bucket: storage.bucket,
+      Prefix: 'env/',
+      ContinuationToken: token,
+    }));
+
+    for (const object of page.Contents ?? []) {
+      if (!object.Key || object.Key === currentKey || !object.LastModified || object.LastModified.getTime() > cutoff) {
+        continue;
+      }
+
+      try {
+        const { TagSet } = await client.send(new GetObjectTaggingCommand({ Bucket: storage.bucket, Key: object.Key }));
+        const replacedAt = Date.parse(TagSet?.find((tag) => tag.Key === SUPERSEDED_TAG)?.Value ?? '');
+
+        if (replacedAt <= cutoff) {
+          await client.send(new DeleteObjectCommand({ Bucket: storage.bucket, Key: object.Key }));
+        }
+      } catch (error) {
+        if (!isNotFound(error)) {
+          throw error;
+        }
+      }
+    }
+
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
 }
 
 async function envFileObjectExists(outputs: EnvFileOutputs) {
@@ -331,14 +400,14 @@ async function envFileObjectExists(outputs: EnvFileOutputs) {
 }
 
 async function putMultilineSecret(storage: EnvFileStorage, values: Record<string, string>, keyChanged: boolean) {
-  const { SecretsManagerClient, CreateSecretCommand, PutSecretValueCommand, UpdateSecretCommand } = await import(
+  const { SecretsManagerClient, CreateSecretCommand, PutSecretValueCommand, RestoreSecretCommand, UpdateSecretCommand } = await import(
     '@aws-sdk/client-secrets-manager'
   );
   const client = new SecretsManagerClient({ region: storage.region });
   const secretString = JSON.stringify(values);
 
-  try {
-    if (keyChanged) {
+  const put = async (moveKey: boolean) => {
+    if (moveKey) {
       await client.send(new UpdateSecretCommand({
         SecretId: storage.secretName,
         KmsKeyId: storage.kmsKeyArn ?? 'alias/aws/secretsmanager',
@@ -348,20 +417,49 @@ async function putMultilineSecret(storage: EnvFileStorage, values: Record<string
     const response = await client.send(new PutSecretValueCommand({ SecretId: storage.secretName, SecretString: secretString }));
 
     return { arn: response.ARN!, versionId: response.VersionId! };
+  };
+
+  // Removed recently (a stage removed and deployed again), and still in its
+  // recovery window: bring it back, with the key it should have now.
+  const restore = async () => {
+    await client.send(new RestoreSecretCommand({ SecretId: storage.secretName }));
+
+    return put(true);
+  };
+
+  try {
+    return await put(keyChanged);
   } catch (error) {
+    if (isMarkedForDeletion(error)) {
+      return restore();
+    }
+
     if (!isNotFound(error)) {
       throw error;
     }
   }
 
-  const response = await client.send(new CreateSecretCommand({
-    Name: storage.secretName,
-    Description: 'The environment variables of a Laravel app that span lines (sst-laravel).',
-    SecretString: secretString,
-    ...(storage.kmsKeyArn ? { KmsKeyId: storage.kmsKeyArn } : {}),
-  }));
+  try {
+    const response = await client.send(new CreateSecretCommand({
+      Name: storage.secretName,
+      Description: 'The environment variables of a Laravel app that span lines (sst-laravel).',
+      SecretString: secretString,
+      ...(storage.kmsKeyArn ? { KmsKeyId: storage.kmsKeyArn } : {}),
+    }));
 
-  return { arn: response.ARN!, versionId: response.VersionId! };
+    return { arn: response.ARN!, versionId: response.VersionId! };
+  } catch (error) {
+    if (!isMarkedForDeletion(error)) {
+      throw error;
+    }
+  }
+
+  return restore();
+}
+
+function isMarkedForDeletion(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException'
+    && 'message' in error && /(marked|scheduled) for deletion/i.test(String(error.message));
 }
 
 async function deleteMultilineSecret(storage: EnvFileStorage, secretArn: string) {
@@ -515,7 +613,7 @@ function withoutOutputs(outputs: EnvFileOutputs): ResolvedEnvFileInputs {
   ) as ResolvedEnvFileInputs;
 }
 
-function stableStringify(value: unknown): string {
+export function stableStringify(value: unknown): string {
   return JSON.stringify(sortValue(value));
 }
 

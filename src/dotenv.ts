@@ -48,7 +48,7 @@ export function parseEnvFile(content: string): Record<string, string> {
       continue;
     }
 
-    const key = line.substring(0, equalIndex).trim().replace(/^export\s+/, '');
+    const key = parseEnvKey(line.substring(0, equalIndex));
     let rawValue = line.substring(equalIndex + 1).trimStart();
 
     // A double-quoted value continues until its closing quote. Without one,
@@ -105,7 +105,7 @@ export function loadEnvFile(content: string, environment: Record<string, string>
     }
 
     const equalIndex = line.indexOf('=');
-    const key = line.substring(0, equalIndex).trim().replace(/^export\s+/, '');
+    const key = parseEnvKey(line.substring(0, equalIndex));
     let rawValue = line.substring(equalIndex + 1).trimStart();
     let value: string;
 
@@ -174,6 +174,16 @@ export function toEcsEnvFileContent(vars: Record<string, string>): string {
       return `${key}=${value}\n`;
     })
     .join('');
+}
+
+/**
+ * The variable's name, without `export`, and without the quotes phpdotenv
+ * allows around it (`"APP_NAME"=Laravel`).
+ */
+function parseEnvKey(rawKey: string): string {
+  const key = rawKey.trim().replace(/^export\s+/, '');
+
+  return /^(["'])(.*)\1$/s.test(key) ? key.slice(1, -1) : key;
 }
 
 function parseEnvValue(rawValue: string): string {

@@ -327,7 +327,8 @@ describe('environment set by ECS', () => {
     PRIVATE_KEY: '-----BEGIN\nabc\n-----END',
     PLAIN: 'base64:abc=',
   };
-  const env = { ...variables, SST_LARAVEL_ENV_KEYS: Object.keys(variables).join(',') };
+  // ECS leaves out MAIL_PASSWORD for being empty; only the list names it.
+  const env = { ...variables, SST_LARAVEL_ENV_KEYS: [...Object.keys(variables), 'MAIL_PASSWORD'].join(',') };
 
   it.each(['web', 'workers[queue]'])('%s writes them to the .env when it starts, readable by www-data only', async (label) => {
     const container = startContainer(app.images[label], undefined, env);
@@ -338,7 +339,7 @@ describe('environment set by ECS', () => {
     }, 60000, 'the .env to be written');
 
     // Read back the way Laravel reads it: the same values, nothing else.
-    expect(loadEnvFile(written)).toEqual(variables);
+    expect(loadEnvFile(written)).toEqual({ ...variables, MAIL_PASSWORD: '' });
     expect(run(['exec', container, 'stat', '-c', '%a %u', '/var/www/html/.env']).output.trim()).toBe('600 33');
   });
 

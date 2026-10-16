@@ -8,8 +8,7 @@ import { getPackagePath } from './src/config';
 import { ensureDockerIgnore } from './src/docker-ignore';
 import { writeS6TaskFiles } from './src/background-tasks';
 import { stageDeploymentScript, stageEnvironmentScript, stageWorkerConf } from './src/build-files';
-import { prepareEnvironmentFile } from './src/env-file';
-import type { EnvFile } from './src/env-file-resource';
+import { EnvironmentFile, prepareEnvironmentFile } from './src/env-file';
 import { createEnvStorage, EnvStorage } from './src/env-storage';
 import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl } from './src/environment';
 import { buildImage, managedImageTransform } from './src/image';
@@ -66,7 +65,7 @@ interface SharedServiceArgs {
     injectedEnvironment: Record<string, Input<string | undefined>>;
     vars: NonNullable<NonNullable<LaravelArgs['config']>['environment']>['vars'];
     /** The resource that provides the environment: a file the images copy, or one in S3. */
-    environmentFile?: EnvFile;
+    environmentFile?: EnvironmentFile;
     /** Where ECS reads the environment from, unless the images carry it. */
     environmentStorage?: EnvStorage;
 }
@@ -822,7 +821,7 @@ export class LaravelService extends Component {
             (environment?.file || environment?.secrets) && plans.length > 0 && !environment.inImage && !$dev
                 ? createEnvStorage(this, name, {
                       kms: environment.kms,
-                      secretName: `/${$app.name}/${$app.stage}/sst-laravel/${name}/multiline-env`,
+                      secretPrefix: `/${$app.name}/${$app.stage}/sst-laravel/${name}/multiline-env`,
                   })
                 : undefined;
 
@@ -960,10 +959,10 @@ export class LaravelService extends Component {
                     shared.vars,
                     plan.environment,
                 ),
-                ...(shared.environmentStorage && shared.environmentFile
+                ...(shared.environmentFile?.objectArn
                     ? {
-                          environmentFiles: [shared.environmentFile.objectArn as Output<string>],
-                          ssm: shared.environmentFile.ssm as Output<Record<string, string>>,
+                          environmentFiles: [shared.environmentFile.objectArn],
+                          ssm: shared.environmentFile.resource.ssm as Output<Record<string, string>>,
                       }
                     : {}),
                 scaling: plan.scaling,
@@ -974,11 +973,19 @@ export class LaravelService extends Component {
                 transform: {
                     ...transform,
                     // Containers start once they can read their environment.
+                    // Only the ECS service waits for the upload: the upload
+                    // waits for the bucket policy, which names the execution
+                    // role the service creates.
                     service: withDependencies(
-                        shared.environmentStorage?.readyFor(
-                            plan.resourceName,
-                            plan.serviceArgs.executionRole !== undefined,
-                        ) ?? [],
+                        shared.environmentStorage && shared.environmentFile
+                            ? [
+                                  shared.environmentFile.resource,
+                                  ...shared.environmentStorage.readyFor(
+                                      plan.resourceName,
+                                      plan.serviceArgs.executionRole !== undefined,
+                                  ),
+                              ]
+                            : [],
                         withContainerNetwork(shared.network, transform.service),
                     ) as ServiceResourceTransform,
                     ...(shared.environmentStorage
@@ -989,15 +996,19 @@ export class LaravelService extends Component {
                               ),
                           }
                         : {}),
-                    image: managedImageTransform(shared.environmentFile, transform.image),
+                    // The images copy the .env, unless ECS sets the variables.
+                    image: managedImageTransform(
+                        shared.environmentStorage ? undefined : shared.environmentFile?.resource,
+                        transform.image,
+                    ),
                     taskDefinition: disableInitProcess,
                 },
             },
             {
                 parent: this,
                 aliases: CREATED_WITHOUT_PARENT,
-                dependsOn: shared.environmentFile
-                    ? [shared.environmentFile]
+                dependsOn: shared.environmentFile && !shared.environmentStorage
+                    ? [shared.environmentFile.resource]
                     : [],
             },
         );

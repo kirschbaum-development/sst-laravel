@@ -21,7 +21,7 @@ vi.mock('./pkg/@kirschbaum-development/sst-laravel/src/env-file-resource', async
 
   class EnvFile extends CustomResource {
     constructor(name: string, args: Record<string, unknown>, opts: pulumi.CustomResourceOptions) {
-      super('pulumi-nodejs:dynamic:Resource', `${name}.sst.aws.EnvFile`, { ...args, objectArn: undefined, ssm: undefined, ignoredVariables: undefined }, opts);
+      super('pulumi-nodejs:dynamic:Resource', `${name}.sst.aws.EnvFile`, { ...args, ssm: undefined, ignoredVariables: undefined }, opts);
     }
   }
 
@@ -125,7 +125,7 @@ beforeAll(async () => {
 
       // What the EnvFile provider returns after uploading the environment.
       const uploaded = args.type === 'pulumi-nodejs:dynamic:Resource' && args.inputs.storage
-        ? { objectArn: `arn:aws:s3:::${args.inputs.storage.bucket}/env/test.env`, ssm: { MULTILINE_KEY: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1' } }
+        ? { ssm: { MULTILINE_KEY: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1' } }
         : {};
 
       return {
@@ -319,6 +319,8 @@ function snapshot(prefix: string): string {
     .replaceAll(ROOT, '<root>')
     // The random suffix SST adds to physical names (8 of its "pretty" letters).
     .replace(/-[abcdefhkmnorstuvwxz]{8}(?![A-Za-z0-9])/g, '-<random>')
+    // The env file's key hashes the bucket name, random here too.
+    .replace(/env\/[0-9a-f]{64}\.env/g, 'env/<hash>.env')
     + '\n';
 }
 
@@ -445,12 +447,28 @@ describe('deployed configuration', () => {
     expect(buildArgs('Full-ReverbImageFull-Reverb').CONF_PATH).toBe(confPath);
   });
 
-  it('writes the env file with a resource the images wait for', () => {
+  it('uploads the environment once the policies that guard it exist, and starts the services after it', () => {
     const envFile = find('pulumi-nodejs:dynamic:Resource', 'Full-EnvFile.sst.aws.EnvFile');
+    const definitions = normalize(find('aws:ecs/taskDefinition:TaskDefinition', 'Full-WebTask').inputs.containerDefinitions) as any;
+    const objectKey = envFile.inputs.objectKey as string;
 
     expect(envFile.parent).toBe('Full');
     expect(envFile.inputs).toMatchObject({ sourcePath: path.join(ROOT, '.env.dev'), autoInject: true, appUrl: 'https://example.com' });
-    expect(find('docker-build:index:Image', 'Full-WebImageFull-Web').dependsOn).toEqual(['Full-EnvFile.sst.aws.EnvFile']);
+    // The bucket policy names the execution roles, so the roles can't wait
+    // for the upload: the task definition knows the key beforehand.
+    expect(objectKey).toMatch(/^env\/[0-9a-f]{64}\.env$/);
+    expect((definitions.secret ?? definitions)[0].environmentFiles).toEqual([
+      { type: 's3', value: `arn:aws:s3:::${find('aws:s3/bucket:Bucket', 'Full-EnvFiles').inputs.bucket}/${objectKey}` },
+    ]);
+    expect(envFile.dependsOn).toEqual(['Full-EnvFilesPolicy']);
+    expect(find('pulumi-nodejs:dynamic:Resource', 'Vault-RemoteEnv.sst.aws.EnvFile').dependsOn).toEqual(['Vault-EnvFilesPolicy', 'Vault-EnvKeyPolicy']);
+    expect(find('aws:ecs/service:Service', 'Full-WebService').dependsOn).toContain('Full-EnvFile.sst.aws.EnvFile');
+    // The images copy a placeholder, so they don't wait.
+    expect(find('docker-build:index:Image', 'Full-WebImageFull-Web').dependsOn).toBeUndefined();
+  });
+
+  it('writes the env file the images copy, with a resource they wait for, when it stays in the image', () => {
+    expect(find('docker-build:index:Image', 'Baked-WebImageBaked-Web').dependsOn).toEqual(['Baked-EnvFile.sst.aws.EnvFile']);
   });
 
   it('keeps the RemoteEnvVault env file where earlier versions created it', () => {

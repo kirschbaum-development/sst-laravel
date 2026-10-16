@@ -345,6 +345,7 @@
     "name": "Full-pulseService",
     "parent": "Full-pulse",
     "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
       "Full-EnvFilesPolicy",
       "Full-pulse-EnvReadAttachment"
     ],
@@ -380,6 +381,7 @@
     "name": "Full-queueService",
     "parent": "Full-queue",
     "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
       "Full-EnvFilesPolicy"
     ],
     "inputs": {
@@ -414,6 +416,7 @@
     "name": "Full-ReverbService",
     "parent": "Full-Reverb",
     "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
       "Full-EnvFilesPolicy"
     ],
     "inputs": {
@@ -454,6 +457,7 @@
     "name": "Full-WebService",
     "parent": "Full-Web",
     "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
       "Full-EnvFilesPolicy"
     ],
     "inputs": {
@@ -544,7 +548,7 @@
             "environmentFiles": [
               {
                 "type": "s3",
-                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/test.env"
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
               }
             ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
@@ -647,7 +651,7 @@
             "environmentFiles": [
               {
                 "type": "s3",
-                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/test.env"
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
               }
             ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
@@ -750,7 +754,7 @@
             "environmentFiles": [
               {
                 "type": "s3",
-                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/test.env"
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
               }
             ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
@@ -857,7 +861,7 @@
             "environmentFiles": [
               {
                 "type": "s3",
-                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/test.env"
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
               }
             ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
@@ -922,7 +926,7 @@
           {
             "Action": "secretsmanager:GetSecretValue",
             "Effect": "Allow",
-            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Full/multiline-env-??????",
+            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Full/multiline-env/*",
             "Sid": "ReadMultilineValues"
           }
         ],
@@ -1338,32 +1342,6 @@
   },
   {
     "type": "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration",
-    "name": "Full-EnvFilesLifecycle",
-    "parent": "Full",
-    "aliases": [
-      "{\"type\":\"aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2\"}"
-    ],
-    "inputs": {
-      "bucket": "app-dev-fullenvfiles-<random>",
-      "rules": [
-        {
-          "expiration": {
-            "days": 30
-          },
-          "filter": {
-            "tag": {
-              "key": "sst-laravel-superseded",
-              "value": "true"
-            }
-          },
-          "id": "expire-superseded-env-files",
-          "status": "Enabled"
-        }
-      ]
-    }
-  },
-  {
-    "type": "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration",
     "name": "Full-Web-AccessLogsLifecycle",
     "parent": "Full",
     "aliases": [
@@ -1584,9 +1562,6 @@
     "name": "Full-pulseImageFull-pulse",
     "parent": "Full-pulse",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1658,9 +1633,6 @@
     "name": "Full-queueImageFull-queue",
     "parent": "Full-queue",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1732,9 +1704,6 @@
     "name": "Full-ReverbImageFull-Reverb",
     "parent": "Full-Reverb",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1806,9 +1775,6 @@
     "name": "Full-WebImageFull-Web",
     "parent": "Full-Web",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1878,6 +1844,9 @@
     "type": "pulumi-nodejs:dynamic:Resource",
     "name": "Full-EnvFile.sst.aws.EnvFile",
     "parent": "Full",
+    "dependsOn": [
+      "Full-EnvFilesPolicy"
+    ],
     "inputs": {
       "appUrl": "https://example.com",
       "autoInject": true,
@@ -1900,6 +1869,7 @@
         }
       },
       "linkedSecrets": [],
+      "objectKey": "env/<hash>.env",
       "runtimeEnvironment": {
         "FROM_OUTPUT": "yes",
         "REVERB_HOST": "ws.example.com",
@@ -1913,7 +1883,7 @@
         "bucket": "app-dev-fullenvfiles-<random>",
         "partition": "aws",
         "region": "us-east-1",
-        "secretName": "/app/dev/sst-laravel/Full/multiline-env"
+        "secretName": "/app/dev/sst-laravel/Full/multiline-env/Full-EnvFile"
       }
     }
   },
@@ -1938,9 +1908,6 @@
     "aliases": [
       "{\"parent\":\"root stack\"}"
     ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {}
   },
   {
@@ -1949,9 +1916,6 @@
     "parent": "Full",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
     ],
     "inputs": {}
   },
@@ -1962,9 +1926,6 @@
     "aliases": [
       "{\"parent\":\"root stack\"}"
     ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {}
   },
   {
@@ -1973,9 +1934,6 @@
     "parent": "Full",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
     ],
     "inputs": {}
   },

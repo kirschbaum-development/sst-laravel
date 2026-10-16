@@ -185,12 +185,13 @@ To stop SST Laravel from injecting variables for linked resources, set `config.e
 The deploy reads your environment file or `RemoteEnvVault`, adds the variables above, and uploads the result to a private S3 bucket that SST Laravel creates for each component. When a container starts, ECS reads the file and sets the variables, and the container writes them to the app's `.env` too, so `php artisan` commands and code that reads the file work as before. Nothing secret is stored in the container image.
 
 - **Only the services can read the bucket.** Its policy denies reading the files to everyone except the services' ECS execution roles, even users with broad read permissions such as `ReadOnlyAccess`. Public access is blocked and plain HTTP is refused.
-- **Each change gets a new file.** A new environment gives the services a new task definition, so ECS rolls them out, and a rollback gets the environment it was deployed with. Replaced files are deleted after 30 days.
-- **Values that span lines**, such as a Passport private key, go to a Secrets Manager secret instead (`/{app-name}/{stage}/sst-laravel/{component}/multiline-env`), since an ECS environment file can't hold them. It costs about $0.40 a month, and only exists when you have such values.
-- **`${VAR}` references are filled in** the way Laravel fills them in, from the variables in `config.environment.vars` and from earlier lines.
-- **Variables the container image sets**, such as `PHP_MEMORY_LIMIT`, `NGINX_*`, or `AUTORUN_*`, are left out, with a warning in the deploy output. Laravel never let the `.env` override them. To change them, set them in `config.environment.vars`.
+- **Each change gets a new file.** A new environment gives the services a new task definition, so ECS rolls them out, and a rollback gets the environment it was deployed with. A file is kept for 30 days after a deploy replaces it; later deploys delete the older ones.
+- **Values that span lines**, such as a Passport private key, go to a Secrets Manager secret instead (`/{app-name}/{stage}/sst-laravel/{component}/multiline-env/...`), since an ECS environment file can't hold them. It costs about $0.40 a month, and only exists when you have such values.
+- **Empty values** reach the app's `.env`, as `KEY=`. ECS doesn't set variables with empty values from a file, so the app only sees them through the `.env`, the way Laravel read them before.
+- **`${VAR}` references are filled in** the way Laravel fills them in, from the variables in `config.environment.vars` and from earlier lines. A reference to a variable only the container has, such as `${HOSTNAME}` or the image's `${PHP_MEMORY_LIMIT}`, is kept as written, since the deploy can't know its value. Set the value in full, or set the variable in `config.environment.vars`.
+- **Variables the container image sets**, such as `PHP_MEMORY_LIMIT`, `SSL_MODE`, `NGINX_*`, or `AUTORUN_*`, are left out, with a warning in the deploy output. Laravel never let the `.env` override them. To change them, set them in `config.environment.vars`.
 
-Execution roles that you bring with `advanced.executionRole` get a policy attached that lets them read the bucket. With a deploy role of your own, it needs to create the bucket, the IAM policy, and the secret, and to upload to the bucket.
+Execution roles that you bring with `advanced.executionRole` get a policy attached that lets them read the bucket. With a deploy role of your own, it needs to create the bucket, the IAM policy, and the secret, and to upload, tag, list, and delete files in the bucket.
 
 ### Encrypting with your own KMS key
 

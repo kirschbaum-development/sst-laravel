@@ -118,7 +118,8 @@
     "parent": "Vault-Web",
     "dependsOn": [
       "Vault-EnvFilesPolicy",
-      "Vault-EnvKeyPolicy"
+      "Vault-EnvKeyPolicy",
+      "Vault-RemoteEnv.sst.aws.EnvFile"
     ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Vault-ClusterCluster",
@@ -173,7 +174,7 @@
             "environmentFiles": [
               {
                 "type": "s3",
-                "value": "arn:aws:s3:::app-dev-vaultenvfiles-<random>/env/test.env"
+                "value": "arn:aws:s3:::app-dev-vaultenvfiles-<random>/env/<hash>.env"
               }
             ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
@@ -238,7 +239,7 @@
           {
             "Action": "secretsmanager:GetSecretValue",
             "Effect": "Allow",
-            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Vault/multiline-env-??????",
+            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Vault/multiline-env/*",
             "Sid": "ReadMultilineValues"
           }
         ],
@@ -349,6 +350,22 @@
             },
             "Resource": "*",
             "Sid": "ServicesDecryptTheirEnvironment"
+          },
+          {
+            "Action": "kms:Decrypt",
+            "Condition": {
+              "StringEquals": {
+                "kms:CallerAccount": "123456789012",
+                "kms:EncryptionContext:SecretVersionId": "RequestToValidateKeyAccess",
+                "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "*"
+            },
+            "Resource": "*",
+            "Sid": "SecretsManagerChecksKeyAccess"
           }
         ],
         "Version": "2012-10-17"
@@ -421,32 +438,6 @@
     "inputs": {
       "bucket": "app-dev-vaultenvfiles-<random>",
       "forceDestroy": true
-    }
-  },
-  {
-    "type": "aws:s3/bucketLifecycleConfiguration:BucketLifecycleConfiguration",
-    "name": "Vault-EnvFilesLifecycle",
-    "parent": "Vault",
-    "aliases": [
-      "{\"type\":\"aws:s3/bucketLifecycleConfigurationV2:BucketLifecycleConfigurationV2\"}"
-    ],
-    "inputs": {
-      "bucket": "app-dev-vaultenvfiles-<random>",
-      "rules": [
-        {
-          "expiration": {
-            "days": 30
-          },
-          "filter": {
-            "tag": {
-              "key": "sst-laravel-superseded",
-              "value": "true"
-            }
-          },
-          "id": "expire-superseded-env-files",
-          "status": "Enabled"
-        }
-      ]
     }
   },
   {
@@ -533,9 +524,6 @@
     "name": "Vault-WebImageVault-Web",
     "parent": "Vault-Web",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Vault-RemoteEnv.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Vault/web",
@@ -599,12 +587,17 @@
       "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\"}",
       "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\",\"parent\":\"root stack\"}"
     ],
+    "dependsOn": [
+      "Vault-EnvFilesPolicy",
+      "Vault-EnvKeyPolicy"
+    ],
     "inputs": {
       "autoInject": true,
       "envFilePath": "<root>/pkg/@kirschbaum-development/laravel/Vault/deploy/.env",
       "fingerprint": "4052beda9e53f3625a81962228a3dcdbce4e9592f772de9ee120a3a8da8b8e4d",
       "linkedEnvironment": {},
       "linkedSecrets": [],
+      "objectKey": "env/<hash>.env",
       "runtimeEnvironment": {},
       "secretPath": "/app/dev/env",
       "storage": {
@@ -612,7 +605,7 @@
         "kmsKeyArn": "arn:aws:mock:us-east-1:123456789012:Vault-EnvKey",
         "partition": "aws",
         "region": "us-east-1",
-        "secretName": "/app/dev/sst-laravel/Vault/multiline-env"
+        "secretName": "/app/dev/sst-laravel/Vault/multiline-env/Vault-RemoteEnv"
       }
     }
   },
@@ -641,9 +634,6 @@
     "parent": "Vault",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Vault-RemoteEnv.sst.aws.EnvFile"
     ],
     "inputs": {}
   },

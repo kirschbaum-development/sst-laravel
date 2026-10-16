@@ -1,8 +1,4 @@
-import { all, ComponentResource, Input, Output, Resource } from '@pulumi/pulumi';
-import { SUPERSEDED_TAG } from './env-file-resource';
-
-/** Days an env file is kept after a deploy replaces it, to roll back to. */
-export const SUPERSEDED_ENV_FILE_DAYS = 30;
+import { all, ComponentResource, Input, interpolate, Output, Resource } from '@pulumi/pulumi';
 
 /**
  * The bucket policy of the env files: only the services' execution roles,
@@ -38,8 +34,9 @@ export function buildEnvBucketPolicy({ bucketArn, readerArns }: { bucketArn: str
 /**
  * What the services' execution roles need to read their environment: every
  * env file, so a rollback to an earlier task definition still finds its
- * own, and the secret with the values that span lines. SST only grants the
- * current env file, and nothing to an execution role the app brings.
+ * own, and the secrets with the values that span lines (`secretArn` may end
+ * in a wildcard). SST only grants the current env file, and nothing to an
+ * execution role the app brings.
  */
 export function buildEnvReadPolicy({ bucketArn, secretArn }: { bucketArn: string; secretArn: string }) {
   return {
@@ -63,6 +60,12 @@ export interface EnvKeyPolicyOptions {
  * values that span lines. The account keeps managing the key and can
  * encrypt with it, so the deploy can upload, but only the services'
  * execution roles can decrypt, and only through S3 and Secrets Manager.
+ *
+ * Creating a secret with the key, or moving one to it, makes Secrets Manager
+ * check that the caller may decrypt with it: it decrypts a throwaway data key
+ * under the `RequestToValidateKeyAccess` version. That decrypt, which
+ * reveals nothing, is allowed to the account; the secret's own versions use
+ * their real version ids.
  */
 export function buildEnvKeyPolicy({ accountId, partition, region, readerArns }: EnvKeyPolicyOptions) {
   return {
@@ -89,6 +92,20 @@ export function buildEnvKeyPolicy({ accountId, partition, region, readerArns }: 
           ArnEquals: { 'aws:PrincipalArn': readerArns },
         },
       },
+      {
+        Sid: 'SecretsManagerChecksKeyAccess',
+        Effect: 'Allow',
+        Principal: { AWS: '*' },
+        Action: 'kms:Decrypt',
+        Resource: '*',
+        Condition: {
+          StringEquals: {
+            'kms:CallerAccount': accountId,
+            'kms:ViaService': `secretsmanager.${region}.amazonaws.com`,
+            'kms:EncryptionContext:SecretVersionId': 'RequestToValidateKeyAccess',
+          },
+        },
+      },
     ],
   };
 }
@@ -98,8 +115,18 @@ export interface EnvStorage {
   region: Output<string>;
   partition: Output<string>;
   kmsKeyArn?: Output<string>;
-  /** The Secrets Manager secret for the values that span lines. */
-  secretName: string;
+  /**
+   * The Secrets Manager secret for the values that span lines of an
+   * `EnvFile`, by its name, so each has its own.
+   */
+  secretName(envFileName: string): string;
+  /** The env file's ARN, for the services' `environmentFiles`. */
+  objectArn(objectKey: Output<string>): Output<string>;
+  /**
+   * Resolve when the bucket and key policies are in place. The upload waits
+   * for them, so the environment is never readable to more than the services.
+   */
+  policies: Promise<Resource>[];
   /**
    * Resolve when the policies that let a service read its environment are in
    * place. The service waits for them before it starts containers.
@@ -133,15 +160,15 @@ function deferred<T>() {
 /**
  * Creates the private bucket the env files are uploaded to, the policy the
  * services read them with, and with `kms`, the key that encrypts them. S3
- * encrypts every object (SSE-S3) unless the upload names the key. Replaced
- * env files are tagged by the upload and expire after
- * `SUPERSEDED_ENV_FILE_DAYS`. Like SST's own buckets, it is emptied and
- * removed with the stage, unless the app sets `removal: "retain"`.
+ * encrypts every object (SSE-S3) unless the upload names the key. The upload
+ * deletes the env files replaced more than `SUPERSEDED_ENV_FILE_DAYS` ago.
+ * Like SST's own buckets, it is emptied and removed with the stage, unless
+ * the app sets `removal: "retain"`.
  */
 export function createEnvStorage(
   parent: ComponentResource,
   name: string,
-  options: { kms?: boolean; secretName: string },
+  options: { kms?: boolean; secretPrefix: string },
 ): EnvStorage {
   const opts = { parent };
   const accountId = aws.getCallerIdentityOutput({}, opts).accountId;
@@ -161,22 +188,6 @@ export function createEnvStorage(
     opts,
   );
 
-  new aws.s3.BucketLifecycleConfiguration(
-    `${name}-EnvFilesLifecycle`,
-    {
-      bucket: bucket.bucket,
-      rules: [
-        {
-          id: 'expire-superseded-env-files',
-          status: 'Enabled',
-          filter: { tag: { key: SUPERSEDED_TAG, value: 'true' } },
-          expiration: { days: SUPERSEDED_ENV_FILE_DAYS },
-        },
-      ],
-    },
-    opts,
-  );
-
   const readPolicy = new aws.iam.Policy(
     `${name}-EnvRead`,
     {
@@ -184,7 +195,7 @@ export function createEnvStorage(
       policy: all([bucket.arn, partition, region, accountId]).apply(([bucketArn, part, reg, account]) =>
         JSON.stringify(buildEnvReadPolicy({
           bucketArn,
-          secretArn: `arn:${part}:secretsmanager:${reg}:${account}:secret:${options.secretName}-??????`,
+          secretArn: `arn:${part}:secretsmanager:${reg}:${account}:secret:${options.secretPrefix}/*`,
         })),
       ),
     },
@@ -216,7 +227,9 @@ export function createEnvStorage(
     region,
     partition,
     kmsKeyArn: key?.arn,
-    secretName: options.secretName,
+    secretName: (envFileName) => `${options.secretPrefix}/${envFileName}`,
+    objectArn: (objectKey) => interpolate`arn:${partition}:s3:::${bucket.bucket}/${objectKey}`,
+    policies: [bucketPolicy.promise, ...(keyPolicy ? [keyPolicy.promise] : [])],
     readyFor(serviceName, ownRole) {
       const ready = [bucketPolicy.promise, ...(keyPolicy ? [keyPolicy.promise] : [])];
 
@@ -272,14 +285,14 @@ export function createEnvStorage(
   };
 }
 
-/** The env file's place for the `EnvFile` resource. */
-export function envFileStorageInput(storage: EnvStorage) {
+/** The env file's place for the `EnvFile` resource named `envFileName`. */
+export function envFileStorageInput(storage: EnvStorage, envFileName: string) {
   return all([storage.bucket, storage.region, storage.partition, storage.kmsKeyArn]).apply(
     ([bucket, region, partition, kmsKeyArn]) => ({
       bucket,
       region,
       partition,
-      secretName: storage.secretName,
+      secretName: storage.secretName(envFileName),
       ...(kmsKeyArn ? { kmsKeyArn } : {}),
     }),
   );
