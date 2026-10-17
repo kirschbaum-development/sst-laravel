@@ -225,11 +225,9 @@ async function pullChunkedSecrets(
 }
 
 /**
- * Get a deterministic fingerprint for the current secret contents.
+ * A deterministic fingerprint of pulled secrets, `missing` when there are none.
  */
-export async function getSecretsFingerprint(secretPath: string, region?: string): Promise<string> {
-  const secrets = await pullSecrets(secretPath, region);
-
+export function fingerprintSecrets(secrets: Record<string, string> | null): string {
   if (!secrets) {
     return 'missing';
   }

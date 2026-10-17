@@ -116,6 +116,11 @@
     "type": "aws:ecs/service:Service",
     "name": "Vault-WebService",
     "parent": "Vault-Web",
+    "dependsOn": [
+      "Vault-EnvFilesPolicy",
+      "Vault-EnvKeyPolicy",
+      "Vault-RemoteEnv.sst.aws.EnvFile"
+    ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Vault-ClusterCluster",
       "deploymentCircuitBreaker": {
@@ -166,6 +171,12 @@
                 }
               }
             ],
+            "environmentFiles": [
+              {
+                "type": "s3",
+                "value": "arn:aws:s3:::app-dev-vaultenvfiles-<random>/env/<hash>.env"
+              }
+            ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
             "linuxParameters": {
               "initProcessEnabled": false
@@ -185,7 +196,12 @@
               }
             ],
             "pseudoTerminal": true,
-            "secrets": []
+            "secrets": [
+              {
+                "name": "MULTILINE_KEY",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1"
+              }
+            ]
           }
         ]
       },
@@ -204,6 +220,31 @@
       "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Vault-WebTaskRole",
       "trackLatest": true,
       "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/policy:Policy",
+    "name": "Vault-EnvRead",
+    "parent": "Vault",
+    "inputs": {
+      "description": "Reads the environment of the Vault Laravel services (sst-laravel).",
+      "policy": {
+        "Statement": [
+          {
+            "Action": "s3:GetObject",
+            "Effect": "Allow",
+            "Resource": "arn:aws:mock:us-east-1:123456789012:Vault-EnvFiles/env/*",
+            "Sid": "ReadEnvFiles"
+          },
+          {
+            "Action": "secretsmanager:GetSecretValue",
+            "Effect": "Allow",
+            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Vault/multiline-env/*",
+            "Sid": "ReadMultilineValues"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
     }
   },
   {
@@ -231,7 +272,8 @@
         }
       ],
       "managedPolicyArns": [
-        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "arn:aws:mock:us-east-1:123456789012:Vault-EnvRead"
       ],
       "name": "app-dev-VaultWebExecutionRole-<random>"
     }
@@ -256,6 +298,78 @@
       },
       "inlinePolicies": [],
       "name": "app-dev-VaultWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:kms/key:Key",
+    "name": "Vault-EnvKey",
+    "inputs": {
+      "deletionWindowInDays": 7,
+      "description": "Encrypts the environment of the Vault Laravel services (sst-laravel).",
+      "enableKeyRotation": true
+    }
+  },
+  {
+    "type": "aws:kms/keyPolicy:KeyPolicy",
+    "name": "Vault-EnvKeyPolicy",
+    "inputs": {
+      "keyId": "Vault-EnvKey-id",
+      "policy": {
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "NotAction": [
+              "kms:Decrypt",
+              "kms:ReEncryptFrom"
+            ],
+            "Principal": {
+              "AWS": "arn:aws:iam::123456789012:root"
+            },
+            "Resource": "*",
+            "Sid": "AccountManagesTheKeyButCannotDecrypt"
+          },
+          {
+            "Action": "kms:Decrypt",
+            "Condition": {
+              "ArnEquals": {
+                "aws:PrincipalArn": [
+                  "arn:aws:mock:us-east-1:123456789012:Vault-WebExecutionRole"
+                ]
+              },
+              "StringEquals": {
+                "kms:CallerAccount": "123456789012",
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com",
+                  "secretsmanager.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "*"
+            },
+            "Resource": "*",
+            "Sid": "ServicesDecryptTheirEnvironment"
+          },
+          {
+            "Action": "kms:Decrypt",
+            "Condition": {
+              "StringEquals": {
+                "kms:CallerAccount": "123456789012",
+                "kms:EncryptionContext:SecretVersionId": "RequestToValidateKeyAccess",
+                "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+              }
+            },
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "*"
+            },
+            "Resource": "*",
+            "Sid": "SecretsManagerChecksKeyAccess"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
     }
   },
   {
@@ -314,6 +428,79 @@
     }
   },
   {
+    "type": "aws:s3/bucket:Bucket",
+    "name": "Vault-EnvFiles",
+    "parent": "Vault",
+    "aliases": [
+      "{\"type\":\"aws:s3/bucketV2:BucketV2\"}",
+      "{\"type\":\"aws:s3/bucketV2:BucketV2\"}"
+    ],
+    "inputs": {
+      "bucket": "app-dev-vaultenvfiles-<random>",
+      "forceDestroy": true
+    }
+  },
+  {
+    "type": "aws:s3/bucketPolicy:BucketPolicy",
+    "name": "Vault-EnvFilesPolicy",
+    "parent": "Vault",
+    "dependsOn": [
+      "Vault-EnvFilesPublicAccessBlock"
+    ],
+    "inputs": {
+      "bucket": "app-dev-vaultenvfiles-<random>",
+      "policy": {
+        "Statement": [
+          {
+            "Action": [
+              "s3:GetObject",
+              "s3:GetObjectVersion"
+            ],
+            "Condition": {
+              "ArnNotEquals": {
+                "aws:PrincipalArn": [
+                  "arn:aws:mock:us-east-1:123456789012:Vault-WebExecutionRole"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "Principal": "*",
+            "Resource": "arn:aws:mock:us-east-1:123456789012:Vault-EnvFiles/*",
+            "Sid": "DenyReadsExceptTheServices"
+          },
+          {
+            "Action": "s3:*",
+            "Condition": {
+              "Bool": {
+                "aws:SecureTransport": "false"
+              }
+            },
+            "Effect": "Deny",
+            "Principal": "*",
+            "Resource": [
+              "arn:aws:mock:us-east-1:123456789012:Vault-EnvFiles",
+              "arn:aws:mock:us-east-1:123456789012:Vault-EnvFiles/*"
+            ],
+            "Sid": "DenyInsecureTransport"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
+    }
+  },
+  {
+    "type": "aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock",
+    "name": "Vault-EnvFilesPublicAccessBlock",
+    "parent": "Vault",
+    "inputs": {
+      "blockPublicAcls": true,
+      "blockPublicPolicy": true,
+      "bucket": "app-dev-vaultenvfiles-<random>",
+      "ignorePublicAcls": true,
+      "restrictPublicBuckets": true
+    }
+  },
+  {
     "type": "aws:servicediscovery/service:Service",
     "name": "Vault-WebCloudmapService",
     "parent": "Vault-Web",
@@ -337,9 +524,6 @@
     "name": "Vault-WebImageVault-Web",
     "parent": "Vault-Web",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Vault-RemoteEnv.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "CUSTOM_CONF_PATH": "/pkg/@kirschbaum-development/laravel/Vault/web",
@@ -403,13 +587,26 @@
       "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\"}",
       "{\"name\":\"Vault-RemoteEnv.sst.aws.RemoteEnvFile\",\"parent\":\"root stack\"}"
     ],
+    "dependsOn": [
+      "Vault-EnvFilesPolicy",
+      "Vault-EnvKeyPolicy"
+    ],
     "inputs": {
       "autoInject": true,
       "envFilePath": "<root>/pkg/@kirschbaum-development/laravel/Vault/deploy/.env",
       "fingerprint": "4052beda9e53f3625a81962228a3dcdbce4e9592f772de9ee120a3a8da8b8e4d",
       "linkedEnvironment": {},
       "linkedSecrets": [],
-      "secretPath": "/app/dev/env"
+      "objectKey": "env/<hash>.env",
+      "runtimeEnvironment": {},
+      "secretPath": "/app/dev/env",
+      "storage": {
+        "bucket": "app-dev-vaultenvfiles-<random>",
+        "kmsKeyArn": "arn:aws:mock:us-east-1:123456789012:Vault-EnvKey",
+        "partition": "aws",
+        "region": "us-east-1",
+        "secretName": "/app/dev/sst-laravel/Vault/multiline-env/Vault-RemoteEnv"
+      }
     }
   },
   {
@@ -437,9 +634,6 @@
     "parent": "Vault",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Vault-RemoteEnv.sst.aws.EnvFile"
     ],
     "inputs": {}
   },

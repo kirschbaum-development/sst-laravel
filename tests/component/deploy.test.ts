@@ -16,16 +16,16 @@ import { checkImageInputs } from './provider-rpc';
 // Same type and name as the real dynamic resource. Vitest rewrites the
 // dynamic imports in its provider, which Pulumi can't serialize; SST's
 // bundle keeps them native.
-vi.mock('./pkg/@kirschbaum-development/sst-laravel/src/env-file-resource', async () => {
+vi.mock('./pkg/@kirschbaum-development/sst-laravel/src/env-file-resource', async (importOriginal) => {
   const { CustomResource } = await import('@pulumi/pulumi');
 
   class EnvFile extends CustomResource {
     constructor(name: string, args: Record<string, unknown>, opts: pulumi.CustomResourceOptions) {
-      super('pulumi-nodejs:dynamic:Resource', `${name}.sst.aws.EnvFile`, args, opts);
+      super('pulumi-nodejs:dynamic:Resource', `${name}.sst.aws.EnvFile`, { ...args, ssm: undefined, ignoredVariables: undefined }, opts);
     }
   }
 
-  return { EnvFile };
+  return { ...(await importOriginal<object>()), EnvFile };
 });
 
 vi.mock('@aws-sdk/client-secrets-manager', () => ({
@@ -123,10 +123,16 @@ beforeAll(async () => {
       recorded.inputs = args.inputs;
       resources.set(args.name, recorded);
 
+      // What the EnvFile provider returns after uploading the environment.
+      const uploaded = args.type === 'pulumi-nodejs:dynamic:Resource' && args.inputs.storage
+        ? { ssm: { MULTILINE_KEY: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1' } }
+        : {};
+
       return {
         id: `${args.name}-id`,
         state: {
           ...args.inputs,
+          ...uploaded,
           arn: `arn:aws:mock:us-east-1:123456789012:${args.name}`,
           name: args.inputs.name ?? args.name,
           dnsName: `${args.name}.elb.amazonaws.com`,
@@ -187,8 +193,12 @@ beforeAll(async () => {
               ...('parent' in alias ? { parent: alias.parent?.__name ?? 'root stack' } : {}),
             }),
       );
+      // Some dependencies are promises of resources created later.
       const dependsOn = [args.opts.dependsOn ?? []].flat() as any[];
-      recorded.dependsOn = dependsOn.length ? dependsOn.map((resource) => resource.__name).sort() : undefined;
+      recorded.dependsOn = undefined;
+      void Promise.all(dependsOn).then((resolved) => {
+        recorded.dependsOn = resolved.length ? resolved.map((resource) => resource.__name).sort() : undefined;
+      });
       resources.set(args.name, recorded);
       return undefined;
     });
@@ -221,7 +231,7 @@ beforeAll(async () => {
       },
       workers: [
         { name: 'queue', horizon: true, scheduler: true, size: 'small' },
-        { name: 'pulse', tasks: { pulse: { command: 'php artisan pulse:work' } }, advanced: { architecture: 'arm64' } },
+        { name: 'pulse', tasks: { pulse: { command: 'php artisan pulse:work' } }, advanced: { architecture: 'arm64', executionRole: 'pulse-execution-role' } },
       ],
       reverb: { domain: { name: 'ws.example.com', dns: false, cert } },
     });
@@ -229,7 +239,14 @@ beforeAll(async () => {
     // The environment from AWS Secrets Manager.
     new LaravelService('Vault', {
       vpc,
-      config: { environment: { secrets: new RemoteEnvVault('VaultEnv') } },
+      config: { environment: { secrets: new RemoteEnvVault('VaultEnv'), kms: true } },
+      web: {},
+    });
+
+    // The environment copied into the image, as before 0.8.
+    new LaravelService('Baked', {
+      vpc,
+      config: { environment: { file: '.env.dev', inImage: true } },
       web: {},
     });
 
@@ -302,6 +319,8 @@ function snapshot(prefix: string): string {
     .replaceAll(ROOT, '<root>')
     // The random suffix SST adds to physical names (8 of its "pretty" letters).
     .replace(/-[abcdefhkmnorstuvwxz]{8}(?![A-Za-z0-9])/g, '-<random>')
+    // The env file's key hashes the bucket name, random here too.
+    .replace(/env\/[0-9a-f]{64}\.env/g, 'env/<hash>.env')
     + '\n';
 }
 
@@ -428,12 +447,28 @@ describe('deployed configuration', () => {
     expect(buildArgs('Full-ReverbImageFull-Reverb').CONF_PATH).toBe(confPath);
   });
 
-  it('writes the env file with a resource the images wait for', () => {
+  it('uploads the environment once the policies that guard it exist, and starts the services after it', () => {
     const envFile = find('pulumi-nodejs:dynamic:Resource', 'Full-EnvFile.sst.aws.EnvFile');
+    const definitions = normalize(find('aws:ecs/taskDefinition:TaskDefinition', 'Full-WebTask').inputs.containerDefinitions) as any;
+    const objectKey = envFile.inputs.objectKey as string;
 
     expect(envFile.parent).toBe('Full');
     expect(envFile.inputs).toMatchObject({ sourcePath: path.join(ROOT, '.env.dev'), autoInject: true, appUrl: 'https://example.com' });
-    expect(find('docker-build:index:Image', 'Full-WebImageFull-Web').dependsOn).toEqual(['Full-EnvFile.sst.aws.EnvFile']);
+    // The bucket policy names the execution roles, so the roles can't wait
+    // for the upload: the task definition knows the key beforehand.
+    expect(objectKey).toMatch(/^env\/[0-9a-f]{64}\.env$/);
+    expect((definitions.secret ?? definitions)[0].environmentFiles).toEqual([
+      { type: 's3', value: `arn:aws:s3:::${find('aws:s3/bucket:Bucket', 'Full-EnvFiles').inputs.bucket}/${objectKey}` },
+    ]);
+    expect(envFile.dependsOn).toEqual(['Full-EnvFilesPolicy']);
+    expect(find('pulumi-nodejs:dynamic:Resource', 'Vault-RemoteEnv.sst.aws.EnvFile').dependsOn).toEqual(['Vault-EnvFilesPolicy', 'Vault-EnvKeyPolicy']);
+    expect(find('aws:ecs/service:Service', 'Full-WebService').dependsOn).toContain('Full-EnvFile.sst.aws.EnvFile');
+    // The images copy a placeholder, so they don't wait.
+    expect(find('docker-build:index:Image', 'Full-WebImageFull-Web').dependsOn).toBeUndefined();
+  });
+
+  it('writes the env file the images copy, with a resource they wait for, when it stays in the image', () => {
+    expect(find('docker-build:index:Image', 'Baked-WebImageBaked-Web').dependsOn).toEqual(['Baked-EnvFile.sst.aws.EnvFile']);
   });
 
   it('keeps the RemoteEnvVault env file where earlier versions created it', () => {

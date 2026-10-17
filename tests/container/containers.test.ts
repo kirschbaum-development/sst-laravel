@@ -15,7 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { output } from '@pulumi/pulumi';
 import type { LaravelArgs } from '../../laravel-sst';
 import { writeS6TaskFiles } from '../../src/background-tasks';
-import { stageDeploymentScript, stageWorkerConf } from '../../src/build-files';
+import { stageDeploymentScript, stageEnvironmentScript, stageWorkerConf } from '../../src/build-files';
+import { loadEnvFile } from '../../src/dotenv';
 import { buildImage } from '../../src/image';
 import { planServices, resolveReverbArgs, ServicePlan } from '../../src/services';
 
@@ -200,9 +201,14 @@ async function buildPlanImage(app: string, plan: ServicePlan, deployPath: string
   return tag;
 }
 
-const startContainer = (image: string, publish?: number) => {
+const startContainer = (image: string, publish?: number, env: Record<string, string> = {}) => {
   const name = `${prefix}-${containers.length}`;
-  run(['run', '--detach', '--name', name, ...(publish ? ['--publish', `127.0.0.1::${publish}`] : []), image]);
+  run([
+    'run', '--detach', '--name', name,
+    ...(publish ? ['--publish', `127.0.0.1::${publish}`] : []),
+    ...Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]),
+    image,
+  ]);
   containers.push(name);
   return name;
 };
@@ -219,6 +225,7 @@ async function buildApp(name: string, config: LaravelArgs) {
 
   fs.mkdirSync(deployPath, { recursive: true });
   fs.writeFileSync(path.join(deployPath, '.env'), 'APP_ENV=production\n');
+  stageEnvironmentScript(deployPath);
   stageDeploymentScript(context, undefined, deployPath);
   stageWorkerConf(packageRoot, confPath);
 
@@ -307,6 +314,46 @@ describe('application source copy', () => {
     expect(run(['exec', container, 'cat', '/var/www/html/.app-dotfile']).output.trim()).toBe('keep-me');
     expect(run(['exec', container, 'cat', '/var/www/html/.env']).output).toContain('APP_ENV=production');
     expect(run(['exec', container, 'stat', '-c', '%u', '/var/www/html/artisan']).output.trim()).toBe('33');
+  });
+});
+
+describe('environment set by ECS', () => {
+  // What ECS sets from the env file in S3 and the multi-line secret.
+  const variables = {
+    APP_NAME: 'My App',
+    DB_PASSWORD: 'p$ss #1 "q" \\ end',
+    APOSTROPHE: "it's $HOME",
+    TABBED: 'a\tb',
+    PRIVATE_KEY: '-----BEGIN\nabc\n-----END',
+    PLAIN: 'base64:abc=',
+  };
+  // ECS leaves out MAIL_PASSWORD for being empty; only the list names it.
+  const env = { ...variables, SST_LARAVEL_ENV_KEYS: [...Object.keys(variables), 'MAIL_PASSWORD'].join(',') };
+
+  it.each(['web', 'workers[queue]'])('%s writes them to the .env when it starts, readable by www-data only', async (label) => {
+    const container = startContainer(app.images[label], undefined, env);
+
+    const written = await waitFor(() => {
+      const content = run(['exec', container, 'cat', '/var/www/html/.env'], { allowFailure: true }).output;
+      return content.includes('APP_NAME') ? content : undefined;
+    }, 60000, 'the .env to be written');
+
+    // Read back the way Laravel reads it: the same values, nothing else.
+    expect(loadEnvFile(written)).toEqual({ ...variables, MAIL_PASSWORD: '' });
+    expect(run(['exec', container, 'stat', '-c', '%a %u', '/var/www/html/.env']).output.trim()).toBe('600 33');
+  });
+
+  it('reach PHP behind nginx', async () => {
+    const container = startContainer(app.images.web, 8080, env);
+    const port = hostPort(container, 8080);
+    const name = encodeURIComponent('DB_PASSWORD');
+
+    const response = await waitFor(async () => {
+      const result = await httpGet(port, `/env?name=${name}`);
+      return result?.status === 200 ? result : undefined;
+    }, 60000, 'the web container to serve /env');
+
+    expect(response.body).toBe(variables.DB_PASSWORD);
   });
 });
 

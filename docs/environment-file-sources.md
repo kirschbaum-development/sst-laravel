@@ -1,6 +1,6 @@
 # Environment File Sources
 
-`config.environment.file` copies a file into the containers as their `.env`. The deploy reads the file from disk when it starts, so the file can come from wherever your team keeps its values: fetch it in a step before `npx sst-laravel deploy`. This page shows how to fetch it from [S3](#s3), [1Password](#1password), and [a GitHub Actions secret](#a-github-actions-secret), on your machine and in CI.
+`config.environment.file` makes a file the containers' environment. The deploy reads the file from disk when it starts, so the file can come from wherever your team keeps its values: fetch it in a step before `npx sst-laravel deploy`. This page shows how to fetch it from [S3](#s3), [1Password](#1password), and [a GitHub Actions secret](#a-github-actions-secret), on your machine and in CI.
 
 To keep the file in AWS without a fetch step, use [`RemoteEnvVault`](environment-variables.md#aws-secrets-manager-remoteenvvault) instead: the deploy fetches it from AWS Secrets Manager itself.
 

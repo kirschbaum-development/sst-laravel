@@ -48,7 +48,7 @@ export function parseEnvFile(content: string): Record<string, string> {
       continue;
     }
 
-    const key = line.substring(0, equalIndex).trim().replace(/^export\s+/, '');
+    const key = parseEnvKey(line.substring(0, equalIndex));
     let rawValue = line.substring(equalIndex + 1).trimStart();
 
     // A double-quoted value continues until its closing quote. Without one,
@@ -73,6 +73,117 @@ export function parseEnvFile(content: string): Record<string, string> {
   }
 
   return result;
+}
+
+/**
+ * The variables Laravel ends up with when it loads an .env file, for when
+ * they are passed to the containers as plain variables instead of a file.
+ *
+ * Unlike `parseEnvFile`, it follows what phpdotenv does on load (checked
+ * against phpdotenv 5.6): double-quoted values may span lines, a `#` ends an
+ * unquoted value, and `${VAR}` in unquoted and double-quoted values is
+ * replaced with the variable from `environment` (the container's own
+ * variables, which phpdotenv never overwrites) or from an earlier line, and
+ * kept as written when neither has it. What phpdotenv rejects, such as an
+ * unquoted value with whitespace, fails here too.
+ */
+export function loadEnvFile(content: string, environment: Record<string, string> = {}): Record<string, string> {
+  const result: Record<string, string> = {};
+  const reference = /\$\{([A-Za-z0-9_.]+)\}/g;
+  const resolve = (sequence: string, name: string) => environment[name] ?? result[name] ?? sequence;
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const fail = (key: string, problem: string) => {
+    throw new Error(`The value of ${key} in the environment file ${problem}, which Laravel can't read.`);
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed || trimmed.startsWith('#') || !line.includes('=')) {
+      continue;
+    }
+
+    const equalIndex = line.indexOf('=');
+    const key = parseEnvKey(line.substring(0, equalIndex));
+    let rawValue = line.substring(equalIndex + 1).trimStart();
+    let value: string;
+
+    if (rawValue.startsWith('"')) {
+      let last = i;
+
+      while (findClosingDoubleQuote(rawValue) === -1 && last + 1 < lines.length) {
+        rawValue += '\n' + lines[++last];
+      }
+
+      i = last;
+      const end = findClosingDoubleQuote(rawValue);
+
+      if (end === -1) {
+        fail(key, 'has no closing quote');
+      }
+
+      if (!/^\s*(#.*)?$/.test(rawValue.slice(end + 1))) {
+        fail(key, 'has text after its closing quote');
+      }
+
+      value = rawValue.slice(1, end).replace(/\\(.)|\$\{([A-Za-z0-9_.]+)\}/gs, (sequence, char?: string, name?: string) =>
+        name !== undefined ? resolve(sequence, name) : DOUBLE_QUOTED_ESCAPES[char!] ?? sequence);
+    } else if (rawValue.startsWith("'")) {
+      const end = rawValue.indexOf("'", 1);
+
+      if (end === -1) {
+        fail(key, 'has no closing quote on its line');
+      }
+
+      if (!/^\s*(#.*)?$/.test(rawValue.slice(end + 1))) {
+        fail(key, 'has text after its closing quote');
+      }
+
+      value = rawValue.slice(1, end);
+    } else {
+      const unquoted = rawValue.split('#')[0].trim();
+
+      if (/\s/.test(unquoted)) {
+        fail(key, 'has whitespace without quotes');
+      }
+
+      value = unquoted.replace(reference, resolve);
+    }
+
+    if (key) {
+      result[key] = value!;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Writes variables as the env file ECS reads (`environmentFiles`): one
+ * `KEY=VALUE` per line, where everything after the first `=` is the value,
+ * quotes and spaces included. Values that span lines can't be written.
+ */
+export function toEcsEnvFileContent(vars: Record<string, string>): string {
+  return Object.entries(vars)
+    .map(([key, value]) => {
+      if (/[\r\n]/.test(value)) {
+        throw new Error(`${key} spans lines, which an ECS environment file can't hold.`);
+      }
+
+      return `${key}=${value}\n`;
+    })
+    .join('');
+}
+
+/**
+ * The variable's name, without `export`, and without the quotes phpdotenv
+ * allows around it (`"APP_NAME"=Laravel`).
+ */
+function parseEnvKey(rawKey: string): string {
+  const key = rawKey.trim().replace(/^export\s+/, '');
+
+  return /^(["'])(.*)\1$/s.test(key) ? key.slice(1, -1) : key;
 }
 
 function parseEnvValue(rawValue: string): string {

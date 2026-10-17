@@ -1,20 +1,21 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { ComponentResourceOptions, Resource, rootStackResource } from '@pulumi/pulumi';
+import { ComponentResourceOptions, Output, rootStackResource } from '@pulumi/pulumi';
 import { ClusterArgs, Component, Dns, FunctionArgs, Input, ServiceArgs } from './src/sst-platform';
 import { EnvCallback } from './src/laravel-env';
 import { RemoteEnvVault, RemoteEnvVaultArgs } from './src/laravel-env-manager';
 import { getPackagePath } from './src/config';
 import { ensureDockerIgnore } from './src/docker-ignore';
 import { writeS6TaskFiles } from './src/background-tasks';
-import { stageDeploymentScript, stageWorkerConf } from './src/build-files';
-import { prepareEnvironmentFile } from './src/env-file';
+import { stageDeploymentScript, stageEnvironmentScript, stageWorkerConf } from './src/build-files';
+import { EnvironmentFile, prepareEnvironmentFile } from './src/env-file';
+import { createEnvStorage, EnvStorage } from './src/env-storage';
 import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl } from './src/environment';
 import { buildImage, managedImageTransform } from './src/image';
 import { linkResources } from './src/links';
 import { buildLoadBalancerHardening } from './src/load-balancer-transforms';
 import { ClusterNetwork, resolveClusterNetwork, withContainerNetwork } from './src/network';
-import { composeTransforms, disableInitProcess, LaravelAdvancedArgs } from './src/service-args';
+import { composeTransform, composeTransforms, disableInitProcess, LaravelAdvancedArgs, withDependencies } from './src/service-args';
 import { planServices, resolveReverbArgs, ServicePlan } from './src/services';
 import { ServiceSize } from './src/size';
 import type { DeploymentManifest } from './src/deployment';
@@ -63,8 +64,10 @@ interface SharedServiceArgs {
     /** Variables the package adds to every container. */
     injectedEnvironment: Record<string, Input<string | undefined>>;
     vars: NonNullable<NonNullable<LaravelArgs['config']>['environment']>['vars'];
-    /** The resource that writes the env file, which the images copy. */
-    environmentFile?: Resource;
+    /** The resource that provides the environment: a file the images copy, or one in S3. */
+    environmentFile?: EnvironmentFile;
+    /** Where ECS reads the environment from, unless the images carry it. */
+    environmentStorage?: EnvStorage;
 }
 
 export type LaravelDomain = Input<
@@ -742,6 +745,34 @@ export interface LaravelArgs extends ClusterArgs {
              * ```
              */
             secrets?: RemoteEnvVault;
+
+            /**
+             * Where the containers get the variables of `file` or `secrets` from.
+             *
+             * By default the package uploads them to a private S3 bucket, and
+             * ECS sets them when a container starts, so no secret is stored in
+             * the container image. Only the services can read the bucket. The
+             * container also writes them to the app's `.env` when it starts.
+             *
+             * Set to `true` to copy the `.env` into the image instead, the way
+             * versions before 0.7.4 did. Anyone who can pull the image can read
+             * it. This option will be removed in a future version.
+             *
+             * @default `false`
+             */
+            inImage?: boolean;
+
+            /**
+             * Encrypt the environment with a customer-managed KMS key that only
+             * the services can decrypt, so even a principal with access to the
+             * bucket can't read it. Costs about $1 a month per key, and every
+             * decryption is logged in CloudTrail.
+             *
+             * Not used with `inImage`.
+             *
+             * @default `false`
+             */
+            kms?: boolean;
         };
 
         /**
@@ -781,19 +812,34 @@ export class LaravelService extends Component {
 
         fs.mkdirSync(deployPath, { recursive: true });
 
+        const environment = args.config?.environment;
         const reverbEnvironment = buildReverbEnvironment(reverb);
+        const injectedEnvironment = environment?.autoInject !== false ? reverbEnvironment : {};
+        // The environment goes to S3 for ECS, unless there is none, nothing
+        // runs it, or the app keeps it in the image (`sst dev` runs no containers).
+        const environmentStorage =
+            (environment?.file || environment?.secrets) && plans.length > 0 && !environment.inImage && !$dev
+                ? createEnvStorage(this, name, {
+                      kms: environment.kms,
+                      secretPrefix: `/${$app.name}/${$app.stage}/sst-laravel/${name}/multiline-env`,
+                  })
+                : undefined;
+
         const environmentFile = prepareEnvironmentFile({
             parent: this,
             name,
             envFilePath: path.resolve(deployPath, '.env'),
             absSitePath,
-            environment: args.config?.environment,
+            environment,
             links: args.link,
             variables: reverbEnvironment,
             appUrl: getAppUrl(args.web?.domain),
             messages: this._messages,
+            storage: environmentStorage,
+            runtimeEnvironment: buildContainerEnvironment(injectedEnvironment, environment?.vars, {}),
         });
 
+        stageEnvironmentScript(deployPath);
         stageDeploymentScript(
             absSitePath,
             args.config?.deployment?.script as string | undefined,
@@ -831,15 +877,13 @@ export class LaravelService extends Component {
             opcache: args.config?.opcache,
             phpExtensions: args.config?.phpExtensions,
             buildCommands: args.config?.buildCommands,
-            injectedEnvironment:
-                args.config?.environment?.autoInject !== false
-                    ? reverbEnvironment
-                    : {},
-            vars: args.config?.environment?.vars,
+            injectedEnvironment,
+            vars: environment?.vars,
             environmentFile,
+            environmentStorage,
         };
 
-        for (const plan of plans) {
+        const services = plans.map((plan) => {
             const service = this.createService(plan, shared);
 
             if (plan.kind === 'worker') {
@@ -847,7 +891,16 @@ export class LaravelService extends Component {
             } else {
                 this._nodes[plan.kind] = service;
             }
-        }
+
+            return service;
+        });
+
+        // ECS reads the environment with each service's execution role.
+        environmentStorage?.grantReaders(plans.map((plan, index) => ({
+            serviceName: plan.resourceName,
+            executionRole: services[index].nodes.executionRole!,
+            ownRole: plan.serviceArgs.executionRole !== undefined,
+        })));
 
         this.registerOutputs({ _hint: this.messages });
     }
@@ -906,6 +959,12 @@ export class LaravelService extends Component {
                     shared.vars,
                     plan.environment,
                 ),
+                ...(shared.environmentFile?.objectArn
+                    ? {
+                          environmentFiles: [shared.environmentFile.objectArn],
+                          ssm: shared.environmentFile.resource.ssm as Output<Record<string, string>>,
+                      }
+                    : {}),
                 scaling: plan.scaling,
                 loadBalancer: plan.loadBalancer as ServiceArgs['loadBalancer'],
                 dev: {
@@ -913,19 +972,43 @@ export class LaravelService extends Component {
                 },
                 transform: {
                     ...transform,
-                    service: withContainerNetwork(
-                        shared.network,
-                        transform.service,
+                    // Containers start once they can read their environment.
+                    // Only the ECS service waits for the upload: the upload
+                    // waits for the bucket policy, which names the execution
+                    // role the service creates.
+                    service: withDependencies(
+                        shared.environmentStorage && shared.environmentFile
+                            ? [
+                                  shared.environmentFile.resource,
+                                  ...shared.environmentStorage.readyFor(
+                                      plan.resourceName,
+                                      plan.serviceArgs.executionRole !== undefined,
+                                  ),
+                              ]
+                            : [],
+                        withContainerNetwork(shared.network, transform.service),
                     ) as ServiceResourceTransform,
-                    image: managedImageTransform(shared.environmentFile, transform.image),
+                    ...(shared.environmentStorage
+                        ? {
+                              executionRole: composeTransform(
+                                  shared.environmentStorage.executionRoleTransform,
+                                  transform.executionRole,
+                              ),
+                          }
+                        : {}),
+                    // The images copy the .env, unless ECS sets the variables.
+                    image: managedImageTransform(
+                        shared.environmentStorage ? undefined : shared.environmentFile?.resource,
+                        transform.image,
+                    ),
                     taskDefinition: disableInitProcess,
                 },
             },
             {
                 parent: this,
                 aliases: CREATED_WITHOUT_PARENT,
-                dependsOn: shared.environmentFile
-                    ? [shared.environmentFile]
+                dependsOn: shared.environmentFile && !shared.environmentStorage
+                    ? [shared.environmentFile.resource]
                     : [],
             },
         );

@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { CustomResourceOptions, Input, output, Resource } from '@pulumi/pulumi';
-import { composeTransform } from './service-args.js';
+import { appendDependsOn, composeTransform } from './service-args.js';
 
 /** Additional extension names, passed as words to install-php-extensions. */
 export function serializePhpExtensions(extensions: string[]): string {
@@ -34,10 +34,7 @@ export function managedImageTransform(environmentFile?: Resource, user?: unknown
 
     // Keep the user's dependencies as well as the file the build must wait for.
     if (environmentFile) {
-      const dependencies = opts.dependsOn ?? [];
-      opts.dependsOn = Array.isArray(dependencies)
-        ? [...dependencies, environmentFile]
-        : output<Resource | Input<Resource>[]>(dependencies).apply((resolved) => [...(Array.isArray(resolved) ? resolved : [resolved]), environmentFile]);
+      appendDependsOn(opts, [environmentFile]);
     }
 
     return undefined;

@@ -61,6 +61,7 @@
     "@aws-sdk/client-ecr": "^3.0.0",
     "@aws-sdk/client-ecs": "^3.0.0",
     "@aws-sdk/client-iam": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/client-secrets-manager": "^3.0.0",
     "@aws-sdk/client-sts": "^3.0.0",
     "@inquirer/prompts": "^7.0.0",

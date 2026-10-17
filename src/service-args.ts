@@ -1,4 +1,4 @@
-import { Input, output } from '@pulumi/pulumi';
+import { CustomResourceOptions, Input, output, Resource } from '@pulumi/pulumi';
 
 /**
  * Escape hatch for SST experts. Everything in here is passed straight to the
@@ -199,6 +199,39 @@ export function composeTransforms(
   }
 
   return result;
+}
+
+/**
+ * Adds dependencies to a resource's options, keeping the ones it has.
+ */
+export function appendDependsOn(opts: CustomResourceOptions, resources: Input<Resource>[]): void {
+  const dependencies = opts.dependsOn ?? [];
+
+  opts.dependsOn = Array.isArray(dependencies)
+    ? [...dependencies, ...resources]
+    : Resource.isInstance(dependencies)
+      ? [dependencies, ...resources]
+      : output<Resource | Input<Resource>[]>(dependencies).apply((resolved) => [
+          ...(Array.isArray(resolved) ? resolved : [resolved]),
+          ...resources,
+        ]);
+}
+
+/**
+ * Runs the given transform, then makes the resource also wait for
+ * `resources`, so a user's transform can't drop them.
+ */
+export function withDependencies(resources: Input<Resource>[], transform?: unknown): unknown {
+  if (resources.length === 0) {
+    return transform;
+  }
+
+  return (args: object, opts: CustomResourceOptions, name: string): undefined => {
+    composeTransform(() => {}, transform)(args, opts, name);
+    appendDependsOn(opts, resources);
+
+    return undefined;
+  };
 }
 
 /**

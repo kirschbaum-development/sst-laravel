@@ -26,6 +26,57 @@ export function stageDeploymentScript(absSitePath: string, script: string | unde
 }
 
 /**
+ * Runs when a container starts, before ServerSideUp's Laravel automations
+ * (which end the worker image's entrypoint loop) and the deployment script.
+ * When ECS sets the app's variables (`SST_LARAVEL_ENV_KEYS` lists them), it
+ * writes them to `.env` as well, quoted the way `toEnvFileContent` quotes
+ * them, so code and shells that read the file find what they did when the
+ * image carried it. ECS leaves out the variables with empty values, so a
+ * listed variable that isn't set is written empty, as Laravel would have read
+ * it. The images source it, so it returns instead of exiting.
+ */
+export const ENVIRONMENT_SCRIPT = `#!/bin/sh
+# Written by sst-laravel. ECS sets the app's environment variables; this
+# writes them to the app's .env too, on the running container only.
+if [ -n "$SST_LARAVEL_ENV_KEYS" ]; then
+php <<'PHP' || return 1
+<?php
+$lines = [];
+foreach (explode(',', getenv('SST_LARAVEL_ENV_KEYS')) as $key) {
+    if ($key === '') {
+        continue;
+    }
+    $value = getenv($key);
+    if ($value === false) {
+        $value = '';
+    }
+    if (!preg_match('/[\\s"\\'$\\\\\\\\#]/', $value)) {
+        $lines[] = "$key=$value";
+    } elseif (strpbrk($value, "'\\r\\n") === false) {
+        $lines[] = "$key='$value'";
+    } else {
+        $lines[] = $key . '="' . str_replace(['\\\\', '$', '"'], ['\\\\\\\\', '\\\\$', '\\\\"'], $value) . '"';
+    }
+}
+$path = (getenv('APP_BASE_DIR') ?: '/var/www/html') . '/.env';
+if (file_put_contents($path, implode("\\n", $lines) . "\\n") === false || !chmod($path, 0600)) {
+    fwrite(STDERR, "sst-laravel: could not write $path\\n");
+    exit(1);
+}
+PHP
+fi
+`;
+
+/** Writes `ENVIRONMENT_SCRIPT` where the images copy it from. */
+export function stageEnvironmentScript(deployPath: string): void {
+  const destination = path.resolve(deployPath, '45-sst-laravel-env.sh');
+
+  fs.mkdirSync(deployPath, { recursive: true });
+  fs.writeFileSync(destination, ENVIRONMENT_SCRIPT);
+  fs.chmodSync(destination, 0o755);
+}
+
+/**
  * Copies the package's `conf` folder (the s6-overlay installer and the
  * entrypoint) into the build directory the worker image copies it from. The
  * s6 services are generated per service by `writeS6TaskFiles`.

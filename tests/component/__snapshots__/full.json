@@ -344,6 +344,11 @@
     "type": "aws:ecs/service:Service",
     "name": "Full-pulseService",
     "parent": "Full-pulse",
+    "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
+      "Full-EnvFilesPolicy",
+      "Full-pulse-EnvReadAttachment"
+    ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster",
       "deploymentCircuitBreaker": {
@@ -375,6 +380,10 @@
     "type": "aws:ecs/service:Service",
     "name": "Full-queueService",
     "parent": "Full-queue",
+    "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
+      "Full-EnvFilesPolicy"
+    ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster",
       "deploymentCircuitBreaker": {
@@ -406,6 +415,10 @@
     "type": "aws:ecs/service:Service",
     "name": "Full-ReverbService",
     "parent": "Full-Reverb",
+    "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
+      "Full-EnvFilesPolicy"
+    ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster",
       "deploymentCircuitBreaker": {
@@ -443,6 +456,10 @@
     "type": "aws:ecs/service:Service",
     "name": "Full-WebService",
     "parent": "Full-Web",
+    "dependsOn": [
+      "Full-EnvFile.sst.aws.EnvFile",
+      "Full-EnvFilesPolicy"
+    ],
     "inputs": {
       "cluster": "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster",
       "deploymentCircuitBreaker": {
@@ -528,6 +545,12 @@
                 }
               }
             ],
+            "environmentFiles": [
+              {
+                "type": "s3",
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
+              }
+            ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
             "linuxParameters": {
               "initProcessEnabled": false
@@ -547,7 +570,12 @@
               }
             ],
             "pseudoTerminal": true,
-            "secrets": []
+            "secrets": [
+              {
+                "name": "MULTILINE_KEY",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1"
+              }
+            ]
           }
         ]
       },
@@ -620,6 +648,12 @@
                 }
               }
             ],
+            "environmentFiles": [
+              {
+                "type": "s3",
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
+              }
+            ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
             "linuxParameters": {
               "initProcessEnabled": false
@@ -639,7 +673,12 @@
               }
             ],
             "pseudoTerminal": true,
-            "secrets": []
+            "secrets": [
+              {
+                "name": "MULTILINE_KEY",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1"
+              }
+            ]
           }
         ]
       },
@@ -712,6 +751,12 @@
                 }
               }
             ],
+            "environmentFiles": [
+              {
+                "type": "s3",
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
+              }
+            ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
             "linuxParameters": {
               "initProcessEnabled": false
@@ -731,7 +776,12 @@
               }
             ],
             "pseudoTerminal": true,
-            "secrets": []
+            "secrets": [
+              {
+                "name": "MULTILINE_KEY",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1"
+              }
+            ]
           }
         ]
       },
@@ -808,6 +858,12 @@
                 }
               }
             ],
+            "environmentFiles": [
+              {
+                "type": "s3",
+                "value": "arn:aws:s3:::app-dev-fullenvfiles-<random>/env/<hash>.env"
+              }
+            ],
             "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/sst-asset@sha256:test",
             "linuxParameters": {
               "initProcessEnabled": false
@@ -827,7 +883,12 @@
               }
             ],
             "pseudoTerminal": true,
-            "secrets": []
+            "secrets": [
+              {
+                "name": "MULTILINE_KEY",
+                "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:test:MULTILINE_KEY::v1"
+              }
+            ]
           }
         ]
       },
@@ -849,32 +910,35 @@
     }
   },
   {
+    "type": "aws:iam/policy:Policy",
+    "name": "Full-EnvRead",
+    "parent": "Full",
+    "inputs": {
+      "description": "Reads the environment of the Full Laravel services (sst-laravel).",
+      "policy": {
+        "Statement": [
+          {
+            "Action": "s3:GetObject",
+            "Effect": "Allow",
+            "Resource": "arn:aws:mock:us-east-1:123456789012:Full-EnvFiles/env/*",
+            "Sid": "ReadEnvFiles"
+          },
+          {
+            "Action": "secretsmanager:GetSecretValue",
+            "Effect": "Allow",
+            "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:/app/dev/sst-laravel/Full/multiline-env/*",
+            "Sid": "ReadMultilineValues"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
+    }
+  },
+  {
     "type": "aws:iam/role:Role",
     "name": "Full-pulseExecutionRole",
     "parent": "Full-pulse",
     "inputs": {
-      "assumeRolePolicy": {
-        "Statement": [
-          {
-            "Action": "sts:AssumeRole",
-            "Effect": "Allow",
-            "Principal": {
-              "Service": "ecs-tasks.amazonaws.com"
-            },
-            "Sid": "AllowAssumeRole"
-          }
-        ],
-        "Version": "2012-10-17"
-      },
-      "inlinePolicies": [
-        {
-          "name": "inline",
-          "policy": {}
-        }
-      ],
-      "managedPolicyArns": [
-        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
-      ],
       "name": "app-dev-FullpulseExecutionRole-<random>"
     }
   },
@@ -925,7 +989,8 @@
         }
       ],
       "managedPolicyArns": [
-        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "arn:aws:mock:us-east-1:123456789012:Full-EnvRead"
       ],
       "name": "app-dev-FullqueueExecutionRole-<random>"
     }
@@ -977,7 +1042,8 @@
         }
       ],
       "managedPolicyArns": [
-        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "arn:aws:mock:us-east-1:123456789012:Full-EnvRead"
       ],
       "name": "app-dev-FullReverbExecutionRole-<random>"
     }
@@ -1029,7 +1095,8 @@
         }
       ],
       "managedPolicyArns": [
-        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+        "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+        "arn:aws:mock:us-east-1:123456789012:Full-EnvRead"
       ],
       "name": "app-dev-FullWebExecutionRole-<random>"
     }
@@ -1054,6 +1121,14 @@
       },
       "inlinePolicies": [],
       "name": "app-dev-FullWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/rolePolicyAttachment:RolePolicyAttachment",
+    "name": "Full-pulse-EnvReadAttachment",
+    "inputs": {
+      "policyArn": "arn:aws:mock:us-east-1:123456789012:Full-EnvRead",
+      "role": "app-dev-FullpulseExecutionRole-<random>"
     }
   },
   {
@@ -1241,6 +1316,19 @@
   },
   {
     "type": "aws:s3/bucket:Bucket",
+    "name": "Full-EnvFiles",
+    "parent": "Full",
+    "aliases": [
+      "{\"type\":\"aws:s3/bucketV2:BucketV2\"}",
+      "{\"type\":\"aws:s3/bucketV2:BucketV2\"}"
+    ],
+    "inputs": {
+      "bucket": "app-dev-fullenvfiles-<random>",
+      "forceDestroy": true
+    }
+  },
+  {
+    "type": "aws:s3/bucket:Bucket",
     "name": "Full-Web-AccessLogs",
     "parent": "Full",
     "aliases": [
@@ -1271,6 +1359,57 @@
           "status": "Enabled"
         }
       ]
+    }
+  },
+  {
+    "type": "aws:s3/bucketPolicy:BucketPolicy",
+    "name": "Full-EnvFilesPolicy",
+    "parent": "Full",
+    "dependsOn": [
+      "Full-EnvFilesPublicAccessBlock"
+    ],
+    "inputs": {
+      "bucket": "app-dev-fullenvfiles-<random>",
+      "policy": {
+        "Statement": [
+          {
+            "Action": [
+              "s3:GetObject",
+              "s3:GetObjectVersion"
+            ],
+            "Condition": {
+              "ArnNotEquals": {
+                "aws:PrincipalArn": [
+                  "arn:aws:mock:us-east-1:123456789012:Full-ReverbExecutionRole",
+                  "arn:aws:mock:us-east-1:123456789012:Full-WebExecutionRole",
+                  "arn:aws:mock:us-east-1:123456789012:Full-pulseExecutionRole",
+                  "arn:aws:mock:us-east-1:123456789012:Full-queueExecutionRole"
+                ]
+              }
+            },
+            "Effect": "Deny",
+            "Principal": "*",
+            "Resource": "arn:aws:mock:us-east-1:123456789012:Full-EnvFiles/*",
+            "Sid": "DenyReadsExceptTheServices"
+          },
+          {
+            "Action": "s3:*",
+            "Condition": {
+              "Bool": {
+                "aws:SecureTransport": "false"
+              }
+            },
+            "Effect": "Deny",
+            "Principal": "*",
+            "Resource": [
+              "arn:aws:mock:us-east-1:123456789012:Full-EnvFiles",
+              "arn:aws:mock:us-east-1:123456789012:Full-EnvFiles/*"
+            ],
+            "Sid": "DenyInsecureTransport"
+          }
+        ],
+        "Version": "2012-10-17"
+      }
     }
   },
   {
@@ -1316,6 +1455,18 @@
         ],
         "Version": "2012-10-17"
       }
+    }
+  },
+  {
+    "type": "aws:s3/bucketPublicAccessBlock:BucketPublicAccessBlock",
+    "name": "Full-EnvFilesPublicAccessBlock",
+    "parent": "Full",
+    "inputs": {
+      "blockPublicAcls": true,
+      "blockPublicPolicy": true,
+      "bucket": "app-dev-fullenvfiles-<random>",
+      "ignorePublicAcls": true,
+      "restrictPublicBuckets": true
     }
   },
   {
@@ -1411,9 +1562,6 @@
     "name": "Full-pulseImageFull-pulse",
     "parent": "Full-pulse",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1485,9 +1633,6 @@
     "name": "Full-queueImageFull-queue",
     "parent": "Full-queue",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1559,9 +1704,6 @@
     "name": "Full-ReverbImageFull-Reverb",
     "parent": "Full-Reverb",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1633,9 +1775,6 @@
     "name": "Full-WebImageFull-Web",
     "parent": "Full-Web",
     "retainOnDelete": true,
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {
       "buildArgs": {
         "BUILD_COMMANDS": "/bin/sh -c 'printf \"%s\\n\" \"it'\\''s custom\" > /etc/sst-laravel-custom'",
@@ -1705,6 +1844,9 @@
     "type": "pulumi-nodejs:dynamic:Resource",
     "name": "Full-EnvFile.sst.aws.EnvFile",
     "parent": "Full",
+    "dependsOn": [
+      "Full-EnvFilesPolicy"
+    ],
     "inputs": {
       "appUrl": "https://example.com",
       "autoInject": true,
@@ -1727,7 +1869,22 @@
         }
       },
       "linkedSecrets": [],
-      "sourcePath": "<root>/.env.dev"
+      "objectKey": "env/<hash>.env",
+      "runtimeEnvironment": {
+        "FROM_OUTPUT": "yes",
+        "REVERB_HOST": "ws.example.com",
+        "REVERB_PORT": "443",
+        "REVERB_SCHEME": "https",
+        "REVERB_SERVER_HOST": "0.0.0.0",
+        "REVERB_SERVER_PORT": "8080"
+      },
+      "sourcePath": "<root>/.env.dev",
+      "storage": {
+        "bucket": "app-dev-fullenvfiles-<random>",
+        "partition": "aws",
+        "region": "us-east-1",
+        "secretName": "/app/dev/sst-laravel/Full/multiline-env/Full-EnvFile"
+      }
     }
   },
   {
@@ -1751,9 +1908,6 @@
     "aliases": [
       "{\"parent\":\"root stack\"}"
     ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {}
   },
   {
@@ -1762,9 +1916,6 @@
     "parent": "Full",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
     ],
     "inputs": {}
   },
@@ -1775,9 +1926,6 @@
     "aliases": [
       "{\"parent\":\"root stack\"}"
     ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
-    ],
     "inputs": {}
   },
   {
@@ -1786,9 +1934,6 @@
     "parent": "Full",
     "aliases": [
       "{\"parent\":\"root stack\"}"
-    ],
-    "dependsOn": [
-      "Full-EnvFile.sst.aws.EnvFile"
     ],
     "inputs": {}
   },
