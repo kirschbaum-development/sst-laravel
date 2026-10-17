@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createRequire } from 'module';
 import { toEnvFileContent } from '../src/dotenv';
 
 const aws = vi.hoisted(() => ({
@@ -35,11 +36,15 @@ vi.mock('@aws-sdk/client-secrets-manager', () => ({
         throw Object.assign(new Error('denied'), { name: 'AccessDeniedException' });
       }
 
-      if (name === 'CreateSecret') {
-        if (aws.multiline?.deleted) {
-          throw Object.assign(new Error('You can\'t create this secret because a secret with this name is already scheduled for deletion.'), { name: 'InvalidRequestException' });
+      if (name === 'DescribeSecret') {
+        if (!aws.multiline) {
+          throw notFound('ResourceNotFoundException');
         }
 
+        return aws.multiline.deleted ? { DeletedDate: new Date() } : {};
+      }
+
+      if (name === 'CreateSecret') {
         aws.multiline = { name: input.Name, value: input.SecretString, kmsKeyId: input.KmsKeyId, versions: 1 };
         return { ARN: `arn:aws:secretsmanager:us-east-1:123456789012:secret:${input.Name}-AbCdEf`, VersionId: 'v1' };
       }
@@ -74,6 +79,7 @@ vi.mock('@aws-sdk/client-secrets-manager', () => ({
   },
   GetSecretValueCommand: command('GetSecretValue'),
   CreateSecretCommand: command('CreateSecret'),
+  DescribeSecretCommand: command('DescribeSecret'),
   PutSecretValueCommand: command('PutSecretValue'),
   UpdateSecretCommand: command('UpdateSecret'),
   RestoreSecretCommand: command('RestoreSecret'),
@@ -130,7 +136,8 @@ vi.mock('@aws-sdk/client-s3', () => ({
   DeleteObjectCommand: command('DeleteObject'),
 }));
 
-import { buildEnvFileContent, envFileProvider, ResolvedEnvFileInputs } from '../src/env-file-resource';
+import * as pulumi from '@pulumi/pulumi';
+import { buildEnvFileContent, EnvFile, envFileProvider, ResolvedEnvFileInputs } from '../src/env-file-resource';
 
 const HEADER = '# --- SST-LARAVEL AUTO-INJECTED VARIABLES ---';
 
@@ -384,5 +391,25 @@ describe('envFileProvider with storage', () => {
 
     expect(supersededAt('env/first.env')).toBeDefined();
     expect(aws.deletedSecrets).toEqual([`${outs.secretArn}:7`]);
+  });
+});
+
+describe('EnvFile', () => {
+  it('exposes the outputs the provider returns', async () => {
+    const ssm = { PRIVATE_KEY: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:s-AbCdEf:PRIVATE_KEY::v1' };
+    // Vite's module transform keeps Pulumi from serializing the provider.
+    const closure = createRequire(import.meta.url)('@pulumi/pulumi/runtime/closure/serializeClosure');
+    vi.spyOn(closure, 'serializeFunction').mockResolvedValue({ text: '', containsSecrets: false });
+    pulumi.runtime.setMocks({
+      newResource: (args) => ({ id: 'env', state: { ...args.inputs, ssm, ignoredVariables: ['PHP_MEMORY_LIMIT'] } }),
+      call: (args) => args.inputs,
+    });
+
+    const envFile = new EnvFile('App-EnvFile', { envFilePath: '/unused', fingerprint: 'f' });
+    const value = <T>(output: pulumi.Output<T>) => new Promise<T>((resolve) => output.apply(resolve));
+
+    // A class field would reset them after Pulumi sets them.
+    expect(await value(envFile.ssm)).toEqual(ssm);
+    expect(await value(envFile.ignoredVariables)).toEqual(['PHP_MEMORY_LIMIT']);
   });
 });

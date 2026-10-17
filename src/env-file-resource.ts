@@ -151,10 +151,14 @@ export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, En
  * depend on it, so they are built after it is written.
  */
 export class EnvFile extends dynamic.Resource {
+  // `declare`, so no class field is emitted: with ES2022 class fields, the
+  // default for esbuild, which SST builds the app with, a field would reset
+  // the output Pulumi sets in the constructor to undefined.
+
   /** The values that span lines, for the services' `ssm`. */
-  public readonly ssm!: Output<Record<string, string> | undefined>;
+  declare public readonly ssm: Output<Record<string, string> | undefined>;
   /** Variables of the env file left out because the images set them. */
-  public readonly ignoredVariables!: Output<string[] | undefined>;
+  declare public readonly ignoredVariables: Output<string[] | undefined>;
 
   constructor(name: string, args: EnvFileInputs, opts?: CustomResourceOptions) {
     super(
@@ -399,47 +403,34 @@ async function envFileObjectExists(outputs: EnvFileOutputs) {
   return (response.Contents ?? []).some((object) => object.Key === outputs.objectKey);
 }
 
+/**
+ * Writes the values that span lines as a new version of the secret. Its
+ * state is read first (`DeletedDate` is set while it is scheduled for
+ * deletion), rather than told apart by error messages: a secret removed
+ * recently, with a stage removed and deployed again, is still in its
+ * recovery window and can't be created again, so it is restored.
+ */
 async function putMultilineSecret(storage: EnvFileStorage, values: Record<string, string>, keyChanged: boolean) {
-  const { SecretsManagerClient, CreateSecretCommand, PutSecretValueCommand, RestoreSecretCommand, UpdateSecretCommand } = await import(
-    '@aws-sdk/client-secrets-manager'
-  );
+  const {
+    SecretsManagerClient, CreateSecretCommand, DescribeSecretCommand, PutSecretValueCommand, RestoreSecretCommand, UpdateSecretCommand,
+  } = await import('@aws-sdk/client-secrets-manager');
   const client = new SecretsManagerClient({ region: storage.region });
   const secretString = JSON.stringify(values);
-
-  const put = async (moveKey: boolean) => {
-    if (moveKey) {
-      await client.send(new UpdateSecretCommand({
-        SecretId: storage.secretName,
-        KmsKeyId: storage.kmsKeyArn ?? 'alias/aws/secretsmanager',
-      }));
-    }
-
-    const response = await client.send(new PutSecretValueCommand({ SecretId: storage.secretName, SecretString: secretString }));
-
-    return { arn: response.ARN!, versionId: response.VersionId! };
-  };
-
-  // Removed recently (a stage removed and deployed again), and still in its
-  // recovery window: bring it back, with the key it should have now.
-  const restore = async () => {
-    await client.send(new RestoreSecretCommand({ SecretId: storage.secretName }));
-
-    return put(true);
-  };
+  let moveKey = keyChanged;
 
   try {
-    return await put(keyChanged);
-  } catch (error) {
-    if (isMarkedForDeletion(error)) {
-      return restore();
-    }
+    const secret = await client.send(new DescribeSecretCommand({ SecretId: storage.secretName }));
 
+    if (secret.DeletedDate) {
+      await client.send(new RestoreSecretCommand({ SecretId: storage.secretName }));
+      // It keeps the key it was created with.
+      moveKey = true;
+    }
+  } catch (error) {
     if (!isNotFound(error)) {
       throw error;
     }
-  }
 
-  try {
     const response = await client.send(new CreateSecretCommand({
       Name: storage.secretName,
       Description: 'The environment variables of a Laravel app that span lines (sst-laravel).',
@@ -448,18 +439,18 @@ async function putMultilineSecret(storage: EnvFileStorage, values: Record<string
     }));
 
     return { arn: response.ARN!, versionId: response.VersionId! };
-  } catch (error) {
-    if (!isMarkedForDeletion(error)) {
-      throw error;
-    }
   }
 
-  return restore();
-}
+  if (moveKey) {
+    await client.send(new UpdateSecretCommand({
+      SecretId: storage.secretName,
+      KmsKeyId: storage.kmsKeyArn ?? 'alias/aws/secretsmanager',
+    }));
+  }
 
-function isMarkedForDeletion(error: unknown): boolean {
-  return !!error && typeof error === 'object' && 'name' in error && error.name === 'InvalidRequestException'
-    && 'message' in error && /(marked|scheduled) for deletion/i.test(String(error.message));
+  const response = await client.send(new PutSecretValueCommand({ SecretId: storage.secretName, SecretString: secretString }));
+
+  return { arn: response.ARN!, versionId: response.VersionId! };
 }
 
 async function deleteMultilineSecret(storage: EnvFileStorage, secretArn: string) {

@@ -191,7 +191,7 @@ The deploy reads your environment file or `RemoteEnvVault`, adds the variables a
 - **`${VAR}` references are filled in** the way Laravel fills them in, from the variables in `config.environment.vars` and from earlier lines. A reference to a variable only the container has, such as `${HOSTNAME}` or the image's `${PHP_MEMORY_LIMIT}`, is kept as written, since the deploy can't know its value. Set the value in full, or set the variable in `config.environment.vars`.
 - **Variables the container image sets**, such as `PHP_MEMORY_LIMIT`, `SSL_MODE`, `NGINX_*`, or `AUTORUN_*`, are left out, with a warning in the deploy output. Laravel never let the `.env` override them. To change them, set them in `config.environment.vars`.
 
-Execution roles that you bring with `advanced.executionRole` get a policy attached that lets them read the bucket. With a deploy role of your own, it needs to create the bucket, the IAM policy, and the secret, and to upload, tag, list, and delete files in the bucket.
+Execution roles that you bring with `advanced.executionRole` get a policy attached that lets them read the bucket. With a deploy role of your own, it needs to create, describe, and restore the secret, create the bucket and the IAM policy, and upload, tag, list, and delete files in the bucket.
 
 ### Encrypting with your own KMS key
 
