@@ -99,7 +99,7 @@ execution roles can read, ECS sets it when a container starts, and the
 container writes it to `.env`. Multi-line values go to a Secrets Manager
 secret. Variables the image sets (`PHP_*`, `NGINX_*`, `AUTORUN_*`) are left out;
 set them in `config.environment.vars`. `config.environment.inImage: true`
-copies the `.env` into the image as before 0.8 (deprecated).
+copies the `.env` into the image as before 0.7.4 (deprecated).
 
 Image customization applies to web, all workers, and Reverb. `phpExtensions`
 takes extension names only. `buildCommands` runs after extensions and before

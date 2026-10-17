@@ -762,7 +762,7 @@ new LaravelService("Laravel", {
 ##### `config.environment.inImage`
 - **Type:** `boolean`
 - **Default:** `false`
-- **Description:** Where the containers get the variables of `file` or `secrets` from. By default the package uploads them to a private S3 bucket, and ECS sets them when a container starts, so no secret is stored in the container image. Only the services can read the bucket. The container also writes them to the app's `.env` when it starts. Set to `true` to copy the `.env` into the image instead, the way versions before 0.8 did. Anyone who can pull the image can read it. This option will be removed in a future version. See [How the containers get the variables](environment-variables.md#how-the-containers-get-the-variables).
+- **Description:** Where the containers get the variables of `file` or `secrets` from. By default the package uploads them to a private S3 bucket, and ECS sets them when a container starts, so no secret is stored in the container image. Only the services can read the bucket. The container also writes them to the app's `.env` when it starts. Set to `true` to copy the `.env` into the image instead, the way versions before 0.7.4 did. Anyone who can pull the image can read it. This option will be removed in a future version. See [How the containers get the variables](environment-variables.md#how-the-containers-get-the-variables).
 
 ##### `config.environment.kms`
 - **Type:** `boolean`

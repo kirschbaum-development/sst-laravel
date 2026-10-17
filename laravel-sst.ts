@@ -755,7 +755,7 @@ export interface LaravelArgs extends ClusterArgs {
              * container also writes them to the app's `.env` when it starts.
              *
              * Set to `true` to copy the `.env` into the image instead, the way
-             * versions before 0.8 did. Anyone who can pull the image can read
+             * versions before 0.7.4 did. Anyone who can pull the image can read
              * it. This option will be removed in a future version.
              *
              * @default `false`

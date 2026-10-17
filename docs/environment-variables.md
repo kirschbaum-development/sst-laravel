@@ -211,6 +211,6 @@ const app = new LaravelService('MyLaravelApp', {
 
 ### Keeping the environment in the image
 
-Versions before 0.8 copied the environment into the container image as its `.env`, where anyone who can pull the image can read it. To keep doing that for now, set `config.environment.inImage` to `true`. The option will be removed in a future version.
+Versions before 0.7.4 copied the environment into the container image as its `.env`, where anyone who can pull the image can read it. To keep doing that for now, set `config.environment.inImage` to `true`. The option will be removed in a future version.
 
 Images built by those versions still contain the environment. After upgrading, rotate the secrets that were in it, and delete the old images from ECR when you no longer need to roll back to them.
