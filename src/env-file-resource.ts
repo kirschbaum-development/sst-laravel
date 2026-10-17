@@ -116,7 +116,7 @@ export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, En
   async create(inputs) {
     return {
       id: `${inputs.secretPath ?? inputs.sourcePath ?? ''}:${inputs.envFilePath}`,
-      outs: await writeEnvironment(inputs),
+      outs: withoutUndefined(await writeEnvironment(inputs)),
     };
   },
 
@@ -129,7 +129,7 @@ export const envFileProvider: dynamic.ResourceProvider<ResolvedEnvFileInputs, En
   },
 
   async update(_, olds, news) {
-    return { outs: await writeEnvironment(news, olds) };
+    return { outs: withoutUndefined(await writeEnvironment(news, olds)) };
   },
 
   async delete(_, olds) {
@@ -596,6 +596,28 @@ export function buildEnvFileContent(source: EnvFileSource, inputs: ResolvedEnvFi
 
 function hasOwnVariable(vars: Record<string, string>, key: string) {
   return Object.prototype.hasOwnProperty.call(vars, key);
+}
+
+/**
+ * The outputs without the properties that have no value, such as `secretArn`
+ * when no value spans lines: the dynamic provider host sends the outputs to
+ * the engine as a protobuf Struct, which can't hold `undefined` and fails the
+ * deploy with "Unexpected struct type".
+ */
+function withoutUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined).map(withoutUndefined) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined)
+        .map(([key, item]) => [key, withoutUndefined(item)]),
+    ) as T;
+  }
+
+  return value;
 }
 
 function withoutOutputs(outputs: EnvFileOutputs): ResolvedEnvFileInputs {

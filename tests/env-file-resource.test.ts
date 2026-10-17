@@ -348,6 +348,27 @@ describe('envFileProvider with storage', () => {
     expect([...aws.objects.keys()].sort()).toEqual(['env/first.env', 'env/old-but-current-elsewhere.env', 'env/replaced-recently.env']);
   });
 
+  it('returns outputs the dynamic provider host can send, with or without values that span lines', async () => {
+    // How the host sends them to the engine (@pulumi/pulumi cmd/dynamic-provider).
+    const pulumiRequire = createRequire(createRequire(import.meta.url).resolve('@pulumi/pulumi'));
+    const { Struct } = pulumiRequire('google-protobuf/google/protobuf/struct_pb');
+    const send = (outs: unknown) => Struct.fromJavaScript(outs).toJavaScript();
+
+    const singleLine = s3Inputs('APP_KEY=base64:x');
+    const { outs: created } = await envFileProvider.create!(singleLine);
+    expect(created.secretArn).toBeUndefined();
+    expect(send(created)).toMatchObject({ ssm: {}, objectKey: 'env/first.env' });
+
+    aws.secrets = { APP_KEY: 'base64:vault' };
+    const vault = { envFilePath: '/unused', secretPath: '/app/production/env', fingerprint: 'f', storage, objectKey: 'env/vault.env' };
+    expect(send((await envFileProvider.create!(vault)).outs)).toMatchObject({ ssm: {} });
+
+    // From values that span lines to none: the secret is kept for its ARN.
+    const { outs: multiline } = await envFileProvider.create!(s3Inputs(source, 'env/multi.env'));
+    const { outs: updated } = await envFileProvider.update!('id', multiline, { ...singleLine, objectKey: 'env/second.env' });
+    expect(send(updated)).toMatchObject({ ssm: {}, secretArn: multiline.secretArn });
+  });
+
   it('re-uploads when the file is gone, and leaves an unchanged environment alone', async () => {
     const inputs = s3Inputs('APP_KEY=x');
     const { outs } = await envFileProvider.create!(inputs);
