@@ -79,7 +79,7 @@ export function buildReverbEnvironment(reverb?: ResolvedReverbArgs): Environment
 export function buildContainerEnvironment(
   injected: EnvironmentVariables,
   vars: Input<Record<string, Input<string>>> | undefined,
-  service: Record<string, string>,
+  service: Input<Record<string, string>>,
 ): Output<Record<string, string>> {
   return all([injected, vars ?? {}, service]).apply(([injectedValues, varsValues, serviceValues]) =>
     Object.fromEntries(

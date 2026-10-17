@@ -128,9 +128,12 @@ web: {
 
 Only add these when the user asks. `ingressCidrs` blocks every other address,
 so confirm the ranges first. `loadBalancer.accessLogs` is not `web.accessLogs`
-(nginx logs in CloudWatch). `loadBalancer` only takes these three keys; any
-other key fails the deploy. To define the load balancer itself (listeners,
-ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
+(nginx logs in CloudWatch). Enabling ALB access logs on web disables nginx
+access logs by default; set `web.accessLogs: true` to keep both. An explicit
+`web.accessLogs` always wins; ALB `{ enabled: false }` leaves nginx logs on by
+default. Error/application logs are unaffected. `loadBalancer` only takes
+these three keys; any other key fails the deploy. To define the load balancer
+itself (listeners, ports), use `advanced.loadBalancer`. Guide: `load-balancer.md`.
 
 ## Before deploying
 

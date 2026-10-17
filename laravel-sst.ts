@@ -252,7 +252,8 @@ export interface LaravelLoadBalancerArgs {
      * bucket, prefix, and retention.
      *
      * Not the same as `web.accessLogs`, which is about the nginx logs the
-     * container sends to CloudWatch.
+     * container sends to CloudWatch. Enabling this on `web` disables nginx
+     * access logs by default; set `web.accessLogs: true` to keep both.
      *
      * Off by default, since it creates a bucket and adds storage cost to
      * every stage.
@@ -561,10 +562,15 @@ export interface LaravelWebArgs
      * serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`). Error logs and
      * the Laravel application logs are unaffected.
      *
+     * Defaults to `false` when `web.loadBalancer.accessLogs` is enabled,
+     * `true` otherwise. Set this explicitly to keep or silence nginx access
+     * logs regardless of the load balancer setting. An access-log config with
+     * `enabled: false` does not disable nginx access logs.
+     *
      * Only the web container runs nginx, so this has no effect on workers or
      * the Reverb service.
      *
-     * @default `true`
+     * @default `false` when load balancer access logs are enabled, `true` otherwise
      *
      * @example
      * ```js

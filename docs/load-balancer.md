@@ -113,7 +113,7 @@ const app = new LaravelService('MyLaravelApp', {
 
 The bucket is private and only accepts HTTPS requests. Its policy lets Elastic Load Balancing deliver logs, and only for the load balancers of your account and region. It uses the S3 default encryption (SSE-S3). A load balancer can't deliver logs to a bucket encrypted with a KMS key.
 
-This is not the same as [`web.accessLogs`](web.md#access-logs), which is about the nginx logs the web container sends to CloudWatch.
+Enabling this on `web` disables nginx access logs by default, keeping request-log noise out of CloudWatch. Error logs and Laravel application logs stay unchanged. Set [`web.accessLogs: true`](web.md#access-logs) to keep nginx access logs as well, for example for live request debugging. An access-log config with `enabled: false` does not disable nginx logging.
 
 Pass an object to change the defaults:
 

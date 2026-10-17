@@ -73,7 +73,9 @@ This has no effect when no `domain` is set, or when you set `web.advanced.loadBa
 
 ## Access logs
 
-The web container runs nginx (`serversideup/php:*-fpm-nginx`), which logs every request, including the load balancer health-check pings, to stdout, where it ends up in CloudWatch. To silence those access logs, set `accessLogs: false`:
+The web container runs nginx (`serversideup/php:*-fpm-nginx`), which logs every request, including the load balancer health-check pings, to stdout, where it ends up in CloudWatch. These access logs are on by default, unless you enable [`web.loadBalancer.accessLogs`](load-balancer.md#access-logs-in-s3). With load balancer logs going to S3, nginx access logs default to off to avoid mixing duplicate request logs with application logs in CloudWatch. A load balancer access-log config with `enabled: false` leaves nginx logging on by default.
+
+Set `accessLogs` explicitly to override that default. To silence nginx access logs regardless of the load balancer setting:
 
 ```js
 const app = new LaravelService('MyLaravelApp', {
@@ -85,7 +87,18 @@ const app = new LaravelService('MyLaravelApp', {
 
 This points the serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`. Error logs and the Laravel application logs are unaffected. Only the web container runs nginx, so this has no effect on workers or the Reverb service.
 
-The load balancer keeps its own access logs. To ship those to S3, see [Access logs in S3](load-balancer.md#access-logs-in-s3).
+To keep nginx access logs in CloudWatch as well as load balancer logs in S3:
+
+```js
+const app = new LaravelService('MyLaravelApp', {
+  web: {
+    accessLogs: true,
+    loadBalancer: { accessLogs: true },
+  },
+});
+```
+
+Keeping both can help with live request debugging in CloudWatch or requests sent directly to a container. The logs are not identical: load balancer logs include requests that never reach nginx, while nginx logs include health-check pings. AWS delivers S3 load balancer logs in roughly five-minute batches on a best-effort basis, not as a complete accounting of every request. See [AWS access log delivery](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html).
 
 ## Load balancer hardening
 

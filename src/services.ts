@@ -53,7 +53,7 @@ export interface ServicePlan {
   /** The block's own `advanced.transform`. */
   transform?: Record<string, unknown>;
   /** Container variables for this service only, applied over the shared ones. */
-  environment: Record<string, string>;
+  environment: Input<Record<string, string>>;
   devCommand: string;
 }
 
@@ -197,7 +197,10 @@ export function planServices(name: string, args: LaravelArgs, options: PlanServi
           },
       loadBalancerOptions: web.loadBalancer,
       transform,
-      environment: buildWebServerEnvironment({ accessLogs: web.accessLogs }),
+      environment: buildWebServerEnvironment({
+        accessLogs: web.accessLogs,
+        loadBalancerAccessLogs: web.loadBalancer?.accessLogs,
+      }),
       devCommand: `php ${sitePath}/artisan serve`,
     });
   }

@@ -303,8 +303,8 @@ web: {
 
 #### `web.accessLogs`
 - **Type:** `boolean`
-- **Default:** `true`
-- **Description:** Stream the nginx access logs from the web container to CloudWatch. The web container runs nginx (`serversideup/php:*-fpm-nginx`), which logs every request — including the load balancer health-check pings — to stdout. Set to `false` to silence those access logs (points the serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`). Error logs and the Laravel application logs are unaffected. Only the web container runs nginx, so this has no effect on workers or the Reverb service.
+- **Default:** `false` when `web.loadBalancer.accessLogs` is enabled, `true` otherwise.
+- **Description:** Stream the nginx access logs from the web container to CloudWatch. The web container runs nginx (`serversideup/php:*-fpm-nginx`), which logs every request — including the load balancer health-check pings — to stdout. Set to `false` to silence those access logs (points the serversideup `NGINX_ACCESS_LOG` variable at `/dev/null`), or `true` to keep them even with load balancer access logs enabled. An explicit value overrides the default; an ALB access-log config with `enabled: false` leaves nginx logs on by default. Error logs and the Laravel application logs are unaffected. Only the web container runs nginx, so this has no effect on workers or the Reverb service.
 
 **Example:**
 ```typescript
@@ -372,7 +372,7 @@ web: {
 ##### `web.loadBalancer.accessLogs`
 - **Type:** `boolean | { bucket?: Input<string> | { name: Input<string> }; prefix?: Input<string>; enabled?: Input<boolean>; retentionDays?: number | false }`
 - **Default:** `false`
-- **Description:** Ship the load balancer access logs to an S3 bucket. Set to `true` to let the package create the bucket, or pass an object to choose the bucket, prefix, and retention. Not the same as `web.accessLogs`, which is about the nginx logs the container sends to CloudWatch. Off by default, since it creates a bucket and adds storage cost to every stage. See [Access logs in S3](load-balancer.md#access-logs-in-s3).
+- **Description:** Ship the load balancer access logs to an S3 bucket. Set to `true` to let the package create the bucket, or pass an object to choose the bucket, prefix, and retention. Enabling this on `web` disables nginx access logs by default; set `web.accessLogs: true` to keep both. Error logs and Laravel application logs are unaffected. Off by default, since it creates a bucket and adds storage cost to every stage. See [Access logs in S3](load-balancer.md#access-logs-in-s3).
   - `bucket`: An existing S3 bucket to deliver the logs to: an `sst.aws.Bucket` or a bucket name. When omitted, the package creates a dedicated bucket with public access blocked and the Elastic Load Balancing log-delivery policy attached. It uses the S3 default encryption (SSE-S3), since ELB cannot deliver logs to a bucket encrypted with a KMS key. When you bring your own bucket, you own its bucket policy. The package does not attach one, because a bucket can only have a single policy.
   - `prefix`: S3 key prefix the logs are delivered under. Leading and trailing slashes are stripped, since ELB rejects them. The prefix must not include the reserved `AWSLogs` path segment.
   - `enabled`: Whether the load balancer ships access logs. Set to `false` to stop shipping logs while keeping the bucket and the logs already in it. Defaults to `true`.

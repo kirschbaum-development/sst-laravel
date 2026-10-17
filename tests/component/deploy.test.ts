@@ -224,7 +224,6 @@ beforeAll(async () => {
       web: {
         size: 'medium',
         horizon: true,
-        accessLogs: false,
         healthCheck: { path: '/up' },
         domain: { name: 'example.com', dns: false, cert },
         loadBalancer: { ingressCidrs: ['10.0.0.0/8', '2400:cb00::/32'], accessLogs: true },

@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { output } from '@pulumi/pulumi';
+import type { LaravelLoadBalancerArgs } from '../laravel-sst';
+import { buildContainerEnvironment } from '../src/environment';
 import { planServices, resolveReverbArgs } from '../src/services';
 
 const plan = (args: Record<string, unknown>) =>
@@ -80,6 +83,33 @@ describe('planServices', () => {
 
     expect(plans[0].environment).toEqual({ NGINX_ACCESS_LOG: '/dev/null' });
     expect(plans[1].environment).toEqual({});
+  });
+
+  it.each<{
+    alb: LaravelLoadBalancerArgs['accessLogs'];
+    nginx?: boolean;
+    silenced: boolean;
+  }>([
+    { alb: undefined, silenced: false },
+    { alb: false, silenced: false },
+    { alb: true, silenced: true },
+    { alb: {}, silenced: true },
+    { alb: { enabled: false }, silenced: false },
+    { alb: { enabled: Promise.resolve(false) }, silenced: false },
+    { alb: { enabled: output(true) }, silenced: true },
+    { alb: true, nginx: true, silenced: false },
+    { alb: { enabled: output(true) }, nginx: true, silenced: false },
+    { alb: { enabled: false }, nginx: false, silenced: true },
+  ])('defaults nginx logs from ALB logging, with an explicit override (case %#)', async ({ alb, nginx, silenced }) => {
+    const [web] = plan({ web: { accessLogs: nginx, loadBalancer: { accessLogs: alb } } });
+    const environment = await new Promise<Record<string, string>>((resolve) =>
+      buildContainerEnvironment({ LOG_CHANNEL: 'stderr' }, undefined, web.environment).apply(resolve),
+    );
+
+    expect(environment).toEqual({
+      LOG_CHANNEL: 'stderr',
+      ...(silenced ? { NGINX_ACCESS_LOG: '/dev/null' } : {}),
+    });
   });
 
   it('warns about deprecated keys with the block label', () => {
