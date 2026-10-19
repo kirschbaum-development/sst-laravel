@@ -27,6 +27,8 @@ export interface EnvironmentFileOptions {
   /** Variables added after the linked resources' (Reverb's). */
   variables: Record<string, Input<string | undefined>>;
   appUrl?: Input<string | undefined>;
+  /** `LOG_STDERR_FORMATTER`, added when the source sets none. */
+  logFormatter?: string;
   /** Notes for the deploy output. */
   messages: string[];
   /**
@@ -101,6 +103,7 @@ export function prepareEnvironmentFile(options: EnvironmentFileOptions): Environ
     envFilePath,
     autoInject,
     appUrl: options.appUrl,
+    ...(options.logFormatter ? { logFormatter: options.logFormatter } : {}),
     linkedEnvironment,
     linkedSecrets,
     ...(options.storage

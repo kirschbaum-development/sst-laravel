@@ -1,117 +1,100 @@
 import { Command } from 'commander';
-import { ECSClient, DescribeTaskDefinitionCommand } from '@aws-sdk/client-ecs';
-import { spawn } from 'child_process';
-import { findCluster, findTask } from '../utils/ecs.js';
-import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
+import { APP_REGION_OPTION_HELP } from '../utils/aws.js';
+import { CliError, exitWithError, info, isInteractive } from '../utils/cli.js';
+import {
+  fetchLogLines,
+  followLogLines,
+  formatLogLine,
+  joinStackTraces,
+  LogLine,
+  logLineJson,
+} from '../utils/log-events.js';
+import { selectLogSources } from '../utils/log-sources.js';
+import { resolveStageLogs } from '../utils/stage-logs.js';
+import { formatWindow, resolveTimeWindow } from '../utils/time.js';
+
+export { stripAnsi } from '../utils/log-events.js';
 
 interface LogsOptions {
   stage?: string;
   cluster?: string;
   region?: string;
-  follow: boolean;
+  follow?: boolean;
   since?: string;
+  start?: string;
+  end?: string;
   filter?: string;
+  json?: boolean;
+  limit: string;
 }
 
-/** Drops ANSI color codes so the output reads cleanly in a terminal log or an agent transcript. */
-export const stripAnsi = (text: string): string => text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+export const DEFAULT_LOG_LIMIT = 10000;
+
+/**
+ * Follows when asked to with `--follow`, even without a terminal (a script
+ * that does should stop it itself), and by default only in a terminal and
+ * without `--end`.
+ */
+export const shouldFollow = (options: Pick<LogsOptions, 'follow' | 'end'>, interactive: boolean): boolean =>
+  options.follow ?? (interactive && !options.end);
 
 export const logsCommand = new Command('logs')
-  .description('Print or stream the CloudWatch logs of a running ECS task')
-  .argument('[service]', 'Service to stream logs from (web, worker, or worker name) - optional')
-  .option('-s, --stage <stage>', 'SST stage name (required)')
-  .option('-c, --cluster <cluster>', 'ECS cluster name (optional, auto-detected from SST config)')
-  .option('-r, --region <region>', REGION_OPTION_HELP)
-  .option('-f, --follow', 'Keep streaming new log lines (like tail -f)', true)
-  .option('--no-follow', 'Print the recent logs and exit (for scripts and agents)')
-  .option('--since <time>', 'Start time for logs (e.g., 5m, 1h, 2d)', '10m')
-  .option('--filter <pattern>', 'Only show lines matching a CloudWatch filter pattern, e.g. "ERROR" or "?migrat ?Exception"')
+  .description('Print or stream the CloudWatch logs of the stage, read from the log groups (no running task needed)')
+  .argument('[service]', 'web, reverb, worker (every worker), a worker name, or another task in the cluster (default: all)')
+  .option('-s, --stage <stage>', 'SST stage name (required unless --cluster is given)')
+  .option('-c, --cluster <cluster>', 'ECS cluster name or ARN (default: auto-detected from the stage)')
+  .option('-r, --region <region>', APP_REGION_OPTION_HELP)
+  .option('-f, --follow', 'Keep streaming new lines until stopped (the default only in a terminal)')
+  .option('--no-follow', 'Print the lines of the window and exit')
+  .option('--since <duration>', 'How far back to start, e.g. 30m, 24h, 7d (default: 10m)')
+  .option('--start <time>', 'Start of the window: an ISO 8601 time (UTC unless it has an offset) or a duration ago')
+  .option('--end <time>', 'End of the window, exclusive (default: now)')
+  .option('--filter <pattern>', 'Only lines matching a CloudWatch filter pattern, e.g. "ERROR" or \'{ $.level_name = "ERROR" }\'')
+  .option('--json', 'Print JSON Lines: one object per log line, with service, task, revision, and level')
+  .option('--limit <lines>', 'Most lines to read from each log group', String(DEFAULT_LOG_LIMIT))
   .action(async (service: string | undefined, options: LogsOptions) => {
     try {
-      const region = resolveRegion(options.region);
-      const stage = options.stage;
+      const follow = shouldFollow(options, isInteractive());
+      const window = resolveTimeWindow(options, '10m');
+      const limit = Number(options.limit);
 
-      if (!stage) {
-        console.error('Error: Stage is required. Use --stage flag to specify the SST stage.');
-        process.exit(1);
+      if (!Number.isInteger(limit) || limit <= 0) {
+        throw new CliError('--limit must be a positive whole number.', 2);
       }
 
-      const ecsClient = new ECSClient({ region });
-
-      const cluster = await findCluster(ecsClient, stage, options.cluster);
-      const clusterArn = cluster.clusterArn;
-
-      const matchingTask = await findTask(ecsClient, cluster, service, 'Select a task to stream logs from:');
-
-      const taskDefinitionArn = matchingTask.taskDefinitionArn;
-
-      if (!taskDefinitionArn) {
-        console.error('Error: Could not find task definition ARN');
-        process.exit(1);
+      if (follow && options.end) {
+        throw new CliError('--follow streams new lines, so it takes no --end.', 2);
       }
 
-      const describeTaskDefCommand = new DescribeTaskDefinitionCommand({
-        taskDefinition: taskDefinitionArn
-      });
+      const stage = await resolveStageLogs(options);
+      const sources = selectLogSources(stage.sources, service);
 
-      const taskDefResponse = await ecsClient.send(describeTaskDefCommand);
-      const containerDef = taskDefResponse.taskDefinition?.containerDefinitions?.[0];
-      const logConfig = containerDef?.logConfiguration;
-
-      if (!logConfig || logConfig.logDriver !== 'awslogs') {
-        console.error('Error: Task does not use CloudWatch Logs (awslogs driver)');
-        process.exit(1);
+      info(`${follow ? 'Streaming' : 'Reading'} ${sources.map((source) => source.service).join(', ')} from ${formatWindow(window)}${follow ? ' onwards' : ''}.`);
+      if (follow) {
+        info('Press Ctrl+C to stop. Use --no-follow to print the lines and exit.');
       }
 
-      const logGroup = logConfig.options?.['awslogs-group'];
+      const print = (lines: LogLine[]) => {
+        for (const line of joinStackTraces(lines)) {
+          process.stdout.write(`${options.json ? JSON.stringify(logLineJson(line)) : formatLogLine(line)}\n`);
+        }
+      };
 
-      if (!logGroup) {
-        console.error('Error: Could not determine CloudWatch log group');
-        process.exit(1);
+      if (follow) {
+        await followLogLines(stage.logs, sources, window.start, { filterPattern: options.filter, onLines: print });
+        return;
       }
 
-      const containerName = matchingTask.containers?.[0]?.name || 'unknown';
-      console.log(`${options.follow ? 'Streaming' : 'Recent'} logs from: ${containerName}`);
-      console.log(`Log group: ${logGroup}`);
-      if (options.follow) {
-        console.log('Press Ctrl+C to stop. Use --no-follow to print the recent logs and exit.');
+      const result = await fetchLogLines(stage.logs, sources, window, { filterPattern: options.filter, limit });
+      print(result.lines);
+
+      if (result.truncatedAt !== undefined) {
+        const next = new Date(result.truncatedAt).toISOString();
+        info(`Stopped at ${next}: more than ${limit} lines in a log group. Continue with --start ${next}${options.end ? ` --end ${options.end}` : ''}, or narrow with --filter or a service.`);
+      } else if (result.lines.length === 0) {
+        info('No log lines in the window.');
       }
-      console.log('');
-
-      const awsArgs = [
-        'logs',
-        'tail',
-        logGroup,
-        '--since', options.since || '10m',
-        '--format', 'short',
-        '--color', 'off',
-      ];
-
-      if (options.follow) {
-        awsArgs.push('--follow');
-      }
-
-      if (options.filter) {
-        awsArgs.push('--filter-pattern', options.filter);
-      }
-
-      // The container itself prints colored lines (e.g. the PHP image banner at
-      // startup), so the output is piped through here and stripped.
-      const awsCommand = spawn('aws', awsArgs, {
-        stdio: ['inherit', 'pipe', 'inherit'],
-        env: { ...process.env, AWS_REGION: region }
-      });
-
-      awsCommand.stdout.on('data', (chunk: Buffer) => {
-        process.stdout.write(stripAnsi(chunk.toString()));
-      });
-
-      awsCommand.on('exit', (code) => {
-        process.exit(code || 0);
-      });
-
     } catch (error) {
-      console.error('Error:', (error as Error).message);
-      process.exit(1);
+      await exitWithError(error);
     }
   });

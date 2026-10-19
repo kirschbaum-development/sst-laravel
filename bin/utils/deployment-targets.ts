@@ -64,6 +64,11 @@ export function clearSavedDeploymentTargets(cwd: string, stage: string): void {
   fs.writeFileSync(savedPath(cwd), JSON.stringify(saved, null, 2) + '\n');
 }
 
+/** The stages `deploy` saved targets for on this machine. */
+export function savedDeploymentStages(cwd: string): string[] {
+  return Object.keys(savedTargets(cwd));
+}
+
 export function readSavedDeploymentTargets(cwd: string, stage: string): DeploymentTargets {
   return readDeploymentTargets({ deployment: savedTargets(cwd)[stage] }, stage);
 }

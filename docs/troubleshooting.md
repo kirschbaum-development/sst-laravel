@@ -3,7 +3,8 @@
 ## The app isn't healthy after a deploy
 
 1. Run `npx sst-laravel status --stage <stage> --wait` to see the expected service revisions from `deployment: app.deployment`, private ECR image availability, and the `/up` health check, in one view. It checks the URL the last `sst-laravel deploy` of the stage saved; pass `--url <url>` to check another address. A 502 or 503 in the first minutes after a deploy only means the new tasks are still starting.
-1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors.
+1. Run `npx sst-laravel logs web --stage <stage> --no-follow` to see recent errors. It reads the log groups, so it works even when no task is running.
+1. Run `npx sst-laravel status --stage <stage> --since 1h` to see the tasks that stopped, why, and their exit codes.
 
 The usual causes are a missing `APP_KEY`, wrong environment variable names, a database the containers can't reach, a wrong health check path, or AWS keys in the environment file (see [below](#cd-aws-credentials-are-not-configured)).
 
@@ -13,7 +14,7 @@ The usual causes are a missing `APP_KEY`, wrong environment variable names, a da
 [FIX] MyLaravelApp-Web: the deployment of MyLaravelApp-Web-Task:43 failed and ECS rolled back to the previous revision: ...
 ```
 
-The new tasks kept failing to start or failing their health checks, so the ECS deployment circuit breaker put the previous revision back. The app still answers, from the previous revision, but your changes are not running. Check the logs of the failing service (`npx sst-laravel logs <web|reverb|worker name> --stage <stage> --no-follow`), fix the cause, and deploy again. In the ECS console, the service's **Deployments** tab shows the failed deployment and its reason.
+The new tasks kept failing to start or failing their health checks, so the ECS deployment circuit breaker put the previous revision back. The app still answers, from the previous revision, but your changes are not running. Check the logs of the failing service (`npx sst-laravel logs <web|reverb|worker name> --stage <stage> --no-follow`) and why its tasks stopped (`npx sst-laravel status --stage <stage> --since 1h`), fix the cause, and deploy again. In the ECS console, the service's **Deployments** tab shows the failed deployment and its reason.
 
 ## "older than ServerSideUp v5" during the build
 

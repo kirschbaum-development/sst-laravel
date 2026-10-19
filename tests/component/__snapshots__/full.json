@@ -192,6 +192,83 @@
     }
   },
   {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Full-EcsEventsServiceEvents",
+    "parent": "Full",
+    "inputs": {
+      "description": "Sends the ECS events of the Full cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail-type": [
+          "ECS Deployment State Change",
+          "ECS Service Action"
+        ],
+        "resources": [
+          {
+            "prefix": "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster/"
+          }
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-FullEcsEventsServiceEvents-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Full-EcsEventsStoppedTasks",
+    "parent": "Full",
+    "inputs": {
+      "description": "Sends the ECS events of the Full cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail": {
+          "clusterArn": [
+            "arn:aws:mock:us-east-1:123456789012:Full-ClusterCluster"
+          ],
+          "lastStatus": [
+            "STOPPED"
+          ]
+        },
+        "detail-type": [
+          "ECS Task State Change"
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-FullEcsEventsStoppedTasks-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Full-EcsEventsServiceEventsTarget",
+    "parent": "Full",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Full-EcsEventsRecorder",
+      "rule": "app-dev-FullEcsEventsServiceEvents-<random>",
+      "targetId": "app-dev-FullEcsEventsServiceEventsTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Full-EcsEventsStoppedTasksTarget",
+    "parent": "Full",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Full-EcsEventsRecorder",
+      "rule": "app-dev-FullEcsEventsStoppedTasks-<random>",
+      "targetId": "app-dev-FullEcsEventsStoppedTasksTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Full-EcsEvents",
+    "parent": "Full",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-FullClusterCluster-<random>/sst-laravel/ecs-events",
+      "retentionInDays": 30
+    }
+  },
+  {
     "type": "aws:cloudwatch/logGroup:LogGroup",
     "name": "Full-pulseLogGroupFull-pulse",
     "parent": "Full-pulse",
@@ -527,6 +604,10 @@
                 "value": "yes"
               },
               {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "pulse"
+              },
+              {
                 "name": "SST_RESOURCE_FullDatabase",
                 "value": {
                   "database": "app",
@@ -630,6 +711,10 @@
                 "value": "yes"
               },
               {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "queue"
+              },
+              {
                 "name": "SST_RESOURCE_FullDatabase",
                 "value": {
                   "database": "app",
@@ -731,6 +816,10 @@
               {
                 "name": "FROM_OUTPUT",
                 "value": "yes"
+              },
+              {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "reverb"
               },
               {
                 "name": "SST_RESOURCE_FullDatabase",
@@ -840,6 +929,10 @@
                 "value": "/dev/null"
               },
               {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "web"
+              },
+              {
                 "name": "SST_RESOURCE_FullDatabase",
                 "value": {
                   "database": "app",
@@ -932,6 +1025,45 @@
         ],
         "Version": "2012-10-17"
       }
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Full-EcsEventsRole",
+    "parent": "Full",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            }
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "description": "Records the ECS events of the Full cluster (sst-laravel).",
+      "inlinePolicies": [
+        {
+          "name": "logs",
+          "policy": {
+            "Statement": [
+              {
+                "Action": [
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Effect": "Allow",
+                "Resource": "arn:aws:mock:us-east-1:123456789012:Full-EcsEvents:*"
+              }
+            ],
+            "Version": "2012-10-17"
+          }
+        }
+      ],
+      "name": "app-dev-FullEcsEventsRole-<random>"
     }
   },
   {
@@ -1129,6 +1261,58 @@
     "inputs": {
       "policyArn": "arn:aws:mock:us-east-1:123456789012:Full-EnvRead",
       "role": "app-dev-FullpulseExecutionRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lambda/function:Function",
+    "name": "Full-EcsEventsRecorder",
+    "parent": "Full",
+    "dependsOn": [
+      "Full-EcsEvents"
+    ],
+    "inputs": {
+      "architectures": [
+        "arm64"
+      ],
+      "code": {
+        "__pulumiArchive": true,
+        "assets": {}
+      },
+      "description": "Records the ECS events of the Full cluster in CloudWatch Logs (sst-laravel).",
+      "handler": "index.handler",
+      "loggingConfig": {
+        "applicationLogLevel": "INFO",
+        "logFormat": "JSON",
+        "logGroup": "/sst/cluster/app-dev-FullClusterCluster-<random>/sst-laravel/ecs-events",
+        "systemLogLevel": "WARN"
+      },
+      "memorySize": 128,
+      "name": "app-dev-FullEcsEventsRecorder-<random>",
+      "role": "arn:aws:mock:us-east-1:123456789012:Full-EcsEventsRole",
+      "runtime": "nodejs22.x",
+      "timeout": 10
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Full-EcsEventsServiceEventsPermission",
+    "parent": "Full",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-FullEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Full-EcsEventsServiceEvents"
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Full-EcsEventsStoppedTasksPermission",
+    "parent": "Full",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-FullEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Full-EcsEventsStoppedTasks"
     }
   },
   {
@@ -1869,6 +2053,7 @@
         }
       },
       "linkedSecrets": [],
+      "logFormatter": "Monolog\\Formatter\\JsonFormatter",
       "objectKey": "env/<hash>.env",
       "runtimeEnvironment": {
         "FROM_OUTPUT": "yes",

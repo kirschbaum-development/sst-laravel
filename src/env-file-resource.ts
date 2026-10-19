@@ -31,6 +31,8 @@ export interface EnvFileInputs {
   fingerprint: Input<string>;
   autoInject?: Input<boolean>;
   appUrl?: Input<string | undefined>;
+  /** `LOG_STDERR_FORMATTER`, added when the source sets none. */
+  logFormatter?: Input<string>;
   linkedEnvironment?: Input<Record<string, Input<string | undefined> | undefined>>;
   linkedSecrets?: Input<Array<{ name: Input<string>; value: Input<string> }>>;
   /** Upload the variables for ECS instead of writing the file the images copy. */
@@ -53,6 +55,7 @@ export interface ResolvedEnvFileInputs {
   fingerprint: string;
   autoInject?: boolean;
   appUrl?: string;
+  logFormatter?: string;
   linkedEnvironment?: Record<string, string | undefined>;
   linkedSecrets?: Array<{
     name: string;
@@ -542,8 +545,9 @@ function getChunkPath(basePath: string, chunkIndex: number): string {
 }
 
 /**
- * The variables the package adds to the source: `APP_URL` and `LOG_CHANNEL`
- * when the source has none, the linked resources, and the linked secrets.
+ * The variables the package adds to the source: `APP_URL`, `LOG_CHANNEL`, and
+ * `LOG_STDERR_FORMATTER` when the source has none, the linked resources, and
+ * the linked secrets.
  */
 function buildAutoInjectedVariables(sourceVariables: Record<string, string>, inputs: ResolvedEnvFileInputs) {
   const autoInjected: Record<string, string> = {};
@@ -554,6 +558,10 @@ function buildAutoInjectedVariables(sourceVariables: Record<string, string>, inp
 
   if (!hasOwnVariable(sourceVariables, 'LOG_CHANNEL')) {
     autoInjected.LOG_CHANNEL = 'stderr';
+  }
+
+  if (!hasOwnVariable(sourceVariables, 'LOG_STDERR_FORMATTER') && inputs.logFormatter) {
+    autoInjected.LOG_STDERR_FORMATTER = inputs.logFormatter;
   }
 
   Object.entries(inputs.linkedEnvironment || {}).forEach(([key, value]) => {

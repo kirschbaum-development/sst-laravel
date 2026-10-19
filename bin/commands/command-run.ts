@@ -3,6 +3,7 @@ import { ECSClient } from '@aws-sdk/client-ecs';
 import { spawn } from 'child_process';
 import { findCluster, findTask } from '../utils/ecs.js';
 import { REGION_OPTION_HELP, resolveRegion } from '../utils/aws.js';
+import { exitWithError } from '../utils/cli.js';
 
 interface CommandRunOptions {
   stage?: string;
@@ -89,7 +90,6 @@ export const commandRunCommand = new Command('command:run')
         process.exit(code || 0);
       });
     } catch (error) {
-      console.error('Error:', (error as Error).message);
-      process.exit(1);
+      await exitWithError(error);
     }
   });

@@ -93,6 +93,9 @@ const findProcess = (container: string, command: string) =>
 
 const WWW_DATA = 33;
 
+/** The scheduler's loop, which starts `php artisan schedule:run` every minute. */
+const SCHEDULER = 'bash /etc/s6-overlay/s6-rc.d/laravel-scheduler/script';
+
 const isRunning = (container: string) =>
   run(['inspect', '--format', '{{.State.Running}}', container]).output.trim() === 'true';
 
@@ -402,7 +405,7 @@ describe(`web (serversideup/php:${phpVersion}-fpm-nginx)`, () => {
   });
 
   it('runs every process as www-data', async () => {
-    const commands = ['php artisan horizon', 'php artisan schedule:work', 'php artisan pulse:work'];
+    const commands = ['php artisan horizon', SCHEDULER, 'php artisan pulse:work'];
     await waitFor(() => (commands.every((command) => findProcess(container, command)) ? true : undefined), 30000, 'the background processes');
 
     for (const command of commands) {
@@ -410,6 +413,22 @@ describe(`web (serversideup/php:${phpVersion}-fpm-nginx)`, () => {
     }
 
     expect(processes(container).filter((process) => process.uid !== WWW_DATA)).toEqual([]);
+  });
+
+  it('sends a long log line from PHP-FPM to the container output whole, as one line', async () => {
+    // The package's formatter keeps lines under 16 KB.
+    const response = await httpGet(port, '/log?bytes=15000');
+    const written = Number(response?.body);
+
+    const line = await waitFor(
+      () => logs(container).split('\n').find((candidate) => candidate.includes('"message":"long line"')),
+      10000,
+      'the log line',
+    );
+
+    // No php-fpm prefix, no split at ServerSideUp's 8 KB log_limit.
+    expect(line.length).toBe(written);
+    expect(JSON.parse(line).trace).toHaveLength(15000);
   });
 
   it('restarts a background process in place, without stopping the container', async () => {
@@ -424,6 +443,9 @@ describe(`web (serversideup/php:${phpVersion}-fpm-nginx)`, () => {
     expect(restarted.uid).toBe(WWW_DATA);
     expect(isRunning(container)).toBe(true);
     expect((await httpGet(port, '/up'))?.status).toBe(200);
+    // The exit, as the line `status --since` reads.
+    expect(logs(container).split('\n').map((line) => line.trim()).filter((line) => line.includes('"process_exit"')).map((line) => JSON.parse(line)))
+      .toContainEqual(expect.objectContaining({ sst_laravel: 'process_exit', process: 'pulse', exit_code: 137, action: 'restart' }));
   });
 
   it('stops gracefully on SIGTERM', async () => {
@@ -433,7 +455,7 @@ describe(`web (serversideup/php:${phpVersion}-fpm-nginx)`, () => {
 });
 
 describe(`worker (serversideup/php:${phpVersion}-cli)`, () => {
-  const commands = ['php artisan horizon', 'php artisan schedule:work', 'php artisan pulse:work'];
+  const commands = ['php artisan horizon', SCHEDULER, 'php artisan pulse:work'];
 
   const startWorker = async () => {
     const container = startContainer(imageFor(plan('workers[queue]')));
@@ -452,6 +474,21 @@ describe(`worker (serversideup/php:${phpVersion}-cli)`, () => {
     expectCleanBoot(container);
   }, 120000);
 
+  it("runs the schedule every minute, with each task's log lines whole", async () => {
+    const container = await startWorker();
+
+    // At the start of the next minute.
+    const line = await waitFor(
+      () => logs(container).split('\n').find((candidate) => candidate.includes('"schedule_finished"')),
+      75000,
+      'a schedule:run',
+    );
+
+    expect(JSON.parse(line)).toMatchObject({ sst_laravel: 'schedule_finished', task: 'php artisan app:report' });
+    // The task finishes its line a second later.
+    await waitFor(() => (logs(container).includes('  Running [php artisan app:report] DONE') ? true : undefined), 10000, 'the task to finish');
+  }, 150000);
+
   it('restarts a custom task in place', async () => {
     const container = await startWorker();
     const pulse = findProcess(container, 'php artisan pulse:work')!;
@@ -467,7 +504,7 @@ describe(`worker (serversideup/php:${phpVersion}-cli)`, () => {
 
   it.each([
     ['Horizon', 'php artisan horizon'],
-    ['the scheduler', 'php artisan schedule:work'],
+    ['the scheduler', SCHEDULER],
   ])('stops the container when %s dies, so ECS replaces it', async (_, command) => {
     const container = await startWorker();
     kill(container, findProcess(container, command)!.pid, 'KILL');

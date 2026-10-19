@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
+import { isInteractive } from '../utils/cli.js';
 import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
 import { pushSecrets, getSecretInfo, needsChunking, listAvailableStages } from '../../src/secrets-manager.js';
 import { parseEnvFile } from '../../src/dotenv.js';
@@ -42,6 +43,11 @@ export const envPushCommand = new Command('env:push')
         if (availableStages.length === 0) {
           console.log('No stages found in AWS Secrets Manager for this app.');
           console.log('Run this command again with the --stage <stage> flag so the environment file can be created.');
+          process.exit(1);
+        }
+
+        if (!isInteractive()) {
+          console.error(`Error: Pass the stage with --stage <stage>. Stages with secrets: ${availableStages.join(', ')}.`);
           process.exit(1);
         }
 
@@ -88,6 +94,11 @@ export const envPushCommand = new Command('env:push')
           console.log(`\nWarning: ${existingInfo.totalKeys} variables already exist at this path (in ${existingInfo.chunks} chunks).`);
         } else {
           console.log(`\nWarning: ${existingInfo.totalKeys} variables already exist at this path.`);
+        }
+
+        if (!isInteractive()) {
+          console.error(`Error: ${secretPath} already exists. Pass --force to overwrite the existing secrets.`);
+          process.exit(1);
         }
 
         const shouldOverwrite = await confirm({

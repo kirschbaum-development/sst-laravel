@@ -48,6 +48,83 @@
     }
   },
   {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Vault-EcsEventsServiceEvents",
+    "parent": "Vault",
+    "inputs": {
+      "description": "Sends the ECS events of the Vault cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail-type": [
+          "ECS Deployment State Change",
+          "ECS Service Action"
+        ],
+        "resources": [
+          {
+            "prefix": "arn:aws:mock:us-east-1:123456789012:Vault-ClusterCluster/"
+          }
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-VaultEcsEventsServiceEvents-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Vault-EcsEventsStoppedTasks",
+    "parent": "Vault",
+    "inputs": {
+      "description": "Sends the ECS events of the Vault cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail": {
+          "clusterArn": [
+            "arn:aws:mock:us-east-1:123456789012:Vault-ClusterCluster"
+          ],
+          "lastStatus": [
+            "STOPPED"
+          ]
+        },
+        "detail-type": [
+          "ECS Task State Change"
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-VaultEcsEventsStoppedTasks-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Vault-EcsEventsServiceEventsTarget",
+    "parent": "Vault",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEventsRecorder",
+      "rule": "app-dev-VaultEcsEventsServiceEvents-<random>",
+      "targetId": "app-dev-VaultEcsEventsServiceEventsTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Vault-EcsEventsStoppedTasksTarget",
+    "parent": "Vault",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEventsRecorder",
+      "rule": "app-dev-VaultEcsEventsStoppedTasks-<random>",
+      "targetId": "app-dev-VaultEcsEventsStoppedTasksTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Vault-EcsEvents",
+    "parent": "Vault",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-VaultClusterCluster-<random>/sst-laravel/ecs-events",
+      "retentionInDays": 30
+    }
+  },
+  {
     "type": "aws:cloudwatch/logGroup:LogGroup",
     "name": "Vault-WebLogGroupVault-Web",
     "parent": "Vault-Web",
@@ -164,6 +241,10 @@
           {
             "environment": [
               {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "web"
+              },
+              {
                 "name": "SST_RESOURCE_App",
                 "value": {
                   "name": "app",
@@ -245,6 +326,45 @@
         ],
         "Version": "2012-10-17"
       }
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Vault-EcsEventsRole",
+    "parent": "Vault",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            }
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "description": "Records the ECS events of the Vault cluster (sst-laravel).",
+      "inlinePolicies": [
+        {
+          "name": "logs",
+          "policy": {
+            "Statement": [
+              {
+                "Action": [
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Effect": "Allow",
+                "Resource": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEvents:*"
+              }
+            ],
+            "Version": "2012-10-17"
+          }
+        }
+      ],
+      "name": "app-dev-VaultEcsEventsRole-<random>"
     }
   },
   {
@@ -370,6 +490,58 @@
         ],
         "Version": "2012-10-17"
       }
+    }
+  },
+  {
+    "type": "aws:lambda/function:Function",
+    "name": "Vault-EcsEventsRecorder",
+    "parent": "Vault",
+    "dependsOn": [
+      "Vault-EcsEvents"
+    ],
+    "inputs": {
+      "architectures": [
+        "arm64"
+      ],
+      "code": {
+        "__pulumiArchive": true,
+        "assets": {}
+      },
+      "description": "Records the ECS events of the Vault cluster in CloudWatch Logs (sst-laravel).",
+      "handler": "index.handler",
+      "loggingConfig": {
+        "applicationLogLevel": "INFO",
+        "logFormat": "JSON",
+        "logGroup": "/sst/cluster/app-dev-VaultClusterCluster-<random>/sst-laravel/ecs-events",
+        "systemLogLevel": "WARN"
+      },
+      "memorySize": 128,
+      "name": "app-dev-VaultEcsEventsRecorder-<random>",
+      "role": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEventsRole",
+      "runtime": "nodejs22.x",
+      "timeout": 10
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Vault-EcsEventsServiceEventsPermission",
+    "parent": "Vault",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-VaultEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEventsServiceEvents"
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Vault-EcsEventsStoppedTasksPermission",
+    "parent": "Vault",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-VaultEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Vault-EcsEventsStoppedTasks"
     }
   },
   {
@@ -597,6 +769,7 @@
       "fingerprint": "4052beda9e53f3625a81962228a3dcdbce4e9592f772de9ee120a3a8da8b8e4d",
       "linkedEnvironment": {},
       "linkedSecrets": [],
+      "logFormatter": "Monolog\\Formatter\\JsonFormatter",
       "objectKey": "env/<hash>.env",
       "runtimeEnvironment": {},
       "secretPath": "/app/dev/env",

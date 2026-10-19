@@ -48,6 +48,83 @@
     }
   },
   {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Mini-EcsEventsServiceEvents",
+    "parent": "Mini",
+    "inputs": {
+      "description": "Sends the ECS events of the Mini cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail-type": [
+          "ECS Deployment State Change",
+          "ECS Service Action"
+        ],
+        "resources": [
+          {
+            "prefix": "arn:aws:mock:us-east-1:123456789012:Mini-ClusterCluster/"
+          }
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-MiniEcsEventsServiceEvents-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Mini-EcsEventsStoppedTasks",
+    "parent": "Mini",
+    "inputs": {
+      "description": "Sends the ECS events of the Mini cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail": {
+          "clusterArn": [
+            "arn:aws:mock:us-east-1:123456789012:Mini-ClusterCluster"
+          ],
+          "lastStatus": [
+            "STOPPED"
+          ]
+        },
+        "detail-type": [
+          "ECS Task State Change"
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-MiniEcsEventsStoppedTasks-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Mini-EcsEventsServiceEventsTarget",
+    "parent": "Mini",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEventsRecorder",
+      "rule": "app-dev-MiniEcsEventsServiceEvents-<random>",
+      "targetId": "app-dev-MiniEcsEventsServiceEventsTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Mini-EcsEventsStoppedTasksTarget",
+    "parent": "Mini",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEventsRecorder",
+      "rule": "app-dev-MiniEcsEventsStoppedTasks-<random>",
+      "targetId": "app-dev-MiniEcsEventsStoppedTasksTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Mini-EcsEvents",
+    "parent": "Mini",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-MiniClusterCluster-<random>/sst-laravel/ecs-events",
+      "retentionInDays": 30
+    }
+  },
+  {
     "type": "aws:cloudwatch/logGroup:LogGroup",
     "name": "Mini-WebLogGroupMini-Web",
     "parent": "Mini-Web",
@@ -159,6 +236,14 @@
           {
             "environment": [
               {
+                "name": "LOG_STDERR_FORMATTER",
+                "value": "Monolog\\Formatter\\JsonFormatter"
+              },
+              {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "web"
+              },
+              {
                 "name": "SST_RESOURCE_App",
                 "value": {
                   "name": "app",
@@ -204,6 +289,45 @@
       "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Mini-WebTaskRole",
       "trackLatest": true,
       "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Mini-EcsEventsRole",
+    "parent": "Mini",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            }
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "description": "Records the ECS events of the Mini cluster (sst-laravel).",
+      "inlinePolicies": [
+        {
+          "name": "logs",
+          "policy": {
+            "Statement": [
+              {
+                "Action": [
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Effect": "Allow",
+                "Resource": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEvents:*"
+              }
+            ],
+            "Version": "2012-10-17"
+          }
+        }
+      ],
+      "name": "app-dev-MiniEcsEventsRole-<random>"
     }
   },
   {
@@ -256,6 +380,58 @@
       },
       "inlinePolicies": [],
       "name": "app-dev-MiniWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lambda/function:Function",
+    "name": "Mini-EcsEventsRecorder",
+    "parent": "Mini",
+    "dependsOn": [
+      "Mini-EcsEvents"
+    ],
+    "inputs": {
+      "architectures": [
+        "arm64"
+      ],
+      "code": {
+        "__pulumiArchive": true,
+        "assets": {}
+      },
+      "description": "Records the ECS events of the Mini cluster in CloudWatch Logs (sst-laravel).",
+      "handler": "index.handler",
+      "loggingConfig": {
+        "applicationLogLevel": "INFO",
+        "logFormat": "JSON",
+        "logGroup": "/sst/cluster/app-dev-MiniClusterCluster-<random>/sst-laravel/ecs-events",
+        "systemLogLevel": "WARN"
+      },
+      "memorySize": 128,
+      "name": "app-dev-MiniEcsEventsRecorder-<random>",
+      "role": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEventsRole",
+      "runtime": "nodejs22.x",
+      "timeout": 10
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Mini-EcsEventsServiceEventsPermission",
+    "parent": "Mini",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-MiniEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEventsServiceEvents"
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Mini-EcsEventsStoppedTasksPermission",
+    "parent": "Mini",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-MiniEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Mini-EcsEventsStoppedTasks"
     }
   },
   {

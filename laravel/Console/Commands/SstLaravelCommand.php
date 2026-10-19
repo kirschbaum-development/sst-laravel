@@ -4,6 +4,8 @@ namespace Kirschbaum\SST\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Foundation\Application;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Process;
 
 /**
@@ -36,8 +38,12 @@ abstract class SstLaravelCommand extends Command
 
         $this->configureTty($process);
 
-        $exitCode = $process->run(function (string $type, string $buffer): void {
-            $this->output->write($buffer);
+        // Diagnostics stay on stderr, so `--json` output on stdout parses as is.
+        $output = $this->output->getOutput();
+        $errorOutput = $output instanceof ConsoleOutputInterface ? $output->getErrorOutput() : $output;
+
+        $exitCode = $process->run(function (string $type, string $buffer) use ($output, $errorOutput): void {
+            ($type === Process::ERR ? $errorOutput : $output)->write($buffer, false, OutputInterface::OUTPUT_RAW);
         });
 
         return $exitCode;

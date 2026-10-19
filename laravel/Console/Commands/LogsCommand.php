@@ -6,7 +6,7 @@ class LogsCommand extends SstLaravelCommand
 {
     protected $signature = 'sst-laravel:logs';
 
-    protected $description = 'Stream CloudWatch logs from a running ECS task';
+    protected $description = 'Print or stream the CloudWatch logs of the stage';
 
     protected function subcommand(): string
     {

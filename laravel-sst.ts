@@ -10,7 +10,9 @@ import { writeS6TaskFiles } from './src/background-tasks';
 import { stageDeploymentScript, stageEnvironmentScript, stageWorkerConf } from './src/build-files';
 import { EnvironmentFile, prepareEnvironmentFile } from './src/env-file';
 import { createEnvStorage, EnvStorage } from './src/env-storage';
-import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl } from './src/environment';
+import { buildContainerEnvironment, buildReverbEnvironment, getAppUrl, withServiceName } from './src/environment';
+import { createEcsEventRecorder } from './src/ecs-events';
+import { stderrLogFormatter } from './src/log-format';
 import { buildImage, managedImageTransform } from './src/image';
 import { linkResources } from './src/links';
 import { buildLoadBalancerHardening } from './src/load-balancer-transforms';
@@ -476,7 +478,9 @@ export interface LaravelBackgroundTasksArgs {
     horizon?: Input<boolean>;
 
     /**
-     * Run the Laravel scheduler (`php artisan schedule:work`).
+     * Run the Laravel scheduler: `php artisan schedule:run` at the start of
+     * every minute, like `schedule:work`, but with the output and errors of
+     * the tasks apart, so the JSON log lines of a task stay whole.
      */
     scheduler?: Input<boolean>;
 
@@ -642,6 +646,20 @@ export interface LaravelArgs extends ClusterArgs {
     reverb?: boolean | LaravelReverbArgs;
 
     /**
+     * Record the cluster's ECS events in CloudWatch Logs: every task that
+     * stops (services' and standalone tasks', such as task runners), with its
+     * stop code, reason, and exit codes, plus deployments and service
+     * actions. ECS lists stopped tasks for about an hour only; with this,
+     * `sst-laravel status --since 24h` reports restarts and crashes over the
+     * whole window. Creates a small Lambda function, two EventBridge rules,
+     * and a log group (`/sst/cluster/<cluster>/sst-laravel/ecs-events`, kept
+     * 30 days). It runs once per event, which costs next to nothing.
+     *
+     * @default `true`
+     */
+    ecsEvents?: boolean;
+
+    /**
      * Config settings.
      */
     config?: {
@@ -692,6 +710,25 @@ export interface LaravelArgs extends ClusterArgs {
          * @default `true`
          */
         opcache?: Input<boolean>;
+
+        /**
+         * How Laravel's `stderr` log channel writes to CloudWatch, through
+         * `LOG_STDERR_FORMATTER`, unless the environment sets it.
+         *
+         * - `json`: one JSON line per entry, so each entry and its stack
+         *   trace stay one CloudWatch event, and Logs Insights can group
+         *   them (`sst-laravel logs:errors`). With the package's Composer
+         *   package installed (`composer require
+         *   kirschbaum-development/sst-laravel`), each line also has the
+         *   stack trace and, in `extra`, the service, ECS task, and deploy
+         *   (task definition revision) it came from. Without it, Monolog's
+         *   JSON formatter is used, which leaves the trace out.
+         * - `text`: Laravel's default lines; a stack trace arrives as one
+         *   CloudWatch event per line.
+         *
+         * @default `"json"`
+         */
+        logFormat?: 'json' | 'text';
 
         environment?: {
             /**
@@ -820,7 +857,13 @@ export class LaravelService extends Component {
 
         const environment = args.config?.environment;
         const reverbEnvironment = buildReverbEnvironment(reverb);
-        const injectedEnvironment = environment?.autoInject !== false ? reverbEnvironment : {};
+        const logFormatter = stderrLogFormatter(absSitePath, args.config?.logFormat);
+        // With an env file, the formatter goes in it, where the file's own
+        // value wins; ECS would let a container variable win over the file.
+        const hasEnvironmentFile = Boolean(environment?.file || environment?.secrets);
+        const injectedEnvironment = environment?.autoInject !== false
+            ? { ...reverbEnvironment, ...(logFormatter && !hasEnvironmentFile ? { LOG_STDERR_FORMATTER: logFormatter } : {}) }
+            : {};
         // The environment goes to S3 for ECS, unless there is none, nothing
         // runs it, or the app keeps it in the image (`sst dev` runs no containers).
         const environmentStorage =
@@ -840,6 +883,7 @@ export class LaravelService extends Component {
             links: args.link,
             variables: reverbEnvironment,
             appUrl: getAppUrl(args.web?.domain),
+            logFormatter,
             messages: this._messages,
             storage: environmentStorage,
             runtimeEnvironment: buildContainerEnvironment(injectedEnvironment, environment?.vars, {}),
@@ -868,6 +912,10 @@ export class LaravelService extends Component {
         );
 
         this._nodes = { cluster, workers: {} };
+
+        if (args.ecsEvents !== false && !$dev) {
+            createEcsEventRecorder(this, name, cluster.nodes.cluster);
+        }
 
         const shared: SharedServiceArgs = {
             cluster,
@@ -963,7 +1011,7 @@ export class LaravelService extends Component {
                 environment: buildContainerEnvironment(
                     shared.injectedEnvironment,
                     shared.vars,
-                    plan.environment,
+                    withServiceName(plan.environment, plan.workerName ?? plan.kind),
                 ),
                 ...(shared.environmentFile?.objectArn
                     ? {

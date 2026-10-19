@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { select, confirm } from '@inquirer/prompts';
+import { isInteractive } from '../utils/cli.js';
 import { findSstConfig, extractSstProjectName, extractVaultPathOptions, resolveVaultSecretPath } from '../utils/sst-config.js';
 import { pullSecrets, getSecretInfo, listAvailableStages } from '../../src/secrets-manager.js';
 import { toEnvFileContent } from '../../src/dotenv.js';
@@ -45,6 +46,11 @@ export const envPullCommand = new Command('env:pull')
           process.exit(1);
         }
 
+        if (!isInteractive()) {
+          console.error(`Error: Pass the stage with --stage <stage>. Stages with secrets: ${availableStages.join(', ')}.`);
+          process.exit(1);
+        }
+
         stage = await select({
           message: 'Select the stage to pull from:',
           choices: availableStages.map(s => ({ name: s, value: s })),
@@ -74,6 +80,11 @@ export const envPullCommand = new Command('env:pull')
 
       // Check if output file exists
       if (fs.existsSync(outputPath) && !options.force) {
+        if (!isInteractive()) {
+          console.error(`Error: ${outputFile} already exists. Pass --force to overwrite it, or --output for another file.`);
+          process.exit(1);
+        }
+
         const shouldOverwrite = await confirm({
           message: `File ${outputFile} already exists. Overwrite?`,
           default: false,

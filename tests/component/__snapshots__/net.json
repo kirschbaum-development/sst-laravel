@@ -96,6 +96,83 @@
     }
   },
   {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Net-EcsEventsServiceEvents",
+    "parent": "Net",
+    "inputs": {
+      "description": "Sends the ECS events of the Net cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail-type": [
+          "ECS Deployment State Change",
+          "ECS Service Action"
+        ],
+        "resources": [
+          {
+            "prefix": "arn:aws:mock:us-east-1:123456789012:Net-ClusterCluster/"
+          }
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-NetEcsEventsServiceEvents-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Net-EcsEventsStoppedTasks",
+    "parent": "Net",
+    "inputs": {
+      "description": "Sends the ECS events of the Net cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail": {
+          "clusterArn": [
+            "arn:aws:mock:us-east-1:123456789012:Net-ClusterCluster"
+          ],
+          "lastStatus": [
+            "STOPPED"
+          ]
+        },
+        "detail-type": [
+          "ECS Task State Change"
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-NetEcsEventsStoppedTasks-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Net-EcsEventsServiceEventsTarget",
+    "parent": "Net",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Net-EcsEventsRecorder",
+      "rule": "app-dev-NetEcsEventsServiceEvents-<random>",
+      "targetId": "app-dev-NetEcsEventsServiceEventsTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Net-EcsEventsStoppedTasksTarget",
+    "parent": "Net",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Net-EcsEventsRecorder",
+      "rule": "app-dev-NetEcsEventsStoppedTasks-<random>",
+      "targetId": "app-dev-NetEcsEventsStoppedTasksTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Net-EcsEvents",
+    "parent": "Net",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-NetClusterCluster-<random>/sst-laravel/ecs-events",
+      "retentionInDays": 30
+    }
+  },
+  {
     "type": "aws:cloudwatch/logGroup:LogGroup",
     "name": "Net-queueLogGroupNet-queue",
     "parent": "Net-queue",
@@ -454,6 +531,14 @@
           {
             "environment": [
               {
+                "name": "LOG_STDERR_FORMATTER",
+                "value": "Monolog\\Formatter\\JsonFormatter"
+              },
+              {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "queue"
+              },
+              {
                 "name": "SST_RESOURCE_App",
                 "value": {
                   "name": "app",
@@ -511,6 +596,14 @@
           {
             "environment": [
               {
+                "name": "LOG_STDERR_FORMATTER",
+                "value": "Monolog\\Formatter\\JsonFormatter"
+              },
+              {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "web"
+              },
+              {
                 "name": "SST_RESOURCE_App",
                 "value": {
                   "name": "app",
@@ -556,6 +649,45 @@
       "taskRoleArn": "arn:aws:mock:us-east-1:123456789012:Net-WebTaskRole",
       "trackLatest": true,
       "volumes": []
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Net-EcsEventsRole",
+    "parent": "Net",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            }
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "description": "Records the ECS events of the Net cluster (sst-laravel).",
+      "inlinePolicies": [
+        {
+          "name": "logs",
+          "policy": {
+            "Statement": [
+              {
+                "Action": [
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Effect": "Allow",
+                "Resource": "arn:aws:mock:us-east-1:123456789012:Net-EcsEvents:*"
+              }
+            ],
+            "Version": "2012-10-17"
+          }
+        }
+      ],
+      "name": "app-dev-NetEcsEventsRole-<random>"
     }
   },
   {
@@ -660,6 +792,58 @@
       },
       "inlinePolicies": [],
       "name": "app-dev-NetWebTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lambda/function:Function",
+    "name": "Net-EcsEventsRecorder",
+    "parent": "Net",
+    "dependsOn": [
+      "Net-EcsEvents"
+    ],
+    "inputs": {
+      "architectures": [
+        "arm64"
+      ],
+      "code": {
+        "__pulumiArchive": true,
+        "assets": {}
+      },
+      "description": "Records the ECS events of the Net cluster in CloudWatch Logs (sst-laravel).",
+      "handler": "index.handler",
+      "loggingConfig": {
+        "applicationLogLevel": "INFO",
+        "logFormat": "JSON",
+        "logGroup": "/sst/cluster/app-dev-NetClusterCluster-<random>/sst-laravel/ecs-events",
+        "systemLogLevel": "WARN"
+      },
+      "memorySize": 128,
+      "name": "app-dev-NetEcsEventsRecorder-<random>",
+      "role": "arn:aws:mock:us-east-1:123456789012:Net-EcsEventsRole",
+      "runtime": "nodejs22.x",
+      "timeout": 10
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Net-EcsEventsServiceEventsPermission",
+    "parent": "Net",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-NetEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Net-EcsEventsServiceEvents"
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Net-EcsEventsStoppedTasksPermission",
+    "parent": "Net",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-NetEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Net-EcsEventsStoppedTasks"
     }
   },
   {

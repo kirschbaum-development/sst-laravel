@@ -266,7 +266,7 @@ If verification fails, the usual causes in order are:
 4. wrong health path (Laravel ships `/up` on recent versions — confirm the route exists);
 5. AWS keys committed in the env file (remove them and rely on the container role instead).
 
-Read recent errors with `npx sst-laravel logs web --stage <stage> --no-follow` (add `--since 30m` to go further back, or `--filter "?ERROR ?Exception"` to narrow it down). Make one focused fix, redeploy, and verify again.
+Read recent errors with `npx sst-laravel logs web --stage <stage> --no-follow` (add `--since 30m` to go further back, or `--filter "?ERROR ?Exception"` to narrow it down). It reads the log groups, so it works even when no task is running. `npx sst-laravel status --stage <stage> --since 1h` lists the tasks that stopped and why, with their exit codes, and `npx sst-laravel logs:errors --stage <stage> --since 1h` groups the errors. Make one focused fix, redeploy, and verify again.
 
 Do not ask the user to diagnose an error that you can inspect with the available CLI tools. Stop only when the same blocker needs credentials, a business choice, or permission for a destructive action.
 
@@ -282,5 +282,7 @@ Finish only when the application is healthy or a concrete external blocker remai
 - how to deploy again (`npx sst-laravel deploy --stage <stage>`) and how to remove the stage (`npx sst remove --stage <stage>`);
 - remaining work, such as a database the user skipped, a production domain, CI, or cost review;
 - when a blocker remains: the exact error and what you checked (running tasks, the health endpoint, recent logs).
+
+To monitor a stage later, or on a schedule, use the read-only checks in `monitoring.md` (`status --since 24h --json`, `logs:errors`, `queue:status`): they never prompt, and exit 1 when something needs attention. For stack traces in the logs and the job and schedule events, suggest `composer require kirschbaum-development/sst-laravel`.
 
 After the first healthy deployment, recommend deploying from CI as the next step, and offer to set it up (see `deploying.md#deploying-from-github-actions`). The workflow needs the environment too: with `RemoteEnvVault` the deploy fetches it, with the user's own store the workflow fetches the file first, and with an env file on this machine the user saves it as a CI secret that a step writes before the deploy, or moves to one of the other two (see `environment-file-sources.md`). Offer production hardening as well. Do not expand the first deployment into CI work without user agreement.

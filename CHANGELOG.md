@@ -5,6 +5,34 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5]
+
+Made for agents and scripts that check a stage on a schedule. See [Monitoring](docs/monitoring.md).
+
+### Added
+
+- `status --since 24h` (or `--start`/`--end`) adds a read-only report of the window: deploys and whether they rolled back, every task that stopped with its stop reason and exit codes (task runners included), background processes that exited with an error, ECS service events, and the CloudWatch alarms on the cluster, its services, and load balancers (`--alarm-prefix` for more). `--json` prints one JSON document with an `attention` list.
+- `logs:errors` groups the Laravel and PHP errors of a window with CloudWatch Logs Insights, with counts and first and last seen.
+- `queue:status` reports failed jobs, queue sizes, the `failed_jobs` table, and when each scheduled task last ran and whether it failed, without a shell in a container. Without any of the package's events in the window it exits `2`; pass `--no-samples` for an app without a scheduler.
+- `logs --start` and `--end` for exact windows, `--json` for JSON Lines with the service, ECS task, deploy (revision), and level of each line, and `--limit`, which says where to continue.
+- `ecsEvents` (on by default) records the cluster's ECS events, task stops with exit codes, deployments, and service actions, in `/sst/cluster/<cluster>/sst-laravel/ecs-events` for 30 days, through a small Lambda function and two EventBridge rules. It keeps only the fields `status` reads, never a task's overrides, which can hold secrets. ECS itself lists stopped tasks for about an hour.
+- `config.logFormat` (default `json`): SST Laravel sets `LOG_STDERR_FORMATTER` to a JSON formatter when the environment sets none, so each log entry and its stack trace is one CloudWatch event. Set `text` for Laravel's text lines.
+- The Composer package (`composer require kirschbaum-development/sst-laravel`) now ships a JSON log formatter with stack traces (lines stay under the 16 KB Fargate keeps in one log event) and the service, ECS task, and revision of each line, and, in the containers SST Laravel deploys, logs failed jobs and scheduled task runs and samples the queue sizes every minute from the scheduler. `SST_LARAVEL_MONITORING`, `SST_LARAVEL_SAMPLE_QUEUES`, and `SST_LARAVEL_QUEUES` configure it.
+- The web image raises PHP-FPM's `log_limit` from ServerSideUp's 8 KB to 64 KB, so a long log line from a request is no longer wrapped into several.
+- Background processes log a `process_exit` JSON line when they exit, also when s6 restarts them in place.
+- Each container gets `SST_LARAVEL_SERVICE`: `web`, `reverb`, or the worker name.
+
+### Changed
+
+- `logs` reads the stage's log groups instead of looking them up through a running task, so it works when the app is crash-looping or scaled to zero, and it reads every service and the short-lived tasks in the cluster. Without a service argument it prints all of them. It no longer needs the AWS CLI.
+- `logs` follows new lines by default only in a terminal. Without one, it prints the window and exits.
+- `ssh`, `command:run`, `logs`, `env:push`, and `env:pull` never prompt without a terminal (or with `CI` set): a choice they can't make is an error that lists the options, or names the flag to pass (`--stage`, `--force`).
+- `scheduler: true` runs `php artisan schedule:run` at the start of every minute in a shell loop, instead of `php artisan schedule:work`, which writes the output and errors of the tasks together, so a line a task logged ended up after its "Running" line.
+- `status`, `logs:errors`, and `queue:status` exit `1` when something needs attention and `2` when they could not check (`status` used to exit `1` for both). Every command exits `2` for a usage error, such as an unknown option or a missing value.
+- `status --stage` without deployment outputs on the machine checks the stage's cluster, found by name, and says the expected revisions were not verified, instead of failing.
+- Progress and diagnostics of these commands, such as `Auto-detected cluster`, go to stderr, also through the `php artisan sst-laravel:*` commands.
+- The first deploy with this version gives every service a new task definition (`SST_LARAVEL_SERVICE`, and `LOG_STDERR_FORMATTER` unless the environment sets it). Log filters and metric filters that match Laravel's text lines need updating for JSON logs, or set `config.logFormat: "text"`.
+
 ## [0.7.4]
 
 ### Changed

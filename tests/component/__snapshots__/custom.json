@@ -48,11 +48,88 @@
     }
   },
   {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Custom-EcsEventsServiceEvents",
+    "parent": "Custom",
+    "inputs": {
+      "description": "Sends the ECS events of the Custom cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail-type": [
+          "ECS Deployment State Change",
+          "ECS Service Action"
+        ],
+        "resources": [
+          {
+            "prefix": "arn:aws:mock:us-east-1:123456789012:Custom-ClusterCluster/"
+          }
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-CustomEcsEventsServiceEvents-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventRule:EventRule",
+    "name": "Custom-EcsEventsStoppedTasks",
+    "parent": "Custom",
+    "inputs": {
+      "description": "Sends the ECS events of the Custom cluster to its recorder (sst-laravel).",
+      "eventPattern": {
+        "detail": {
+          "clusterArn": [
+            "arn:aws:mock:us-east-1:123456789012:Custom-ClusterCluster"
+          ],
+          "lastStatus": [
+            "STOPPED"
+          ]
+        },
+        "detail-type": [
+          "ECS Task State Change"
+        ],
+        "source": [
+          "aws.ecs"
+        ]
+      },
+      "name": "app-dev-CustomEcsEventsStoppedTasks-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Custom-EcsEventsServiceEventsTarget",
+    "parent": "Custom",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEventsRecorder",
+      "rule": "app-dev-CustomEcsEventsServiceEvents-<random>",
+      "targetId": "app-dev-CustomEcsEventsServiceEventsTarget-<random>"
+    }
+  },
+  {
+    "type": "aws:cloudwatch/eventTarget:EventTarget",
+    "name": "Custom-EcsEventsStoppedTasksTarget",
+    "parent": "Custom",
+    "inputs": {
+      "arn": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEventsRecorder",
+      "rule": "app-dev-CustomEcsEventsStoppedTasks-<random>",
+      "targetId": "app-dev-CustomEcsEventsStoppedTasksTarget-<random>"
+    }
+  },
+  {
     "type": "aws:cloudwatch/logGroup:LogGroup",
     "name": "Custom-apiLogGroupCustom-api",
     "parent": "Custom-api",
     "inputs": {
       "name": "/sst/cluster/app-dev-CustomClusterCluster-<random>/app-dev-Customapi-<random>/Custom-api",
+      "retentionInDays": 30
+    }
+  },
+  {
+    "type": "aws:cloudwatch/logGroup:LogGroup",
+    "name": "Custom-EcsEvents",
+    "parent": "Custom",
+    "inputs": {
+      "name": "/sst/cluster/app-dev-CustomClusterCluster-<random>/sst-laravel/ecs-events",
       "retentionInDays": 30
     }
   },
@@ -160,6 +237,14 @@
           {
             "environment": [
               {
+                "name": "LOG_STDERR_FORMATTER",
+                "value": "Monolog\\Formatter\\JsonFormatter"
+              },
+              {
+                "name": "SST_LARAVEL_SERVICE",
+                "value": "api"
+              },
+              {
                 "name": "SST_RESOURCE_App",
                 "value": {
                   "name": "app",
@@ -257,6 +342,97 @@
       },
       "inlinePolicies": [],
       "name": "app-dev-CustomapiTaskRole-<random>"
+    }
+  },
+  {
+    "type": "aws:iam/role:Role",
+    "name": "Custom-EcsEventsRole",
+    "parent": "Custom",
+    "inputs": {
+      "assumeRolePolicy": {
+        "Statement": [
+          {
+            "Action": "sts:AssumeRole",
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            }
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "description": "Records the ECS events of the Custom cluster (sst-laravel).",
+      "inlinePolicies": [
+        {
+          "name": "logs",
+          "policy": {
+            "Statement": [
+              {
+                "Action": [
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Effect": "Allow",
+                "Resource": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEvents:*"
+              }
+            ],
+            "Version": "2012-10-17"
+          }
+        }
+      ],
+      "name": "app-dev-CustomEcsEventsRole-<random>"
+    }
+  },
+  {
+    "type": "aws:lambda/function:Function",
+    "name": "Custom-EcsEventsRecorder",
+    "parent": "Custom",
+    "dependsOn": [
+      "Custom-EcsEvents"
+    ],
+    "inputs": {
+      "architectures": [
+        "arm64"
+      ],
+      "code": {
+        "__pulumiArchive": true,
+        "assets": {}
+      },
+      "description": "Records the ECS events of the Custom cluster in CloudWatch Logs (sst-laravel).",
+      "handler": "index.handler",
+      "loggingConfig": {
+        "applicationLogLevel": "INFO",
+        "logFormat": "JSON",
+        "logGroup": "/sst/cluster/app-dev-CustomClusterCluster-<random>/sst-laravel/ecs-events",
+        "systemLogLevel": "WARN"
+      },
+      "memorySize": 128,
+      "name": "app-dev-CustomEcsEventsRecorder-<random>",
+      "role": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEventsRole",
+      "runtime": "nodejs22.x",
+      "timeout": 10
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Custom-EcsEventsServiceEventsPermission",
+    "parent": "Custom",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-CustomEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEventsServiceEvents"
+    }
+  },
+  {
+    "type": "aws:lambda/permission:Permission",
+    "name": "Custom-EcsEventsStoppedTasksPermission",
+    "parent": "Custom",
+    "inputs": {
+      "action": "lambda:InvokeFunction",
+      "function": "app-dev-CustomEcsEventsRecorder-<random>",
+      "principal": "events.amazonaws.com",
+      "sourceArn": "arn:aws:mock:us-east-1:123456789012:Custom-EcsEventsStoppedTasks"
     }
   },
   {

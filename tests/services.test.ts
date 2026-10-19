@@ -3,6 +3,7 @@ import { output } from '@pulumi/pulumi';
 import type { LaravelLoadBalancerArgs } from '../laravel-sst';
 import { buildContainerEnvironment } from '../src/environment';
 import { planServices, resolveReverbArgs } from '../src/services';
+import { SCHEDULER_COMMAND } from '../src/background-tasks';
 
 const plan = (args: Record<string, unknown>) =>
   planServices('App', args as any, { sitePath: '.', buildPath: '/build', reverb: resolveReverbArgs(args.reverb as any) });
@@ -141,12 +142,12 @@ describe('planServices', () => {
 
     expect(plans[0].tasks).toEqual({
       'laravel-horizon': { command: 'php artisan horizon' },
-      'laravel-scheduler': { command: 'php artisan schedule:work' },
+      'laravel-scheduler': { command: SCHEDULER_COMMAND },
     });
     expect(plans[1].tasks).toEqual({
       pulse: { command: 'php artisan pulse:work' },
       'laravel-horizon': { command: 'php artisan horizon', stopContainerOnExit: true },
-      'laravel-scheduler': { command: 'php artisan schedule:work', stopContainerOnExit: true },
+      'laravel-scheduler': { command: SCHEDULER_COMMAND, stopContainerOnExit: true },
     });
     expect(plans[2].tasks).toEqual({ 'laravel-reverb': { command: 'php artisan reverb:start' } });
   });

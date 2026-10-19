@@ -1,6 +1,7 @@
 import { DescribeTasksCommand, ECSClient, ListClustersCommand, ListTasksCommand, Task } from '@aws-sdk/client-ecs';
 import { select } from '@inquirer/prompts';
 import { extractLaravelComponents, extractSstProjectName, findSstConfig } from './sst-config.js';
+import { CliError, info, isInteractive } from './cli.js';
 
 export interface EcsCluster {
   clusterArn: string;
@@ -117,33 +118,32 @@ export async function listRunningTasks(ecsClient: ECSClient, clusterArn: string)
 
 /**
  * The ECS cluster of the stage: the one `--cluster` names, or the cluster of
- * the `LaravelService` in sst.config.ts, matched by its exact name.
+ * the `LaravelService` in sst.config.ts, matched by its exact name. Throws a
+ * `CliError` when it can't tell which one.
  */
-export async function findCluster(ecsClient: ECSClient, stage: string, clusterOption?: string): Promise<EcsCluster> {
+export async function findCluster(
+  ecsClient: ECSClient,
+  stage: string,
+  clusterOption?: string,
+  log: (message: string) => void = info,
+): Promise<EcsCluster> {
   if (clusterOption) {
     return { clusterArn: clusterOption };
   }
 
   const configPath = findSstConfig();
   if (!configPath) {
-    console.error('Error: Could not find sst.config.ts or sst.config.js in current directory.');
-    console.error('Please use --cluster flag to specify cluster ARN manually.');
-    process.exit(1);
+    throw new CliError('Could not find sst.config.ts or sst.config.js in the current directory. Run the command from the app folder, or pass --cluster.', 2);
   }
 
   const components = extractLaravelComponents(configPath);
 
   if (components.length === 0) {
-    console.error('Error: No Laravel components found in SST config.');
-    console.error('Please use --cluster flag to specify cluster ARN manually.');
-    process.exit(1);
+    throw new CliError('No LaravelService found in the SST config. Pass --cluster to name the cluster.', 2);
   }
 
   if (components.length > 1) {
-    console.error('Error: Multiple Laravel components found in SST config.');
-    console.error(`Found: ${components.join(', ')}`);
-    console.error('Please use --cluster flag to specify which cluster to connect to.');
-    process.exit(1);
+    throw new CliError(`Several LaravelService components in the SST config (${components.join(', ')}). Pass --cluster to pick one.`, 2);
   }
 
   const app = extractSstProjectName(configPath);
@@ -152,26 +152,21 @@ export async function findCluster(ecsClient: ECSClient, stage: string, clusterOp
   const { clusterArn, candidates } = pickCluster(clusterArns, app, stage, component);
 
   if (candidates.length > 1) {
-    console.error(`Error: Several clusters match stage "${stage}" and component "${component}":`);
-    candidates.forEach((arn) => console.error(`  - ${arn.split('/').pop()}`));
-    console.error('Please use --cluster flag to specify which cluster to connect to.');
-    process.exit(1);
+    throw new CliError(
+      `Several clusters match stage "${stage}" and component "${component}": ${candidates.map((arn) => arn.split('/').pop()).join(', ')}. Pass --cluster to pick one.`,
+      2,
+    );
   }
 
   if (!clusterArn) {
-    console.error(`Error: No cluster found for app "${app ?? '(any)'}", stage "${stage}", and component "${component}".`);
+    const available = clusterArns.length === 0
+      ? 'No ECS clusters found in this region.'
+      : `Clusters in this region: ${clusterArns.map((arn) => arn.split('/').pop()).join(', ')}.`;
 
-    if (clusterArns.length === 0) {
-      console.error('No ECS clusters found in this region.');
-    } else {
-      console.error('Available clusters:');
-      clusterArns.forEach((arn) => console.error(`  - ${arn.split('/').pop()}`));
-    }
-
-    process.exit(1);
+    throw new CliError(`No cluster found for app "${app ?? '(any)'}", stage "${stage}", and component "${component}". ${available}`, 2);
   }
 
-  console.log(`Auto-detected cluster: ${clusterArn.split('/').pop()}`);
+  log(`Auto-detected cluster: ${clusterArn.split('/').pop()}`);
   return { clusterArn, component };
 }
 
@@ -209,6 +204,18 @@ export async function findClusterArn(ecsClient: ECSClient, stage: string, cluste
   return (await findCluster(ecsClient, stage, clusterOption)).clusterArn;
 }
 
+const describeTask = (task: Task) => {
+  const taskId = task.taskArn?.split('/').pop() || '';
+  const name = taskServiceName(task) ?? task.containers?.[0]?.name ?? 'unknown';
+
+  return { taskId, name, label: `${name} (${taskId.substring(0, 8)}...) - ${task.lastStatus || 'unknown'}` };
+};
+
+/**
+ * A running task of the service. Any task of a service will do, so with
+ * several it takes the first. Without a match, a person picks one; anyone
+ * else (no terminal, or `CI` set) gets an error that lists the services.
+ */
 export async function findTask(
   ecsClient: ECSClient,
   cluster: EcsCluster,
@@ -218,8 +225,7 @@ export async function findTask(
   const tasks = await listRunningTasks(ecsClient, cluster.clusterArn);
 
   if (tasks.length === 0) {
-    console.error('No running tasks found in cluster');
-    process.exit(1);
+    throw new CliError('No running tasks found in the cluster. The service may be scaled to zero or failing to start: check `sst-laravel status --stage <stage> --since 1h`.');
   }
 
   const matchingTask = service ? findServiceTasks(tasks, service, cluster.component)[0] : undefined;
@@ -228,19 +234,29 @@ export async function findTask(
     return matchingTask;
   }
 
-  if (service) {
-    console.log(`\nNo running task found matching service: ${service}`);
+  const running = [...new Set(tasks.map((task) => describeTask(task).name))].join(', ');
+
+  if (!isInteractive()) {
+    throw new CliError(
+      service
+        ? `No running task of "${service}". Running: ${running}.`
+        : `Name the service to use (web, reverb, worker, or a worker name). Running: ${running}.`,
+      2,
+    );
   }
-  console.log('Available tasks in cluster:\n');
+
+  if (service) {
+    info(`\nNo running task found matching service: ${service}`);
+  }
+  info('Available tasks in cluster:\n');
 
   return select({
     message: selectPrompt,
     choices: tasks.map((task) => {
-      const taskId = task.taskArn?.split('/').pop() || '';
-      const name = taskServiceName(task) ?? task.containers?.[0]?.name ?? 'unknown';
+      const { taskId, label } = describeTask(task);
 
       return {
-        name: `${name} (${taskId.substring(0, 8)}...) - ${task.lastStatus || 'unknown'}`,
+        name: label,
         value: task,
         description: `Task: ${taskId}`,
       };

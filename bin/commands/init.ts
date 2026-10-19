@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { confirm } from '@inquirer/prompts';
+import { isInteractive } from '../utils/cli.js';
 import { getTemplatePath, getPackageRoot } from '../utils/sst-config.js';
 import { resolveBin, runProcess } from '../utils/process.js';
 import { installSkill } from '../utils/skill.js';
@@ -11,7 +12,7 @@ import { ensureGitIgnore, resolveAppName, resolvePhpVersion } from '../utils/pro
 const PACKAGE_NAME = '@kirschbaum-development/sst-laravel';
 
 const maybeInstallSkill = async (cwd: string) => {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  if (!isInteractive()) {
     console.log('Skipping AI skill installation prompt (non-interactive terminal).');
     return;
   }

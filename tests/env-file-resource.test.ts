@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createRequire } from 'module';
-import { toEnvFileContent } from '../src/dotenv';
+import { loadEnvFile, toEnvFileContent } from '../src/dotenv';
 
 const aws = vi.hoisted(() => ({
   secrets: null as Record<string, string> | null,
@@ -177,6 +177,17 @@ describe('buildEnvFileContent', () => {
     );
 
     expect(content).toBe('APP_URL=https://app.test\nLOG_CHANNEL=daily\n');
+  });
+
+  it('adds the log formatter unless the source sets one, even to nothing', () => {
+    const inputs = { envFilePath: '/x', fingerprint: 'f', logFormatter: 'Monolog\\Formatter\\JsonFormatter' };
+
+    // Read back the way Laravel reads it: the backslashes survive.
+    expect(loadEnvFile(buildEnvFileContent(file('APP_KEY=x'), inputs)).LOG_STDERR_FORMATTER).toBe('Monolog\\Formatter\\JsonFormatter');
+    expect(buildEnvFileContent(
+      { content: 'LOG_STDERR_FORMATTER=\n', variables: { LOG_STDERR_FORMATTER: '' } },
+      inputs,
+    )).not.toContain('Monolog');
   });
 
   it('writes the source alone when autoInject is off', () => {

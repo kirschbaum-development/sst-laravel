@@ -38,9 +38,6 @@ const app = new LaravelService('MyLaravelApp', {
     {
       name: 'worker',
       tasks: {
-        'scheduler': {
-          command: 'php artisan schedule:work',
-        },
         'queue': {
           command: 'php artisan queue:work',
         },
@@ -52,6 +49,8 @@ const app = new LaravelService('MyLaravelApp', {
   ],
 });
 ```
+
+For the scheduler, set `scheduler: true` rather than a `php artisan schedule:work` task: `schedule:work` writes the output and errors of the tasks together, so a log line a task writes ends up after its unfinished "Running" line, and isn't JSON any more.
 
 Each task runs as `www-data` under [s6-overlay](https://github.com/just-containers/s6-overlay), which restarts it in place when it exits. Task names can use letters, numbers, `.`, `_`, and `-`. Names that s6-overlay or the images already use (`user`, `user2`, `base`, `top`, `fix-attrs`, `legacy-cont-init`, `legacy-services`, `nginx`, `php-fpm`, or anything starting with `s6rc-`) are rejected.
 

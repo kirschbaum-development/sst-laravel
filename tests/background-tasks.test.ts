@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -7,6 +8,8 @@ import {
   assertSafeWorkerName,
   assertTaskDependencies,
   buildBackgroundTasks,
+  finishScript,
+  SCHEDULER_COMMAND,
   writeS6TaskFiles,
 } from '../src/background-tasks';
 
@@ -23,7 +26,7 @@ describe('buildBackgroundTasks', () => {
 
   it('adds the scheduler task when scheduler is enabled', () => {
     expect(buildBackgroundTasks({ scheduler: true })).toEqual({
-      'laravel-scheduler': { command: 'php artisan schedule:work' },
+      'laravel-scheduler': { command: SCHEDULER_COMMAND },
     });
   });
 
@@ -59,7 +62,7 @@ describe('buildBackgroundTasks', () => {
     ).toEqual({
       pulse: { command: 'php artisan pulse:work' },
       'laravel-horizon': { command: 'php artisan horizon', stopContainerOnExit: true },
-      'laravel-scheduler': { command: 'php artisan schedule:work', stopContainerOnExit: true },
+      'laravel-scheduler': { command: SCHEDULER_COMMAND, stopContainerOnExit: true },
     });
   });
 
@@ -194,6 +197,7 @@ describe('writeS6TaskFiles', () => {
       'etc/s6-overlay/s6-rc.d/laravel-horizon/type',
       'etc/s6-overlay/s6-rc.d/pulse/dependencies.d/base',
       'etc/s6-overlay/s6-rc.d/pulse/dependencies.d/laravel-horizon',
+      'etc/s6-overlay/s6-rc.d/pulse/finish',
       'etc/s6-overlay/s6-rc.d/pulse/run',
       'etc/s6-overlay/s6-rc.d/pulse/script',
       'etc/s6-overlay/s6-rc.d/pulse/type',
@@ -224,7 +228,8 @@ describe('writeS6TaskFiles', () => {
       'longrun',
     );
     expect(fs.readdirSync(path.join(taskDir, 'dependencies.d'))).toEqual(['base']);
-    expect(fs.existsSync(path.join(taskDir, 'finish'))).toBe(false);
+    // s6 restarts it: the finish script only logs the exit.
+    expect(fs.readFileSync(path.join(taskDir, 'finish'), 'utf-8')).not.toContain('halt');
     expect(
       fs.existsSync(
         path.join(
@@ -272,13 +277,26 @@ describe('writeS6TaskFiles', () => {
         '  code=$((128 + $2))',
         'fi',
         '',
-        'echo "laravel-horizon exited with code $code. Stopping the container." >&2',
+        `echo '{"sst_laravel":"process_exit","process":"laravel-horizon","exit_code":'"$code"',"action":"stop_container","message":"laravel-horizon exited with code '"$code"'. Stopping the container."}' >&2`,
         'echo "$code" > /run/s6-linux-init-container-results/exitcode',
         'exec /run/s6/basedir/bin/halt',
         '',
       ].join('\n'),
     );
     expect(fs.statSync(finish).mode & 0o100).toBeTruthy();
+  });
+
+  it('logs each exit as one JSON line the CLI can read', () => {
+    const line = finishScript('pulse', false).split('\n').find((candidate) => candidate.startsWith('echo '))!;
+    const output = execFileSync('sh', ['-c', `{ code=137; ${line}; } 2>&1`], { encoding: 'utf-8' });
+
+    expect(JSON.parse(output)).toEqual({
+      sst_laravel: 'process_exit',
+      process: 'pulse',
+      exit_code: 137,
+      action: 'restart',
+      message: 'pulse exited with code 137. Restarting it.',
+    });
   });
 
   it('rejects dependencies that are not a single safe name', () => {
@@ -308,7 +326,7 @@ describe('writeS6TaskFiles', () => {
       buildPath,
     );
     writeS6TaskFiles(
-      { 'laravel-scheduler': { command: 'php artisan schedule:work' } },
+      { 'laravel-scheduler': { command: SCHEDULER_COMMAND } },
       buildPath,
     );
 

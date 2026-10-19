@@ -173,10 +173,13 @@ SST Laravel fills in some variables for you, with both environment files and `Re
 
 - **Linked resources.** Linking a database, Redis, or a bucket injects its `DB_*`, `REDIS_*`, or `AWS_*` variables. See [Linking Resources](linking-resources.md).
 - **`LOG_CHANNEL`.** To send logs to AWS CloudWatch, `LOG_CHANNEL` must be `stderr`. If your environment doesn't set it, SST Laravel adds `LOG_CHANNEL=stderr`.
+- **`LOG_STDERR_FORMATTER`.** So each log entry, stack trace included, is one CloudWatch event, SST Laravel adds a JSON formatter when your environment doesn't set one: the Laravel package's (`Kirschbaum\SST\Logging\JsonFormatter`) when it is installed in `vendor/`, otherwise Monolog's (`Monolog\Formatter\JsonFormatter`). Set `config.logFormat: "text"` to leave it out. See [Monitoring](monitoring.md#json-logs).
 - **`APP_URL`.** If your environment doesn't set it, SST Laravel adds it with the value of the `web.domain` property.
 - **Reverb.** With `reverb.domain` set, SST Laravel adds the `REVERB_*` variables. See [Reverb](reverb.md#environment-variables).
 
-SST Laravel adds them after your variables. Laravel reads the last value of a variable, so the values of linked resources win over the same variables in your environment, such as `DB_CONNECTION=sqlite` copied from `.env.example`. `LOG_CHANNEL` and `APP_URL` are only added when your environment doesn't set them.
+SST Laravel adds them after your variables. Laravel reads the last value of a variable, so the values of linked resources win over the same variables in your environment, such as `DB_CONNECTION=sqlite` copied from `.env.example`. `LOG_CHANNEL`, `LOG_STDERR_FORMATTER`, and `APP_URL` are only added when your environment doesn't set them.
+
+Each container also gets `SST_LARAVEL_SERVICE`: `web`, `reverb`, or the worker's name. The Laravel package adds it to log lines, and only logs its monitoring events where it is set.
 
 To stop SST Laravel from injecting variables for linked resources, set `config.environment.autoInject` to `false`. See [Disabling the auto-inject of environment variables](linking-resources.md#disabling-the-auto-inject-of-environment-variables).
 

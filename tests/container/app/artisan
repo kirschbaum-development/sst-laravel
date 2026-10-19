@@ -21,6 +21,17 @@ switch ($command) {
         touch("$state/$name.ran");
         exit(0);
 
+    // Like a task of the real one: its "Running" line is unfinished while
+    // the task logs a line to stderr.
+    case 'schedule:run':
+        touch("$state/$name.ran");
+        fwrite(STDOUT, '  Running [php artisan app:report] ');
+        fflush(STDOUT);
+        fwrite(STDERR, json_encode(['sst_laravel' => 'schedule_finished', 'task' => 'php artisan app:report', 'exit_code' => 0])."\n");
+        sleep(1);
+        fwrite(STDOUT, "DONE\n");
+        exit(0);
+
     case 'reverb:start':
         $server = stream_socket_server('tcp://0.0.0.0:8080', $errno, $error);
 

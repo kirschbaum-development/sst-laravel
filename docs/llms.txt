@@ -16,7 +16,7 @@ composer install && npm run build        # the image copies vendor/ and public/b
 npx sst-laravel deploy --stage dev       # deploy (vault-aware, use instead of sst deploy); waits for the rollout, fails on rollback
 npx sst-laravel status --stage dev --wait   # expected revisions + private ECR image availability + /up at the URL the deploy saved
 npx sst-laravel command:run migrate:status --stage dev   # checks the database (/up does not)
-npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming
+npx sst-laravel logs web --stage dev --no-follow         # recent logs, no streaming (streams by default only in a terminal)
 npx sst remove --stage dev               # removes stage resources; retained image manifests need separate cleanup
 ```
 
@@ -155,11 +155,39 @@ itself (listeners, ports), use `advanced.loadBalancer`. Guide: `load-balancer.md
 1. `npx sst-laravel status --stage <stage> --wait` — rollout + health in one view
    (`--url <url>` for another address). "rolled back to the previous revision"
    means the new tasks failed: the app answers from the old revision.
-2. `npx sst-laravel logs web --stage <stage> --no-follow` — recent errors.
+2. `npx sst-laravel logs web --stage <stage> --no-follow` — recent lines, even
+   with no task running; `npx sst-laravel logs:errors --stage <stage> --since 1h`
+   groups the errors.
 3. Usual causes: missing `APP_KEY`, wrong env names, DB unreachable, wrong health
    path, AWS keys committed in the env file (use the IAM role instead).
 4. `failed to configure registry cache importer ... not found` on the first
    build is expected.
+
+## Monitoring a stage (scheduled agents, scripts)
+
+Read-only, never prompt, no running task or shell needed, work from a fresh
+checkout with AWS credentials. Exit 0 = fine, 1 = needs attention (see the
+`attention` list), 2 = could not check. `--json` prints only JSON on stdout.
+Windows: `--since 24h`, or exact `--start 2026-10-18 --end 2026-10-19`
+(ISO 8601, UTC unless offset, end exclusive).
+
+```bash
+npx sst-laravel status --stage prod --since 24h --json      # deploys, stopped tasks + exit codes, process restarts, ECS events, alarms, /up
+npx sst-laravel logs:errors --stage prod --since 24h --json # Logs Insights: errors grouped by class+file, count, first/last seen
+npx sst-laravel queue:status --stage prod --since 24h --json # failed jobs, queue sizes, failed_jobs total, scheduled task last runs
+npx sst-laravel logs worker --stage prod --start 2026-10-18 --end 2026-10-19 --json  # JSON Lines with service, task, revision, level
+```
+
+`logs [service]`: web, reverb, worker (all workers), a worker name, or another
+task in the cluster (task runners); default all. `--limit` per log group; it
+says which `--start` continues. Logs are JSON by default (`config.logFormat`,
+via LOG_STDERR_FORMATTER unless the env sets it). `composer require
+kirschbaum-development/sst-laravel` adds stack traces + service/task/revision
+to each line, and the job/schedule events and queue samples `queue:status`
+reads (samples need `scheduler: true`; without one, pass `queue:status --no-samples`,
+or it exits 2 for a window without events). `ecsEvents` (default on) records ECS
+task stops and deployments in `/sst/cluster/<cluster>/sst-laravel/ecs-events`;
+ECS itself keeps stopped tasks ~1h. Read-only IAM policy: `monitoring.md#permissions`.
 
 ## Upgrading and verification
 

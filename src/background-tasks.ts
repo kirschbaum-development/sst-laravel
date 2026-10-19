@@ -110,6 +110,22 @@ export function assertSafeWorkerName(name: string): void {
 }
 
 /**
+ * The scheduler: `schedule:run` at the start of every minute, without
+ * waiting for the previous one, like `schedule:work`. Not `schedule:work`
+ * itself: it writes the output and the errors of `schedule:run` to its own
+ * output, together, so a JSON log line a task writes, and the `sst_laravel`
+ * event of a task that finished, end up after the task's "Running" line,
+ * which isn't finished until the task is. Here `schedule:run` writes to the
+ * container's stdout and stderr, apart.
+ */
+export const SCHEDULER_COMMAND = [
+  'while true; do',
+  '  sleep $((60 - 10#$(date +%S)))',
+  '  php artisan schedule:run &',
+  'done',
+].join('\n');
+
+/**
  * Merges the custom `tasks` map with the `horizon`/`scheduler` defaults. The
  * defaults win over same-named custom tasks. With `stopContainerOnExit`
  * (workers), the container stops when Horizon or the scheduler exits.
@@ -128,19 +144,24 @@ export function buildBackgroundTasks(
   }
 
   if (config.scheduler) {
-    tasks['laravel-scheduler'] = { command: 'php artisan schedule:work', ...stop };
+    tasks['laravel-scheduler'] = { command: SCHEDULER_COMMAND, ...stop };
   }
 
   return tasks;
 }
 
 /**
- * The `finish` script of a task that stops the container. s6 runs it when
- * the process exits. When s6 stopped the process (the container is shutting
- * down), it does nothing; otherwise it stops the container with the
- * process's exit code.
+ * The `finish` script of a task. s6 runs it when the process exits. When s6
+ * stopped the process (the container is shutting down), it does nothing.
+ * Otherwise it logs a `process_exit` JSON line (the CLI's `status --since`
+ * reads them), and with `stopContainer`, stops the container with the
+ * process's exit code, so ECS replaces it; without, s6 restarts the process.
+ * Task names are checked to be safe in the JSON and the shell.
  */
-function stopContainerScript(taskName: string): string {
+export function finishScript(taskName: string, stopContainer: boolean): string {
+  const action = stopContainer ? 'stop_container' : 'restart';
+  const next = stopContainer ? 'Stopping the container.' : 'Restarting it.';
+
   return [
     '#!/bin/sh',
     '# s6 passes the exit code, or 256 and the signal when a signal killed the process.',
@@ -153,9 +174,10 @@ function stopContainerScript(taskName: string): string {
     '  code=$((128 + $2))',
     'fi',
     '',
-    `echo "${taskName} exited with code $code. Stopping the container." >&2`,
-    'echo "$code" > /run/s6-linux-init-container-results/exitcode',
-    'exec /run/s6/basedir/bin/halt',
+    `echo '{"sst_laravel":"process_exit","process":"${taskName}","exit_code":'"$code"',"action":"${action}","message":"${taskName} exited with code '"$code"'. ${next}"}' >&2`,
+    ...(stopContainer
+      ? ['echo "$code" > /run/s6-linux-init-container-results/exitcode', 'exec /run/s6/basedir/bin/halt']
+      : ['exit 0']),
     '',
   ].join('\n');
 }
@@ -220,9 +242,7 @@ export function writeS6TaskFiles(
       fs.writeFileSync(path.join(dependenciesDir, dependency), '');
     }
 
-    if (config.stopContainerOnExit) {
-      fs.writeFileSync(path.join(tasksDir, 'finish'), stopContainerScript(taskName), { mode: 0o777 });
-    }
+    fs.writeFileSync(path.join(tasksDir, 'finish'), finishScript(taskName, Boolean(config.stopContainerOnExit)), { mode: 0o777 });
 
     fs.writeFileSync(path.join(s6UserContentsPath, taskName), '');
   });

@@ -93,6 +93,8 @@ export interface DeploymentCheckOptions {
 export interface DeploymentCheckResult {
   verdict: DeploymentVerdict;
   rollouts: ServiceRollout[];
+  /** Task definition images that are not in their private ECR repository. */
+  missingImages: string[];
   health: HealthResult;
 }
 
@@ -149,7 +151,7 @@ export async function verifyDeployment(options: DeploymentCheckOptions): Promise
       previousReport = report;
     }
 
-    const result = (verdict: DeploymentVerdict): DeploymentCheckResult => ({ verdict, rollouts, health });
+    const result = (verdict: DeploymentVerdict): DeploymentCheckResult => ({ verdict, rollouts, missingImages, health });
 
     if (failed || health.state === 'failed' || rollouts.length === 0) {
       return result('failed');
