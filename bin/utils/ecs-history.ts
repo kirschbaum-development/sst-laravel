@@ -368,6 +368,21 @@ export interface AlarmState {
   state: string;
   reason?: string;
   updatedAt?: string;
+  /**
+   * An alarm that only drives auto scaling, such as the `AlarmLow` of target
+   * tracking, which is in ALARM whenever the load is low. Reported, but it
+   * never needs attention.
+   */
+  scaling?: true;
+}
+
+/**
+ * True for an alarm whose only actions scale (Application Auto Scaling or
+ * EC2 Auto Scaling policies). An alarm that also notifies someone counts.
+ */
+export function isScalingAlarm(alarm: Pick<MetricAlarm, 'AlarmActions' | 'OKActions' | 'InsufficientDataActions'>): boolean {
+  const actions = [...(alarm.AlarmActions ?? []), ...(alarm.OKActions ?? []), ...(alarm.InsufficientDataActions ?? [])];
+  return actions.length > 0 && actions.every((action) => /^arn:aws[\w-]*:autoscaling:/.test(action));
 }
 
 type Dimension = { Name?: string; Value?: string };
@@ -442,11 +457,12 @@ export async function findAlarms(cloudwatch: CloudWatchClient, targets: AlarmTar
     ...metric.filter((alarm) => alarmMatches(alarm, targets) || named(alarm.AlarmName)),
     ...composite.filter((alarm) => named(alarm.AlarmName)),
   ]
-    .map((alarm) => ({
+    .map((alarm): AlarmState => ({
       name: alarm.AlarmName ?? 'unknown',
       state: alarm.StateValue ?? 'UNKNOWN',
       reason: alarm.StateReason,
       updatedAt: toIso(alarm.StateUpdatedTimestamp),
+      ...(isScalingAlarm(alarm) ? { scaling: true as const } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

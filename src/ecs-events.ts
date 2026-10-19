@@ -146,4 +146,3 @@ export function createEcsEventRecorder(parent: ComponentResource, name: string, 
 
   return { logGroupName: logGroup.name, recorder };
 }
-

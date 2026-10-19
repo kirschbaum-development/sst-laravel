@@ -4,8 +4,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { readStageTargets } from '../bin/commands/status';
 import { buildQueueReport, combineSchedule, QUEUE_QUERIES } from '../bin/commands/queue-status';
+import { errorsQuery } from '../bin/commands/logs-errors';
+import { windowQuery } from '../bin/utils/insights';
 import { saveDeploymentTargets } from '../bin/utils/deployment-targets';
-import { classifyStoppedTask, ECS_EVENTS_LIMIT, parseEcsEvent, PROCESS_EXITS_LIMIT, stoppedTasksFromEvents, toProcessExit } from '../bin/utils/ecs-history';
+import { classifyStoppedTask, ECS_EVENTS_LIMIT, findAlarms, parseEcsEvent, PROCESS_EXITS_LIMIT, stoppedTasksFromEvents, toProcessExit } from '../bin/utils/ecs-history';
 import { buildHistoryReport, historyAttention } from '../bin/utils/history-report';
 import { ECS_EVENT_RECORDER_SOURCE, serviceEventPattern } from '../src/ecs-events';
 
@@ -227,6 +229,22 @@ describe('historyAttention', () => {
     expect(report.attention).toContainEqual(expect.stringContaining(`more than ${PROCESS_EXITS_LIMIT} process exits with an error`));
   });
 
+  it('lists the alarms of auto scaling, but only an alarm that notifies someone needs attention', async () => {
+    const scaleIn = 'arn:aws:autoscaling:us-east-1:123456789012:scalingPolicy:1a2b:resource/ecs/service/c/App-Web:policyName/App-WebTargetTracking';
+    const cloudwatch = { send: vi.fn(async () => ({ MetricAlarms: [
+      { AlarmName: 'TargetTracking-service/c/App-Web-AlarmLow-1a2b', StateValue: 'ALARM', AlarmActions: [scaleIn], Dimensions: [{ Name: 'ServiceName', Value: 'App-Web' }] },
+      { AlarmName: 'App-Web-5xx', StateValue: 'ALARM', AlarmActions: [scaleIn, 'arn:aws:sns:us-east-1:123456789012:oncall'], Dimensions: [{ Name: 'ServiceName', Value: 'App-Web' }] },
+    ] })) };
+
+    const alarms = await findAlarms(cloudwatch as any, { clusterName: 'c', serviceNames: ['App-Web'], targetGroups: [], loadBalancers: [] });
+
+    expect(alarms.map((alarm) => [alarm.name, alarm.scaling ?? false])).toEqual([
+      ['App-Web-5xx', false],
+      ['TargetTracking-service/c/App-Web-AlarmLow-1a2b', true],
+    ]);
+    expect(historyAttention([], [], [], alarms)).toEqual([expect.stringMatching(/^alarm App-Web-5xx is in ALARM/)]);
+  });
+
   it('flags rolled-back deployments, missing tasks, unexpected stops, and alarms', () => {
     const attention = historyAttention(
       [{ service: 'App-Web', running: 1, desired: 2, events: [], deployments: [{ status: 'ROLLBACK_SUCCESSFUL', revision: 'App-Web-Task:9', startedAt: '2026-10-19T09:00:00.000Z' }] }],
@@ -251,7 +269,7 @@ describe('queue:status', () => {
   it('takes the last run of each scheduled task: a later success clears an earlier failure', () => {
     const schedule = combineSchedule(
       [
-        { task: 'php artisan reports:daily', runs: '2', lastFinished: '2026-10-19 06:00:05.000', lastExitCode: '0', expression: '0 6 * * *' },
+        { task: 'php artisan reports:daily', runs: '2', lastFinished: '2026-10-19 06:00:05.000', lastExitCode: '0', lastExpression: '0 6 * * *' },
         { task: 'php artisan sync', runs: '3', lastFinished: '2026-10-19 11:00:02.000', lastExitCode: '1' },
       ],
       [
@@ -274,8 +292,8 @@ describe('queue:status', () => {
     const rows = {
       ...empty,
       queues: [
-        { connection: 'redis', queue: 'default', size: '3', maxSize: '40', sampledAt: '2026-10-19 11:59:30.000' },
-        { connection: 'redis', queue: 'mail', size: '0', maxSize: '2', sampledAt: '2026-10-19 11:30:00.000' },
+        { connection: 'redis', queue: 'default', lastSize: '3', maxSize: '40', sampledAt: '2026-10-19 11:59:30.000' },
+        { connection: 'redis', queue: 'mail', lastSize: '0', maxSize: '2', sampledAt: '2026-10-19 11:30:00.000' },
       ],
     };
 
@@ -310,8 +328,8 @@ describe('queue:status', () => {
   it('flags failed jobs and a backlog over --max-size', () => {
     const report = buildQueueReport({
       ...empty,
-      failedJobs: [{ job: 'App\\Jobs\\SendInvoice', connection: 'redis', queue: 'default', failures: '4', lastSeen: '2026-10-19 11:59:00.000', exception: 'RuntimeException', lastMessage: 'SMTP down' }],
-      queues: [{ connection: 'redis', queue: 'default', size: '120', maxSize: '200', sampledAt: '2026-10-19 11:59:30.000' }],
+      failedJobs: [{ job: 'App\\Jobs\\SendInvoice', connection: 'redis', queue: 'default', failures: '4', lastSeen: '2026-10-19 11:59:00.000', lastException: 'RuntimeException', lastMessage: 'SMTP down' }],
+      queues: [{ connection: 'redis', queue: 'default', lastSize: '120', maxSize: '200', sampledAt: '2026-10-19 11:59:30.000' }],
     }, window, { now: NOW, maxSize: 100 });
 
     expect(report.attention).toEqual([
@@ -339,5 +357,35 @@ describe('status targets', () => {
 
     saveDeploymentTargets(app, manifest as any);
     expect(() => readStageTargets(app, {}, 'production')).toThrow('Missing, invalid, or wrong-stage deployment output');
+  });
+});
+
+describe('the Logs Insights queries', () => {
+  /**
+   * The names a query reads before it defines them with `as`, without
+   * strings, regular expressions, and function names.
+   */
+  const aliasesReadBeforeDefined = (query: string) => {
+    const text = query.replace(/"[^"]*"/g, '""').replace(/\/(?:\\.|[^/\n])+\//g, '//');
+    const problems: string[] = [];
+
+    for (const match of text.matchAll(/\bas\s+([A-Za-z_]\w*)/g)) {
+      const before = text.slice(0, match.index).replace(/\bas\s+[A-Za-z_]\w*/g, '');
+      const read = new Set([...before.matchAll(/(?<![\w.@])([A-Za-z_][\w.]*)(?!\s*\()/g)].map((name) => name[1]));
+      if (read.has(match[1])) problems.push(match[1]);
+    }
+
+    return problems;
+  };
+
+  it('never name a result like a field they read, which CloudWatch rejects as a cycle', () => {
+    const window = { start: 0, end: 1000 };
+    const queries = { ...QUEUE_QUERIES, errors: errorsQuery(50) };
+
+    for (const [name, query] of Object.entries(queries)) {
+      expect(aliasesReadBeforeDefined(windowQuery(query, window)), name).toEqual([]);
+    }
+
+    expect(aliasesReadBeforeDefined('stats latest(size) as size by queue')).toEqual(['size']);
   });
 });

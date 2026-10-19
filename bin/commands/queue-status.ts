@@ -25,17 +25,19 @@ interface QueueStatusOptions {
  * scheduled task that finished, failed, or was skipped.
  */
 export const QUEUE_QUERIES = {
+  // A result never takes the name of a field it reads (`latest(size) as size`):
+  // CloudWatch rejects that with "Cycle found in operation dependency graph".
   failedJobs: `filter sst_laravel = "job_failed"
-| stats count(*) as failures, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(exception) as exception, latest(message) as lastMessage by job, connection, queue
+| stats count(*) as failures, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(exception) as lastException, latest(message) as lastMessage by job, connection, queue
 | sort failures desc
 | limit 100`,
   queues: `filter sst_laravel = "queue_size"
-| stats latest(size) as size, max(size) as maxSize, latest(error) as error, max(@timestamp) as sampledAt by connection, queue
+| stats latest(size) as lastSize, max(size) as maxSize, latest(error) as lastError, max(@timestamp) as sampledAt by connection, queue
 | limit 100`,
   failedTotal: `filter sst_laravel = "failed_jobs_total"
 | stats latest(failed_jobs) as total, max(@timestamp) as sampledAt`,
   scheduleFinished: `filter sst_laravel = "schedule_finished"
-| stats count(*) as runs, max(@timestamp) as lastFinished, latest(exit_code) as lastExitCode, latest(runtime) as lastRuntime, latest(expression) as expression by task
+| stats count(*) as runs, max(@timestamp) as lastFinished, latest(exit_code) as lastExitCode, latest(runtime) as lastRuntime, latest(expression) as lastExpression by task
 | limit 200`,
   scheduleFailed: `filter sst_laravel = "schedule_failed"
 | stats count(*) as failures, max(@timestamp) as lastFailed, latest(message) as lastError by task
@@ -91,7 +93,7 @@ export function combineSchedule(finished: InsightsRow[], failed: InsightsRow[], 
 
     return {
       task,
-      expression: done?.expression || null,
+      expression: done?.lastExpression || null,
       runs: Number(done?.runs ?? 0) + Number(fail?.failures ?? 0),
       failures: Number(fail?.failures ?? 0) + Number(exitFail?.failures ?? 0),
       skips: Number(skip?.skips ?? 0),
@@ -132,16 +134,16 @@ export function buildQueueReport(
     failures: Number(row.failures ?? 0),
     firstSeen: iso(row.firstSeen),
     lastSeen: iso(row.lastSeen),
-    exception: row.exception || null,
+    exception: row.lastException || null,
     lastMessage: row.lastMessage || null,
   }));
   const queues = rows.queues.filter((row) => row.sampledAt).map((row) => ({
     connection: row.connection || 'default',
     queue: row.queue || 'default',
-    size: numberOrNull(row.size),
+    size: numberOrNull(row.lastSize),
     maxSize: numberOrNull(row.maxSize),
     sampledAt: iso(row.sampledAt),
-    error: row.error || null,
+    error: row.lastError || null,
   }));
   const total = rows.failedTotal.find((row) => row.sampledAt);
   const schedule = combineSchedule(rows.scheduleFinished, rows.scheduleFailed, rows.scheduleSkipped, rows.scheduleExitFailed);

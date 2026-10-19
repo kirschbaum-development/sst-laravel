@@ -5,7 +5,7 @@ import * as path from 'path';
 import { CloudWatchLogsClient, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { DescribeTasksCommand, ECSClient, ListTasksCommand } from '@aws-sdk/client-ecs';
 import { shouldFollow } from '../bin/commands/logs';
-import { toErrorGroup } from '../bin/commands/logs-errors';
+import { mergeErrorGroups, summarizeErrors, toErrorGroup } from '../bin/commands/logs-errors';
 import { Command } from 'commander';
 import { queueStatusCommand } from '../bin/commands/queue-status';
 import { CliError, exitWithErrorOnUsage } from '../bin/utils/cli';
@@ -260,6 +260,37 @@ describe('logs:errors groups', () => {
       service: 'queue',
       task: '0123456789abcdef0123456789abcdef',
     });
+  });
+
+  it('writes the class of a text log with single backslashes, and merges it with the same error from JSON logs', () => {
+    const row = (classValue: string, count: string, lastSeen: string, lastMessage: string) => ({
+      errorKey: classValue,
+      errorFile: '/var/www/html/app/Http/Controllers/ReportController.php:31',
+      lastThrownAt: '/var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php:838',
+      errorLevel: 'ERROR', count, firstSeen: '2026-10-19 01:00:00.000', lastSeen, class: classValue, lastMessage,
+    });
+    const groups = mergeErrorGroups([
+      toErrorGroup(row('Illuminate\\Database\\QueryException', '2', '2026-10-19 09:00:00.000', 'from JSON'), []),
+      toErrorGroup(row('Illuminate\\\\Database\\\\QueryException', '3', '2026-10-19 10:00:00.000', 'from text'), []),
+    ]);
+
+    expect(groups).toEqual([expect.objectContaining({
+      class: 'Illuminate\\Database\\QueryException',
+      count: 5,
+      message: 'from text',
+      file: '/var/www/html/app/Http/Controllers/ReportController.php:31',
+      thrownAt: '/var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php:838',
+      lastSeen: '2026-10-19T10:00:00.000Z',
+    })]);
+  });
+
+  it('says the list is cut at --limit by the rows the query returned, though they merge into fewer groups', () => {
+    const row = (classValue: string, count: string) => ({ errorKey: classValue, class: classValue, errorFile: 'app/A.php:1', errorLevel: 'ERROR', count, lastMessage: 'x' });
+    const summary = summarizeErrors([row('App\\Boom', '4'), row('App\\\\Boom', '3')], [], 2);
+
+    expect(summary).toMatchObject({ total: 7, truncated: true });
+    expect(summary.groups).toHaveLength(1);
+    expect(summarizeErrors([row('App\\Boom', '4')], [], 2).truncated).toBe(false);
   });
 });
 

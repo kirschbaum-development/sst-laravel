@@ -24,6 +24,8 @@ import type { DeploymentManifest } from './src/deployment';
 
 // Re-export RemoteEnvVault for external use
 export { RemoteEnvVault, RemoteEnvVaultArgs };
+export { EcsEventRecorder } from './src/ecs-event-recorder';
+export type { EcsEventRecorderArgs, EcsEventRecorderCluster } from './src/ecs-event-recorder';
 export type { PlanetScaleProperties } from './src/planetscale-env.js';
 export type LaravelDeployment = DeploymentManifest<Input<string>>;
 

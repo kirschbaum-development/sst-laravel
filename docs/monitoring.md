@@ -34,13 +34,13 @@ With `--json`, stdout holds one JSON document and nothing else. Progress and dia
 - every task that stopped, why (`replaced` in a deploy or scale-in, `completed`, `stopped` on request, `crashed`, `health-check`, `failed-to-start`, or `infrastructure`), its stop reason, and the exit code of each container. That includes standalone tasks in the cluster, such as task runners;
 - the background processes (Horizon, the scheduler, custom tasks) that exited with an error, with their exit codes, including the ones s6 restarted in place, which ECS never sees;
 - the ECS service events, without the routine "reached a steady state";
-- the CloudWatch alarms on the cluster, its services, target groups, or load balancers, plus any whose name starts with `--alarm-prefix`.
+- the CloudWatch alarms on the cluster, its services, target groups, or load balancers, plus any whose name starts with `--alarm-prefix`. An alarm that only drives auto scaling, such as the `AlarmLow` of target tracking, which is in `ALARM` whenever the load is low, is listed but never needs attention.
 
 It needs attention for a rolled-back or stopped deploy, a service running fewer tasks than it wants, a task that crashed, failed a health check, or failed to start, a process that exited with an error, and an alarm in `ALARM`. A process that exits 0 and restarts, or a task replaced in a deploy, is expected. A window with more than 20,000 ECS events, or more than 5,000 process exits with an error in a log group, needs attention too: the report says up to when it read them, and how to continue: `--start` for the process exits, and for the ECS events the same window with `--ecs-events-from`, since a task can be logged after the point where the events stopped though it stopped before.
 
 Without deployment outputs on the machine (`.sst/outputs.json`), it finds the stage's cluster by name and says that the expected revisions were not verified.
 
-**`logs:errors`** groups the error lines of the window with CloudWatch Logs Insights and lists each group with its count, first and last time, level, latest message, and the service and task of the latest one. An error with an exception is grouped by its class and file; one without, by its message. It reads JSON Laravel logs, text Laravel logs, and PHP fatal errors.
+**`logs:errors`** groups the error lines of the window with CloudWatch Logs Insights and lists each group with its count, first and last time, level, latest message, and the service and task of the latest one. An error with an exception is grouped by its class and the first frame of the app's own code in its trace (outside `vendor/`), so the database errors of two queries make two groups, with the file that threw it beside it. That needs the package's formatter; without it, an error is grouped by the file that threw it. One without an exception is grouped by its message. It reads JSON Laravel logs, text Laravel logs, and PHP fatal errors.
 
 **`queue:status`** reports, from the events the Laravel package logs (see below):
 
@@ -79,6 +79,15 @@ The samples cover the default queue and, with Horizon, the queues of its supervi
 ### The ECS events
 
 ECS lists a stopped task for about an hour. To report a day of restarts and crashes, the component records the cluster's ECS events in CloudWatch Logs: tasks that stopped, deployments, and service actions. EventBridge sends them to a small Lambda function that logs them to `/sst/cluster/<cluster>/sst-laravel/ecs-events`, kept 30 days. It logs only what `status` reads (the task, its stop code and reason, and the exit code of each container), never what a task was started with: the overrides of a task runner can hold secrets. It runs once per event and costs next to nothing. Set [`ecsEvents: false`](api.md) to leave it out; `status --since` then falls back to what ECS still lists.
+
+A cluster that `LaravelService` didn't create, such as an `sst.aws.Cluster` for task runners, gets the same recorder with `EcsEventRecorder`. Check it with `status --cluster <cluster name> --since 24h`:
+
+```ts
+import { EcsEventRecorder } from '@kirschbaum-development/sst-laravel';
+
+const tasks = new sst.aws.Cluster('Tasks', { vpc });
+new EcsEventRecorder('TasksEvents', { cluster: tasks });
+```
 
 ### Process exits
 

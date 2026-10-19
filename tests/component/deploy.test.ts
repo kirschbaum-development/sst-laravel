@@ -175,7 +175,7 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(ROOT, 'deploy.sh'), '#!/bin/sh\nphp artisan migrate --force\n');
   fs.writeFileSync(path.join(ROOT, '.dockerignore'), '# user rules\nnode_modules\n.env*\ncustom-exclusion\n');
 
-  const { LaravelService, RemoteEnvVault } = await import('./pkg/@kirschbaum-development/sst-laravel/laravel-sst.js');
+  const { EcsEventRecorder, LaravelService, RemoteEnvVault } = await import('./pkg/@kirschbaum-development/sst-laravel/laravel-sst.js');
   const sst = g.sst as any;
 
   await pulumi.runtime.runInPulumiStack(async () => {
@@ -273,6 +273,9 @@ beforeAll(async () => {
         },
       }],
     });
+
+    // The ECS events of a cluster that LaravelService didn't create.
+    new EcsEventRecorder('TasksEvents', { cluster: new sst.aws.Cluster('Tasks', { vpc }) });
 
     await settle();
   });
@@ -464,6 +467,19 @@ describe('deployed configuration', () => {
     expect(find('aws:ecs/service:Service', 'Full-WebService').dependsOn).toContain('Full-EnvFile.sst.aws.EnvFile');
     // The images copy a placeholder, so they don't wait.
     expect(find('docker-build:index:Image', 'Full-WebImageFull-Web').dependsOn).toBeUndefined();
+  });
+
+  it('records the ECS events of another cluster, like those of its own', () => {
+    const own = find('aws:cloudwatch/logGroup:LogGroup', 'Mini-EcsEvents');
+    const other = find('aws:cloudwatch/logGroup:LogGroup', 'TasksEvents-EcsEvents');
+    const rule = find('aws:cloudwatch/eventRule:EventRule', 'TasksEvents-EcsEventsStoppedTasks');
+
+    expect(other.parent).toBe('TasksEvents');
+    expect(other.inputs.name).toMatch(/^\/sst\/cluster\/app-dev-TasksCluster-[a-z]+\/sst-laravel\/ecs-events$/);
+    expect(other.inputs.retentionInDays).toBe(own.inputs.retentionInDays);
+    expect((normalize(rule.inputs.eventPattern) as any).detail.clusterArn).toEqual(['arn:aws:mock:us-east-1:123456789012:TasksCluster']);
+    expect(find('aws:lambda/function:Function', 'TasksEvents-EcsEventsRecorder').inputs.loggingConfig)
+      .toEqual({ ...find('aws:lambda/function:Function', 'Mini-EcsEventsRecorder').inputs.loggingConfig, logGroup: other.inputs.name });
   });
 
   it('writes the env file the images copy, with a resource they wait for, when it stays in the image', () => {

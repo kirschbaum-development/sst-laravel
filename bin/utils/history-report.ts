@@ -148,7 +148,7 @@ export function historyAttention(services: ServiceHistory[], tasks: StoppedTask[
     attention.push(`${key}: exited ${processExits.length} time${processExits.length === 1 ? '' : 's'}, last ${last.time} with code ${last.exitCode ?? 'unknown'}`);
   }
 
-  for (const alarm of alarms.filter((candidate) => candidate.state === 'ALARM')) {
+  for (const alarm of alarms.filter((candidate) => candidate.state === 'ALARM' && !candidate.scaling)) {
     attention.push(`alarm ${alarm.name} is in ALARM since ${alarm.updatedAt ?? 'unknown'}${alarm.reason ? `: ${alarm.reason}` : ''}`);
   }
 
@@ -211,7 +211,8 @@ export function formatHistoryReport(report: HistoryReport): string[] {
   }
 
   for (const alarm of report.alarms) {
-    lines.push(`[${alarm.state === 'ALARM' ? 'FIX' : alarm.state === 'OK' ? 'ok' : '..'}] alarm ${alarm.name}: ${alarm.state} since ${alarm.updatedAt ?? 'unknown'}`);
+    const mark = alarm.scaling ? '..' : alarm.state === 'ALARM' ? 'FIX' : alarm.state === 'OK' ? 'ok' : '..';
+    lines.push(`[${mark}] alarm ${alarm.name}: ${alarm.state} since ${alarm.updatedAt ?? 'unknown'}${alarm.scaling ? ' (auto scaling)' : ''}`);
   }
   if (report.alarms.length === 0) {
     lines.push('[--] alarms: none on the cluster, its services, or load balancers');

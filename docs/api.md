@@ -673,6 +673,15 @@ new LaravelService('MyApp', {
 });
 ```
 
+For a cluster that `LaravelService` didn't create, such as an `sst.aws.Cluster` for task runners, `EcsEventRecorder` creates the same resources. Its `cluster` takes an `sst.aws.Cluster` or an `aws.ecs.Cluster` (`{ arn, name }`), and `logGroupName` is the log group of the events:
+
+```ts
+import { EcsEventRecorder } from '@kirschbaum-development/sst-laravel';
+
+const tasks = new sst.aws.Cluster('Tasks', { vpc });
+new EcsEventRecorder('TasksEvents', { cluster: tasks });
+```
+
 ### `config`
 - **Type:** `object`
 - **Description:** Config settings.

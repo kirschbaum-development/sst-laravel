@@ -212,7 +212,7 @@ The log commands need `ecs:ListClusters`, `logs:DescribeLogGroups`, and `logs:Fi
 
 ## `logs:errors`
 
-Groups the Laravel and PHP errors of a window with CloudWatch Logs Insights: each group with its count, first and last time, level, latest message, and the service and task of the latest one. It exits `1` when there are any errors, `0` when there are none, and `2` when it could not check.
+Groups the Laravel and PHP errors of a window with CloudWatch Logs Insights: each group with its count, first and last time, level, latest message, and the service and task of the latest one. With the Laravel package's formatter, an exception is grouped by the first frame of the app's own code in its trace (`file`), with where it was thrown beside it (`thrownAt`). It exits `1` when there are any errors, `0` when there are none, and `2` when it could not check.
 
 ```bash
 npx sst-laravel logs:errors --stage production --since 24h

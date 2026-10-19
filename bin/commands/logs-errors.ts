@@ -23,7 +23,9 @@ interface LogsErrorsOptions {
  * `level`, `level_name`, `message`, `context.exception`), text Laravel logs
  * (`[time] env.ERROR: message {"exception":"[object] (Class(code: 0): ... at
  * /path:line)`), and PHP fatal errors. An error with an exception is keyed
- * by its class and file; one without, by its message.
+ * by its class and the first frame of the app's own code in its trace
+ * (`context.exception.app_frame`, from the package's formatter), or else
+ * the file that threw it; one without, by its message.
  */
 export const errorsQuery = (limit: number) => `fields @timestamp, @log, @logStream
 | filter level >= 400 or @message like /\\.(ERROR|CRITICAL|ALERT|EMERGENCY): / or @message like /PHP (Fatal|Parse) error/
@@ -34,16 +36,20 @@ export const errorsQuery = (limit: number) => `fields @timestamp, @log, @logStre
 | fields coalesce(message, tmessage, pmessage) as errorMessage
 | fields coalesce(context.exception.class, tclass, pclass) as errorClass
 | fields coalesce(errorClass, errorMessage) as errorKey
-| fields coalesce(context.exception.file, tfile, pfile) as errorFile
+| fields coalesce(context.exception.file, tfile, pfile) as thrownFile
+| fields coalesce(context.exception.app_frame, thrownFile) as errorFile
 | fields coalesce(level_name, tlevel, "CRITICAL") as errorLevel
-| stats count(*) as count, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(errorClass) as class, latest(errorMessage) as lastMessage, latest(@log) as lastLog, latest(@logStream) as lastStream by errorKey, errorFile, errorLevel
+| stats count(*) as count, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(errorClass) as class, latest(errorMessage) as lastMessage, latest(thrownFile) as lastThrownAt, latest(@log) as lastLog, latest(@logStream) as lastStream by errorKey, errorFile, errorLevel
 | sort count desc
 | limit ${limit}`;
 
 export interface ErrorGroup {
   class: string | null;
   message: string;
+  /** The first frame of the app's own code, with the package's formatter, or else where it was thrown. */
   file: string | null;
+  /** Where the latest one was thrown, when it isn't `file`. */
+  thrownAt?: string;
   level: string;
   count: number;
   firstSeen?: string;
@@ -53,13 +59,22 @@ export interface ErrorGroup {
   task: string | null;
 }
 
+/**
+ * A class name as it is: text logs JSON-encode the exception into their
+ * context, so its backslashes arrive doubled (`Illuminate\\Database\\...`).
+ */
+const unescapeClass = (value: string) => value.replace(/\\\\/g, '\\');
+
 export function toErrorGroup(row: InsightsRow, sources: LogSource[]): ErrorGroup {
   const logGroup = insightsLogGroup(row.lastLog);
+  const file = row.errorFile?.trim() || null;
+  const thrownAt = row.lastThrownAt?.trim();
 
   return {
-    class: row.class?.trim() || null,
+    class: row.class?.trim() ? unescapeClass(row.class.trim()) : null,
     message: (row.lastMessage ?? row.errorKey ?? '').trim(),
-    file: row.errorFile?.trim() || null,
+    file,
+    ...(thrownAt && thrownAt !== file ? { thrownAt } : {}),
     level: row.errorLevel || 'ERROR',
     count: Number(row.count ?? 0),
     firstSeen: insightsTimeToIso(row.firstSeen),
@@ -69,12 +84,52 @@ export function toErrorGroup(row: InsightsRow, sources: LogSource[]): ErrorGroup
   };
 }
 
+/**
+ * Merges the groups that only differ by how their class was written: the
+ * same exception from a JSON log and from a text log. The latest one's
+ * message, service, and task stay.
+ */
+export function mergeErrorGroups(groups: ErrorGroup[]): ErrorGroup[] {
+  const merged = new Map<string, ErrorGroup>();
+
+  for (const group of groups) {
+    const key = [group.class ?? '', group.class ? '' : group.message, group.file ?? '', group.level].join('\u0000');
+    const existing = merged.get(key);
+
+    if (!existing) {
+      merged.set(key, { ...group });
+      continue;
+    }
+
+    const latest = (group.lastSeen ?? '') > (existing.lastSeen ?? '') ? group : existing;
+    merged.set(key, {
+      ...latest,
+      count: existing.count + group.count,
+      firstSeen: [existing.firstSeen, group.firstSeen].filter(Boolean).sort()[0],
+      lastSeen: latest.lastSeen,
+    });
+  }
+
+  return [...merged.values()].sort((a, b) => b.count - a.count);
+}
+
+/**
+ * The groups of the query's rows, merged. `truncated` counts the rows: the
+ * query returns at most `limit` of them, and merging can make fewer groups.
+ */
+export function summarizeErrors(rows: InsightsRow[], sources: LogSource[], limit: number) {
+  const raw = rows.map((row) => toErrorGroup(row, sources)).filter((group) => group.count > 0);
+  const groups = mergeErrorGroups(raw);
+
+  return { groups, total: groups.reduce((sum, group) => sum + group.count, 0), truncated: rows.length >= limit };
+}
+
 const shortPath = (file: string | null) => file?.replace(/^\/var\/www\/html\//, '') ?? '-';
 const clip = (text: string, length: number) => (text.length > length ? `${text.slice(0, length - 1)}…` : text);
 
 export function formatErrorGroups(groups: ErrorGroup[]): string[] {
   return groups.flatMap((group) => [
-    `${String(group.count).padStart(6)}x ${group.level.padEnd(9)} ${group.class ?? '(no exception)'} at ${shortPath(group.file)} [${group.service ?? '?'}] first ${group.firstSeen ?? '?'}, last ${group.lastSeen ?? '?'}`,
+    `${String(group.count).padStart(6)}x ${group.level.padEnd(9)} ${group.class ?? '(no exception)'} at ${shortPath(group.file)}${group.thrownAt ? ` (thrown at ${shortPath(group.thrownAt)})` : ''} [${group.service ?? '?'}] first ${group.firstSeen ?? '?'}, last ${group.lastSeen ?? '?'}`,
     `        ${clip(group.message.replace(/\s+/g, ' '), 300)}`,
   ]);
 }
@@ -100,21 +155,20 @@ export const logsErrorsCommand = new Command('logs:errors')
       info(`Errors of ${sources.map((source) => source.service).join(', ')} from ${formatWindow(window)} (Logs Insights)...`);
 
       const rows = await runInsightsQuery(stage.logs, sources.map((source) => source.logGroup), window, errorsQuery(limit));
-      const groups = rows.map((row) => toErrorGroup(row, sources)).filter((group) => group.count > 0);
-      const total = groups.reduce((sum, group) => sum + group.count, 0);
+      const { groups, total, truncated } = summarizeErrors(rows, sources, limit);
 
       if (options.json) {
         printJson({
           window: { start: new Date(window.start).toISOString(), end: new Date(window.end).toISOString() },
           services: sources.map((source) => source.service),
           total,
-          truncated: groups.length >= limit,
+          truncated,
           errors: groups,
         });
       } else if (groups.length === 0) {
         console.log(`No errors from ${formatWindow(window)}.`);
       } else {
-        console.log(`${total} error${total === 1 ? '' : 's'} in ${groups.length} group${groups.length === 1 ? '' : 's'} from ${formatWindow(window)}${groups.length >= limit ? ` (the top ${limit}; raise --limit for more)` : ''}:`);
+        console.log(`${total} error${total === 1 ? '' : 's'} in ${groups.length} group${groups.length === 1 ? '' : 's'} from ${formatWindow(window)}${truncated ? ` (the top ${limit}; raise --limit for more)` : ''}:`);
         formatErrorGroups(groups).forEach((line) => console.log(line));
         console.log(`Full lines: npx sst-laravel logs --stage ${options.stage ?? '<stage>'} --no-follow --start ${new Date(window.start).toISOString()} --end ${new Date(window.end).toISOString()} --filter '?ERROR ?CRITICAL ?ALERT ?EMERGENCY ?"PHP Fatal"'`);
       }

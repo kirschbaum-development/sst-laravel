@@ -187,7 +187,10 @@ to each line, and the job/schedule events and queue samples `queue:status`
 reads (samples need `scheduler: true`; without one, pass `queue:status --no-samples`,
 or it exits 2 for a window without events). `ecsEvents` (default on) records ECS
 task stops and deployments in `/sst/cluster/<cluster>/sst-laravel/ecs-events`;
-ECS itself keeps stopped tasks ~1h. Read-only IAM policy: `monitoring.md#permissions`.
+ECS itself keeps stopped tasks ~1h. For another cluster (e.g. an sst.aws.Cluster for
+task runners): `new EcsEventRecorder('TasksEvents', { cluster: tasks })`, then
+`status --cluster <name> --since 24h`. Auto-scaling-only alarms (target tracking
+AlarmLow/AlarmHigh) never need attention. Read-only IAM policy: `monitoring.md#permissions`.
 
 ## Upgrading and verification
 

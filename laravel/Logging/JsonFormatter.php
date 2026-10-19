@@ -49,7 +49,44 @@ class JsonFormatter extends MonologJsonFormatter
             $data['extra'] = array_merge($context, is_array($data['extra'] ?? null) ? $data['extra'] : []);
         }
 
+        if (is_array($data['context']['exception'] ?? null)) {
+            $frame = self::appFrame($data['context']['exception']);
+
+            if ($frame !== null) {
+                $data['context']['exception']['app_frame'] = $frame;
+            }
+        }
+
         return $data;
+    }
+
+    /**
+     * Where the app's own code is in an exception's trace: the first frame
+     * outside `vendor/` and the entry points (`artisan`, `public/index.php`).
+     * `sst-laravel logs:errors` groups the errors by it, so a database error
+     * that Laravel throws in `Connection.php` is grouped by the query of the
+     * app that ran into it.
+     *
+     * @param  array<array-key, mixed>  $exception
+     */
+    public static function appFrame(array $exception): ?string
+    {
+        $frames = [$exception['file'] ?? null, ...(is_array($exception['trace'] ?? null) ? $exception['trace'] : [])];
+
+        foreach ($frames as $frame) {
+            if (! is_string($frame) || ! preg_match('/^(.+):\d+$/', $frame, $match)) {
+                continue;
+            }
+
+            $file = $match[1];
+
+            // Relative to the app with Monolog's `setBasePath()`.
+            if (! preg_match('#(^|/)vendor/#', $file) && ! str_starts_with($file, 'internal[') && ! preg_match('#(^|/)(artisan|public/index\.php)$#', $file)) {
+                return $frame;
+            }
+        }
+
+        return null;
     }
 
     /**

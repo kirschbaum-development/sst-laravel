@@ -5,6 +5,22 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.6]
+
+### Added
+
+- `EcsEventRecorder` records the ECS events of a cluster that `LaravelService` didn't create, such as an `sst.aws.Cluster` for task runners, the way `ecsEvents` does, so `status --cluster <name> --since 24h` reports its stopped tasks.
+
+### Changed
+
+- `logs:errors` groups an exception by the first frame of the app's own code in its trace, with the package's formatter, instead of the file that threw it: the database errors of different queries no longer share one group of `Connection.php`. The file that threw it is in `thrownAt`. The package's formatter adds `app_frame` to `context.exception`.
+
+### Fixed
+
+- `queue:status` exited `2` on every run: CloudWatch Logs Insights rejected three of its queries ("Cycle found in operation dependency graph"), as they named a result like the field they read (`latest(size) as size`).
+- `status` needed attention on every service with target tracking auto scaling: its `AlarmLow` alarm is in `ALARM` whenever the load is low. Alarms that only drive auto scaling are listed but never need attention.
+- `logs:errors` showed the class of an exception from a text log with doubled backslashes (`Illuminate\\Database\\QueryException`), in a group apart from the same exception in JSON logs.
+
 ## [0.7.5]
 
 Made for agents and scripts that check a stage on a schedule. See [Monitoring](docs/monitoring.md).
