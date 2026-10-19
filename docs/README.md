@@ -28,7 +28,7 @@ Everything else can be read as you need it.
 | [Environment File Sources](environment-file-sources.md) | Fetch the environment file from S3, 1Password, or a GitHub Actions secret before each deploy, on your machine and in CI. |
 | [Linking Resources](linking-resources.md) | Linked databases, Redis, and buckets, PlanetScale, custom variable names, and IAM permissions. |
 | [Deploying](deploying.md) | The `deploy` command, readiness and status checks, PHP settings, image customization, the deployment script, and GitHub Actions. |
-| [Monitoring](monitoring.md) | Read-only checks for scripts and scheduled agents: the health of a window, grouped errors, failed jobs, queues, and the schedule. |
+| [Monitoring](monitoring.md) | Read-only checks for scripts and scheduled agents: the health of a window, stopped tasks and process restarts, and grouped errors. |
 | [CLI](cli.md) | Every `sst-laravel` command and its options. |
 | [Troubleshooting](troubleshooting.md) | Common errors and how to fix them. |
 | [API Reference](api.md) | Every `LaravelService` and `RemoteEnvVault` option. |

@@ -726,7 +726,7 @@ config: {
 - **Type:** `'json' | 'text'`
 - **Default:** `'json'`
 - **Description:** How Laravel's `stderr` log channel writes to CloudWatch. SST Laravel sets `LOG_STDERR_FORMATTER` to match, unless the environment sets it.
-  - `json`: one JSON line per log entry, so an entry and its stack trace stay one CloudWatch event, and Logs Insights can read its fields ([`logs:errors`](cli.md#logserrors)). With the Composer package installed in the app (`composer require kirschbaum-development/sst-laravel`), each line also has the stack trace and, in `extra`, the service, ECS task, and deploy (task definition revision) it came from. Without it, Monolog's JSON formatter is used, which leaves the trace out.
+  - `json`: one JSON line per log entry, with Monolog's JSON formatter, so each entry is one CloudWatch event, and Logs Insights can read its fields ([`logs:errors`](cli.md#logserrors)). The formatter leaves the stack trace out.
   - `text`: Laravel's default lines; a stack trace arrives as one CloudWatch event per line.
 
 See [Monitoring](monitoring.md#json-logs).

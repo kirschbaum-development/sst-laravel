@@ -283,6 +283,6 @@ Finish only when the application is healthy or a concrete external blocker remai
 - remaining work, such as a database the user skipped, a production domain, CI, or cost review;
 - when a blocker remains: the exact error and what you checked (running tasks, the health endpoint, recent logs).
 
-To monitor a stage later, or on a schedule, use the read-only checks in `monitoring.md` (`status --since 24h --json`, `logs:errors`, `queue:status`): they never prompt, and exit 1 when something needs attention. For stack traces in the logs and the job and schedule events, suggest `composer require kirschbaum-development/sst-laravel`.
+To monitor a stage later, or on a schedule, use the read-only checks in `monitoring.md` (`status --since 24h --json`, `logs:errors`): they never prompt, and exit 1 when something needs attention.
 
 After the first healthy deployment, recommend deploying from CI as the next step, and offer to set it up (see `deploying.md#deploying-from-github-actions`). The workflow needs the environment too: with `RemoteEnvVault` the deploy fetches it, with the user's own store the workflow fetches the file first, and with an env file on this machine the user saves it as a CI secret that a step writes before the deploy, or moves to one of the other two (see `environment-file-sources.md`). Offer production hardening as well. Do not expand the first deployment into CI work without user agreement.

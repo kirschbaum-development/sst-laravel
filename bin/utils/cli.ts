@@ -5,7 +5,7 @@
  *   `--json` output parses as is.
  * - Nothing prompts or follows a stream unless both stdin and stdout are a
  *   terminal.
- * - The checks (`status`, `logs:errors`, `queue:status`) exit 0 when all is
+ * - The checks (`status`, `logs:errors`) exit 0 when all is
  *   well, 1 when something needs attention, and 2 when they could not check.
  */
 

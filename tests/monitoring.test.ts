@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { readStageTargets } from '../bin/commands/status';
-import { buildQueueReport, combineSchedule, QUEUE_QUERIES } from '../bin/commands/queue-status';
 import { errorsQuery } from '../bin/commands/logs-errors';
 import { windowQuery } from '../bin/utils/insights';
 import { saveDeploymentTargets } from '../bin/utils/deployment-targets';
@@ -263,87 +262,6 @@ describe('historyAttention', () => {
   });
 });
 
-describe('queue:status', () => {
-  const empty = Object.fromEntries(Object.keys(QUEUE_QUERIES).map((key) => [key, []])) as unknown as Parameters<typeof buildQueueReport>[0];
-
-  it('takes the last run of each scheduled task: a later success clears an earlier failure', () => {
-    const schedule = combineSchedule(
-      [
-        { task: 'php artisan reports:daily', runs: '2', lastFinished: '2026-10-19 06:00:05.000', lastExitCode: '0', lastExpression: '0 6 * * *' },
-        { task: 'php artisan sync', runs: '3', lastFinished: '2026-10-19 11:00:02.000', lastExitCode: '1' },
-      ],
-      [
-        { task: 'php artisan reports:daily', failures: '1', lastFailed: '2026-10-18 06:00:05.000', lastError: 'boom' },
-        // A callback that throws only reports the failure.
-        { task: 'Closure', failures: '1', lastFailed: '2026-10-19 11:30:00.000', lastError: 'nope' },
-      ],
-      [{ task: 'php artisan backup', skips: '24', lastSkipped: '2026-10-19 11:00:00.000' }],
-    );
-
-    expect(Object.fromEntries(schedule.map((task) => [task.task, task.lastStatus]))).toEqual({
-      'php artisan reports:daily': 'ok',
-      'php artisan sync': 'failed',
-      Closure: 'failed',
-      'php artisan backup': 'skipped',
-    });
-  });
-
-  it('notices a queue the scheduler stopped sampling, even next to a fresh one, in a past window too', () => {
-    const rows = {
-      ...empty,
-      queues: [
-        { connection: 'redis', queue: 'default', lastSize: '3', maxSize: '40', sampledAt: '2026-10-19 11:59:30.000' },
-        { connection: 'redis', queue: 'mail', lastSize: '0', maxSize: '2', sampledAt: '2026-10-19 11:30:00.000' },
-      ],
-    };
-
-    expect(buildQueueReport(rows, window, { now: NOW }).attention).toEqual([
-      'redis/mail: no size sample since 2026-10-19T11:30:00.000Z: the scheduler stopped, or no longer samples it',
-    ]);
-    expect(buildQueueReport(rows, { start: window.start, end: Date.parse('2026-10-19T11:40:00Z') }, { now: NOW }).attention).toEqual([]);
-    expect(buildQueueReport(rows, { start: window.start, end: Date.parse('2026-10-19T11:45:00Z') }, { now: NOW }).attention).toHaveLength(1);
-  });
-
-  it('notices when no queue was sampled at all, unless the app runs no scheduler', () => {
-    const rows = { ...empty, scheduleFinished: [{ task: 'php artisan sync', runs: '3', lastFinished: '2026-10-19 11:00:02.000', lastExitCode: '0' }] };
-
-    expect(buildQueueReport(rows, window, { now: NOW }).attention).toEqual([
-      expect.stringContaining('no queue size samples in the window'),
-    ]);
-    expect(buildQueueReport(rows, window, { now: NOW, samples: false }).attention).toEqual([]);
-  });
-
-  it('counts the runs that exited non-zero as failures, and those that threw as runs', () => {
-    const [task] = combineSchedule(
-      [{ task: 'php artisan sync', runs: '5', lastFinished: '2026-10-19 11:00:02.000', lastExitCode: '0' }],
-      [{ task: 'php artisan sync', failures: '1', lastFailed: '2026-10-19 08:00:00.000', lastError: 'boom' }],
-      [],
-      // Laravel 10 and 11: the exit code of a failed run is only in schedule_finished.
-      [{ task: 'php artisan sync', failures: '2', lastFailed: '2026-10-19 10:00:02.000' }],
-    );
-
-    expect(task).toMatchObject({ runs: 6, failures: 3, lastFailed: '2026-10-19T10:00:02.000Z', lastStatus: 'ok' });
-  });
-
-  it('flags failed jobs and a backlog over --max-size', () => {
-    const report = buildQueueReport({
-      ...empty,
-      failedJobs: [{ job: 'App\\Jobs\\SendInvoice', connection: 'redis', queue: 'default', failures: '4', lastSeen: '2026-10-19 11:59:00.000', lastException: 'RuntimeException', lastMessage: 'SMTP down' }],
-      queues: [{ connection: 'redis', queue: 'default', lastSize: '120', maxSize: '200', sampledAt: '2026-10-19 11:59:30.000' }],
-    }, window, { now: NOW, maxSize: 100 });
-
-    expect(report.attention).toEqual([
-      'App\\Jobs\\SendInvoice failed 4 times on redis/default, last 2026-10-19T11:59:00.000Z: RuntimeException SMTP down',
-      'redis/default has 120 jobs waiting (more than 100)',
-    ]);
-    expect(report.queues[0]).toMatchObject({ size: 120, maxSize: 200 });
-  });
-
-  it('says when there are no events at all', () => {
-    expect(buildQueueReport(empty, window, { now: NOW })).toMatchObject({ noEvents: true, attention: [] });
-  });
-});
-
 describe('status targets', () => {
   it('checks a fresh checkout by cluster, but never trusts outputs of another stage or saved targets without outputs', () => {
     const app = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-laravel-status-'));
@@ -380,11 +298,7 @@ describe('the Logs Insights queries', () => {
 
   it('never name a result like a field they read, which CloudWatch rejects as a cycle', () => {
     const window = { start: 0, end: 1000 };
-    const queries = { ...QUEUE_QUERIES, errors: errorsQuery(50) };
-
-    for (const [name, query] of Object.entries(queries)) {
-      expect(aliasesReadBeforeDefined(windowQuery(query, window)), name).toEqual([]);
-    }
+    expect(aliasesReadBeforeDefined(windowQuery(errorsQuery(50), window))).toEqual([]);
 
     expect(aliasesReadBeforeDefined('stats latest(size) as size by queue')).toEqual(['size']);
   });

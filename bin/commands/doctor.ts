@@ -208,21 +208,6 @@ export const doctorCommand = new Command('doctor')
         : 'vendor/ is missing — run `composer install`; the image copies the local vendor folder',
     });
 
-    // The Laravel side of monitoring: stack traces in the JSON logs, and the
-    // job and schedule events `queue:status` reads.
-    if (vendorInstalled) {
-      const monitoringInstalled = fs.existsSync(
-        path.join(cwd, 'vendor', 'kirschbaum-development', 'sst-laravel', 'laravel', 'Monitoring', 'Events.php'),
-      );
-      results.push({
-        label: 'Laravel package',
-        status: monitoringInstalled ? 'ok' : 'warn',
-        detail: monitoringInstalled
-          ? 'installed: JSON logs with stack traces, and the job and schedule events for `queue:status`'
-          : 'not in vendor/ — `composer require kirschbaum-development/sst-laravel` adds stack traces to the JSON logs and the job and schedule events `queue:status` reads',
-      });
-    }
-
     const usesVite = fs.readdirSync(cwd).some((name) => /^vite\.config\.(js|ts|mjs|cjs|mts)$/.test(name));
     if (usesVite) {
       const manifest = path.join(cwd, 'public', 'build', 'manifest.json');

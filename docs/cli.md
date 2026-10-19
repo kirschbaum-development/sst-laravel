@@ -13,7 +13,6 @@ The package ships an `sst-laravel` command. Install the package first, then run 
 | [`command:run`](#commandrun) | Runs an Artisan or shell command in a running container. |
 | [`logs`](#logs) | Prints or streams the logs of the stage, with no running task needed. |
 | [`logs:errors`](#logserrors) | Groups the errors of a window, with counts and first and last seen. |
-| [`queue:status`](#queuestatus) | Reports failed jobs, queue sizes, and when each scheduled task last ran. |
 | [`env:push`](#envpush) | Pushes a local `.env` file to AWS Secrets Manager. |
 | [`env:pull`](#envpull) | Pulls the environment from AWS Secrets Manager into a local file. |
 | [`guide`](#guide) | Prints the deploy guide for AI agents. |
@@ -29,7 +28,7 @@ The commands are made to run unattended:
 - They never prompt unless stdin and stdout are a terminal (and `CI` isn't set). Without one, a choice they can't make is an error that lists the options, or that names the flag to pass (`--stage`, `--force`).
 - `logs` follows the stream by default only in a terminal. `--follow` follows anywhere, until it is stopped.
 - With `--json`, stdout holds only the JSON. Progress and diagnostics go to stderr.
-- The checks (`status`, `logs:errors`, and `queue:status`) exit `0` when nothing needs attention, `1` when something does, and `2` when they could not check. Every command exits `2` for a usage error, such as an unknown option.
+- The checks (`status` and `logs:errors`) exit `0` when nothing needs attention, `1` when something does, and `2` when they could not check. Every command exits `2` for a usage error, such as an unknown option.
 - Time windows take `--since <duration>` (`30m`, `24h`, `7d`), or `--start` and `--end` with ISO 8601 times (UTC unless they have an offset; the end is exclusive).
 
 See [Monitoring](monitoring.md) for a daily check.
@@ -38,7 +37,7 @@ See [Monitoring](monitoring.md) for a daily check.
 
 The commands use the AWS CLI's credentials. With several named profiles, export `AWS_PROFILE=<name>` so every `sst-laravel` and `sst` command uses the same one.
 
-Commands that work with a deployed stage (`status`, `ssh`, `command:run`, `logs`, `logs:errors`, and `queue:status`) share these options:
+Commands that work with a deployed stage (`status`, `ssh`, `command:run`, `logs`, and `logs:errors`) share these options:
 
 - `-s, --stage <stage>` - SST stage name (required)
 - `-c, --cluster <cluster>` - ECS cluster (optional, auto-detected from the stage)
@@ -77,7 +76,7 @@ It checks:
 - PHP, Node.js, the AWS CLI, and that the Docker daemon is reachable (the deploy builds the image on this machine);
 - the AWS login (with the profile in use) and a configured region;
 - that this is a Laravel app with the package installed;
-- that `vendor/` is installed, with a warning when it lacks the Laravel package (`kirschbaum-development/sst-laravel`, for stack traces and the events of [`queue:status`](#queuestatus)), and, with Vite, that `public/build` exists and is newer than `resources/`, since the image copies both as they are;
+- that `vendor/` is installed, and, with Vite, that `public/build` exists and is newer than `resources/`, since the image copies both as they are;
 - `sst.config.ts`, a non-generic app name, and that `config.php` matches the local PHP that installed `vendor/`;
 - the drivers in the stage env file (or `.env.example` when it doesn't exist yet), with a warning for SQLite, and `APP_KEY`/`APP_DEBUG` in the stage file;
 - trusted proxies in `bootstrap/app.php`;
@@ -201,18 +200,18 @@ npx sst-laravel logs web --stage production
 - `--since <duration>` - How far back to start, for example `5m`, `1h`, or `2d` (default: `10m`)
 - `--start <time>` and `--end <time>` - An exact window: ISO 8601 times, UTC unless they have an offset. The end is exclusive.
 - `--filter <pattern>` - Only show lines matching a [CloudWatch filter pattern](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/FilterAndPatternSyntax.html), for example `ERROR`, `"?migrat ?Exception"`, or `'{ $.level_name = "ERROR" }'` for JSON logs
-- `--json` - Print JSON Lines: one object per log line, with `timestamp`, `service`, `container`, `task` (the ECS task ID), `revision` (the deploy that wrote it, with the Laravel package's formatter), `level`, `message`, `json` (the parsed message, when it is JSON), `logGroup`, and `logStream`
+- `--json` - Print JSON Lines: one object per log line, with `timestamp`, `service`, `container`, `task` (the ECS task ID), `level`, `message`, `json` (the parsed message, when it is JSON), `logGroup`, and `logStream`
 - `--limit <lines>` - Most lines to read from each log group (default: 10000). When a group has more, it stops where that group's lines stop and says which `--start` continues.
 
 Each text line starts with the time, the service, and the first 8 characters of the task ID. The stack trace lines of Laravel's text logs are joined to their entry. The output has no color codes, so it reads cleanly in a script or an agent transcript.
 
 Laravel logs only reach CloudWatch when `LOG_CHANNEL` is `stderr`. SST Laravel sets it, and a JSON formatter, when your environment doesn't. See [Environment Variables](environment-variables.md#variables-sst-laravel-adds).
 
-The log commands need `ecs:ListClusters`, `logs:DescribeLogGroups`, and `logs:FilterLogEvents`; `logs:errors` and `queue:status` also need `logs:StartQuery` and `logs:GetQueryResults`. See [Monitoring](monitoring.md#permissions) for a read-only policy.
+The log commands need `ecs:ListClusters`, `logs:DescribeLogGroups`, and `logs:FilterLogEvents`; `logs:errors` also needs `logs:StartQuery` and `logs:GetQueryResults`. See [Monitoring](monitoring.md#permissions) for a read-only policy.
 
 ## `logs:errors`
 
-Groups the Laravel and PHP errors of a window with CloudWatch Logs Insights: each group with its count, first and last time, level, latest message, and the service and task of the latest one. With the Laravel package's formatter, an exception is grouped by the first frame of the app's own code in its trace (`file`), with where it was thrown beside it (`thrownAt`). It exits `1` when there are any errors, `0` when there are none, and `2` when it could not check.
+Groups the Laravel and PHP errors of a window with CloudWatch Logs Insights: each group with its count, first and last time, level, latest message, and the service and task of the latest one. It exits `1` when there are any errors, `0` when there are none, and `2` when it could not check.
 
 ```bash
 npx sst-laravel logs:errors --stage production --since 24h
@@ -225,20 +224,6 @@ npx sst-laravel logs:errors worker --stage production --start 2026-10-18 --end 2
 - `--json` - Print one JSON document
 
 An error with an exception is grouped by its class and file; one without, by its message. It reads JSON Laravel logs (`level` 400 and up), text Laravel logs (`ERROR`, `CRITICAL`, `ALERT`, and `EMERGENCY`), and PHP fatal and parse errors.
-
-## `queue:status`
-
-Reports, for a window: each failed job, the size of each queue and of the `failed_jobs` table, and each scheduled task's runs, failures, skips, and last run. It reads the events that the Laravel package logs in the containers (`composer require kirschbaum-development/sst-laravel`), so it needs no shell in a container. See [Monitoring](monitoring.md#the-laravel-package). It exits `1` when something needs attention: a failed job, a scheduled task whose last run failed, a queue above `--max-size`, or a queue the scheduler stopped sampling. Without any of the package's events in the window, it can't tell whether all is well, and exits `2`, unless the app runs no scheduler and you pass `--no-samples`.
-
-```bash
-npx sst-laravel queue:status --stage production --since 24h --json
-```
-
-**Options:**
-- `--since` (default: `24h`), `--start`, `--end` - As for [`logs`](#logs)
-- `--max-size <jobs>` - Needs attention when a queue has more jobs waiting than this
-- `--no-samples` - The app runs no scheduler: expect no queue size samples, and exit `0` without events
-- `--json` - Print one JSON document
 
 ## `env:push`
 

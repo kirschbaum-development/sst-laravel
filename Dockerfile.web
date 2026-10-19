@@ -59,7 +59,7 @@ ENV CONTAINER_TYPE=web
 ENV PHP_OPCACHE_ENABLE=${PHP_OPCACHE_ENABLE}
 
 # ServerSideUp's PHP-FPM wraps log lines at 8 KB. Raise the limit above the
-# 16 KB JSON lines of the package's log formatter, so each stays one line.
+# 16 KB Fargate keeps in one log event, so a long JSON line stays one line.
 RUN printf '[global]\nlog_limit = 65536\n' > /usr/local/etc/php-fpm.d/zzz-sst-laravel.conf
 
 # The app, without .sst: the files the component generates there are copied

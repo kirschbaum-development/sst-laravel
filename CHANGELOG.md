@@ -5,6 +5,19 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0]
+
+### Removed
+
+- The Composer package (`kirschbaum-development/sst-laravel`): SST Laravel is an npm package only. Its `php artisan sst-laravel:*` commands ran the npm CLI; use `npx sst-laravel` instead. Remove it from an app with `composer remove kirschbaum-development/sst-laravel`, and first remove `LOG_STDERR_FORMATTER=Kirschbaum\SST\Logging\JsonFormatter` from the environment if you set it yourself.
+- `queue:status`, and the job, schedule, and queue size events it read, which the Composer package logged. `process_exit` events stay.
+- `doctor` no longer checks for the Composer package.
+- The `revision` field of `logs --json`, and `thrownAt` of `logs:errors`, which came from the Composer package's formatter.
+
+### Changed
+
+- The JSON logs always use Monolog's JSON formatter, which leaves the stack trace out. Apps that had the Composer package installed get a new task definition on the next deploy. `logs:errors` groups an exception by its class and the file that threw it.
+
 ## [0.7.6]
 
 ### Added

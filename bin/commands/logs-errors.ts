@@ -23,9 +23,7 @@ interface LogsErrorsOptions {
  * `level`, `level_name`, `message`, `context.exception`), text Laravel logs
  * (`[time] env.ERROR: message {"exception":"[object] (Class(code: 0): ... at
  * /path:line)`), and PHP fatal errors. An error with an exception is keyed
- * by its class and the first frame of the app's own code in its trace
- * (`context.exception.app_frame`, from the package's formatter), or else
- * the file that threw it; one without, by its message.
+ * by its class and the file that threw it; one without, by its message.
  */
 export const errorsQuery = (limit: number) => `fields @timestamp, @log, @logStream
 | filter level >= 400 or @message like /\\.(ERROR|CRITICAL|ALERT|EMERGENCY): / or @message like /PHP (Fatal|Parse) error/
@@ -36,20 +34,17 @@ export const errorsQuery = (limit: number) => `fields @timestamp, @log, @logStre
 | fields coalesce(message, tmessage, pmessage) as errorMessage
 | fields coalesce(context.exception.class, tclass, pclass) as errorClass
 | fields coalesce(errorClass, errorMessage) as errorKey
-| fields coalesce(context.exception.file, tfile, pfile) as thrownFile
-| fields coalesce(context.exception.app_frame, thrownFile) as errorFile
+| fields coalesce(context.exception.file, tfile, pfile) as errorFile
 | fields coalesce(level_name, tlevel, "CRITICAL") as errorLevel
-| stats count(*) as count, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(errorClass) as class, latest(errorMessage) as lastMessage, latest(thrownFile) as lastThrownAt, latest(@log) as lastLog, latest(@logStream) as lastStream by errorKey, errorFile, errorLevel
+| stats count(*) as count, min(@timestamp) as firstSeen, max(@timestamp) as lastSeen, latest(errorClass) as class, latest(errorMessage) as lastMessage, latest(@log) as lastLog, latest(@logStream) as lastStream by errorKey, errorFile, errorLevel
 | sort count desc
 | limit ${limit}`;
 
 export interface ErrorGroup {
   class: string | null;
   message: string;
-  /** The first frame of the app's own code, with the package's formatter, or else where it was thrown. */
+  /** Where it was thrown. */
   file: string | null;
-  /** Where the latest one was thrown, when it isn't `file`. */
-  thrownAt?: string;
   level: string;
   count: number;
   firstSeen?: string;
@@ -67,14 +62,11 @@ const unescapeClass = (value: string) => value.replace(/\\\\/g, '\\');
 
 export function toErrorGroup(row: InsightsRow, sources: LogSource[]): ErrorGroup {
   const logGroup = insightsLogGroup(row.lastLog);
-  const file = row.errorFile?.trim() || null;
-  const thrownAt = row.lastThrownAt?.trim();
 
   return {
     class: row.class?.trim() ? unescapeClass(row.class.trim()) : null,
     message: (row.lastMessage ?? row.errorKey ?? '').trim(),
-    file,
-    ...(thrownAt && thrownAt !== file ? { thrownAt } : {}),
+    file: row.errorFile?.trim() || null,
     level: row.errorLevel || 'ERROR',
     count: Number(row.count ?? 0),
     firstSeen: insightsTimeToIso(row.firstSeen),
@@ -129,7 +121,7 @@ const clip = (text: string, length: number) => (text.length > length ? `${text.s
 
 export function formatErrorGroups(groups: ErrorGroup[]): string[] {
   return groups.flatMap((group) => [
-    `${String(group.count).padStart(6)}x ${group.level.padEnd(9)} ${group.class ?? '(no exception)'} at ${shortPath(group.file)}${group.thrownAt ? ` (thrown at ${shortPath(group.thrownAt)})` : ''} [${group.service ?? '?'}] first ${group.firstSeen ?? '?'}, last ${group.lastSeen ?? '?'}`,
+    `${String(group.count).padStart(6)}x ${group.level.padEnd(9)} ${group.class ?? '(no exception)'} at ${shortPath(group.file)} [${group.service ?? '?'}] first ${group.firstSeen ?? '?'}, last ${group.lastSeen ?? '?'}`,
     `        ${clip(group.message.replace(/\s+/g, ' '), 300)}`,
   ]);
 }

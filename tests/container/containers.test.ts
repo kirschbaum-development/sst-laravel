@@ -416,7 +416,7 @@ describe(`web (serversideup/php:${phpVersion}-fpm-nginx)`, () => {
   });
 
   it('sends a long log line from PHP-FPM to the container output whole, as one line', async () => {
-    // The package's formatter keeps lines under 16 KB.
+    // Fargate keeps 16 KB in one log event.
     const response = await httpGet(port, '/log?bytes=15000');
     const written = Number(response?.body);
 
@@ -479,12 +479,12 @@ describe(`worker (serversideup/php:${phpVersion}-cli)`, () => {
 
     // At the start of the next minute.
     const line = await waitFor(
-      () => logs(container).split('\n').find((candidate) => candidate.includes('"schedule_finished"')),
+      () => logs(container).split('\n').find((candidate) => candidate.includes('"report sent"')),
       75000,
       'a schedule:run',
     );
 
-    expect(JSON.parse(line)).toMatchObject({ sst_laravel: 'schedule_finished', task: 'php artisan app:report' });
+    expect(JSON.parse(line)).toMatchObject({ message: 'report sent', level_name: 'INFO' });
     // The task finishes its line a second later.
     await waitFor(() => (logs(container).includes('  Running [php artisan app:report] DONE') ? true : undefined), 10000, 'the task to finish');
   }, 150000);

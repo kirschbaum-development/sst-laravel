@@ -174,18 +174,14 @@ Windows: `--since 24h`, or exact `--start 2026-10-18 --end 2026-10-19`
 ```bash
 npx sst-laravel status --stage prod --since 24h --json      # deploys, stopped tasks + exit codes, process restarts, ECS events, alarms, /up
 npx sst-laravel logs:errors --stage prod --since 24h --json # Logs Insights: errors grouped by class+file, count, first/last seen
-npx sst-laravel queue:status --stage prod --since 24h --json # failed jobs, queue sizes, failed_jobs total, scheduled task last runs
-npx sst-laravel logs worker --stage prod --start 2026-10-18 --end 2026-10-19 --json  # JSON Lines with service, task, revision, level
+npx sst-laravel logs worker --stage prod --start 2026-10-18 --end 2026-10-19 --json  # JSON Lines with service, task, level
 ```
 
 `logs [service]`: web, reverb, worker (all workers), a worker name, or another
 task in the cluster (task runners); default all. `--limit` per log group; it
 says which `--start` continues. Logs are JSON by default (`config.logFormat`,
-via LOG_STDERR_FORMATTER unless the env sets it). `composer require
-kirschbaum-development/sst-laravel` adds stack traces + service/task/revision
-to each line, and the job/schedule events and queue samples `queue:status`
-reads (samples need `scheduler: true`; without one, pass `queue:status --no-samples`,
-or it exits 2 for a window without events). `ecsEvents` (default on) records ECS
+via LOG_STDERR_FORMATTER unless the env sets it: Monolog's JSON formatter, no
+stack traces). `ecsEvents` (default on) records ECS
 task stops and deployments in `/sst/cluster/<cluster>/sst-laravel/ecs-events`;
 ECS itself keeps stopped tasks ~1h. For another cluster (e.g. an sst.aws.Cluster for
 task runners): `new EcsEventRecorder('TasksEvents', { cluster: tasks })`, then

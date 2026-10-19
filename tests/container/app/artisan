@@ -27,7 +27,7 @@ switch ($command) {
         touch("$state/$name.ran");
         fwrite(STDOUT, '  Running [php artisan app:report] ');
         fflush(STDOUT);
-        fwrite(STDERR, json_encode(['sst_laravel' => 'schedule_finished', 'task' => 'php artisan app:report', 'exit_code' => 0])."\n");
+        fwrite(STDERR, json_encode(['message' => 'report sent', 'level_name' => 'INFO'])."\n");
         sleep(1);
         fwrite(STDOUT, "DONE\n");
         exit(0);

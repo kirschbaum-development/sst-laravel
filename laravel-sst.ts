@@ -717,14 +717,10 @@ export interface LaravelArgs extends ClusterArgs {
          * How Laravel's `stderr` log channel writes to CloudWatch, through
          * `LOG_STDERR_FORMATTER`, unless the environment sets it.
          *
-         * - `json`: one JSON line per entry, so each entry and its stack
-         *   trace stay one CloudWatch event, and Logs Insights can group
-         *   them (`sst-laravel logs:errors`). With the package's Composer
-         *   package installed (`composer require
-         *   kirschbaum-development/sst-laravel`), each line also has the
-         *   stack trace and, in `extra`, the service, ECS task, and deploy
-         *   (task definition revision) it came from. Without it, Monolog's
-         *   JSON formatter is used, which leaves the trace out.
+         * - `json`: one JSON line per entry, with Monolog's JSON formatter,
+         *   so each entry is one CloudWatch event, and Logs Insights can
+         *   group them (`sst-laravel logs:errors`). The formatter leaves
+         *   the stack trace out.
          * - `text`: Laravel's default lines; a stack trace arrives as one
          *   CloudWatch event per line.
          *
@@ -859,7 +855,7 @@ export class LaravelService extends Component {
 
         const environment = args.config?.environment;
         const reverbEnvironment = buildReverbEnvironment(reverb);
-        const logFormatter = stderrLogFormatter(absSitePath, args.config?.logFormat);
+        const logFormatter = stderrLogFormatter(args.config?.logFormat);
         // With an env file, the formatter goes in it, where the file's own
         // value wins; ECS would let a container variable win over the file.
         const hasEnvironmentFile = Boolean(environment?.file || environment?.secrets);

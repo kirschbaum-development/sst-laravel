@@ -4,8 +4,6 @@ package-lock.json
 dist
 sst.config.ts
 .sst
-vendor
-composer.lock
 .agents/*
 !.agents/setup
 .amp/portals/*

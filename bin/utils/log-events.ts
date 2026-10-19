@@ -256,13 +256,6 @@ export function lineLevel(line: LogLine): string | undefined {
   return line.json ? undefined : line.message.match(LEVEL)?.[1];
 }
 
-/** The deploy (task definition revision) that wrote the line, from the package's JSON log fields. */
-export function lineRevision(line: LogLine): string | undefined {
-  const extra = line.json?.extra as Record<string, unknown> | undefined;
-  const revision = extra?.revision ?? line.json?.revision;
-  return typeof revision === 'string' ? revision : undefined;
-}
-
 /** One line of `logs` text output: time, service, short task ID, message. */
 export const formatLogLine = (line: LogLine): string =>
   `${new Date(line.timestamp).toISOString()} ${line.service} ${line.task ? line.task.slice(0, 8) : '-'} ${line.message}`;
@@ -273,7 +266,6 @@ export const logLineJson = (line: LogLine) => ({
   service: line.service,
   container: line.container,
   task: line.task ?? null,
-  revision: lineRevision(line) ?? null,
   level: lineLevel(line) ?? null,
   message: line.message,
   ...(line.json ? { json: line.json } : {}),

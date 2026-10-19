@@ -92,8 +92,7 @@ export function buildContainerEnvironment(
 
 /**
  * The service's own variables plus `SST_LARAVEL_SERVICE`: `web`, `reverb`,
- * or the worker name. The Laravel package adds it to log lines, and only
- * logs its monitoring events where it is set.
+ * or the worker name, so the app can tell which service it runs in.
  */
 export function withServiceName(environment: Input<Record<string, string>>, service: string): Output<Record<string, string>> {
   return output(environment).apply((values): Record<string, string> => ({ ...values, SST_LARAVEL_SERVICE: service }));

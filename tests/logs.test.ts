@@ -1,20 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 import { CloudWatchLogsClient, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { DescribeTasksCommand, ECSClient, ListTasksCommand } from '@aws-sdk/client-ecs';
 import { shouldFollow } from '../bin/commands/logs';
-import { mergeErrorGroups, summarizeErrors, toErrorGroup } from '../bin/commands/logs-errors';
+import { logsErrorsCommand, mergeErrorGroups, summarizeErrors, toErrorGroup } from '../bin/commands/logs-errors';
 import { Command } from 'commander';
-import { queueStatusCommand } from '../bin/commands/queue-status';
 import { CliError, exitWithErrorOnUsage } from '../bin/utils/cli';
 import { findTask } from '../bin/utils/ecs';
 import { fetchLogLines, followLogLines, joinStackTraces, LogLine, logLineJson, parseJsonMessage } from '../bin/utils/log-events';
 import { windowQuery } from '../bin/utils/insights';
 import { describeLogGroup, LogSource, selectLogSources } from '../bin/utils/log-sources';
 import { parseTime, resolveTimeWindow } from '../bin/utils/time';
-import { MONOLOG_JSON_FORMATTER, PACKAGE_JSON_FORMATTER, stderrLogFormatter } from '../src/log-format';
+import { MONOLOG_JSON_FORMATTER, stderrLogFormatter } from '../src/log-format';
 
 const NOW = Date.parse('2026-10-19T12:00:00Z');
 
@@ -124,7 +120,7 @@ describe('stack traces of text logs', () => {
   });
 
   it('finds an event in a line that another output ran into, but not JSON at the end of a text log', () => {
-    expect(parseJsonMessage('  Running [php artisan app:report] {"sst_laravel":"schedule_finished","exit_code":1}')).toEqual({ sst_laravel: 'schedule_finished', exit_code: 1 });
+    expect(parseJsonMessage('  Running [php artisan app:report] {"sst_laravel":"process_exit","exit_code":1}')).toEqual({ sst_laravel: 'process_exit', exit_code: 1 });
     expect(parseJsonMessage('[2026-10-19 12:00:00] production.ERROR: boom {"userId":1}')).toBeUndefined();
   });
 
@@ -135,12 +131,11 @@ describe('stack traces of text logs', () => {
 });
 
 describe('logs --json lines', () => {
-  it('keep the service, task, deploy, and level of each line', () => {
-    const json = { message: 'boom', level_name: 'ERROR', extra: { service: 'web', ecs_task: 'x', revision: 'App-Web-Task:42' } };
+  it('keep the service, task, and level of each line', () => {
+    const json = { message: 'boom', level_name: 'ERROR' };
     expect(logLineJson(line({ message: JSON.stringify(json), json, task: '0123456789abcdef0123456789abcdef' }))).toMatchObject({
       service: 'web',
       task: '0123456789abcdef0123456789abcdef',
-      revision: 'App-Web-Task:42',
       level: 'ERROR',
     });
     expect(logLineJson(line({ message: '[2026-10-19 12:00:00] production.WARNING: slow' })).level).toBe('WARNING');
@@ -266,7 +261,6 @@ describe('logs:errors groups', () => {
     const row = (classValue: string, count: string, lastSeen: string, lastMessage: string) => ({
       errorKey: classValue,
       errorFile: '/var/www/html/app/Http/Controllers/ReportController.php:31',
-      lastThrownAt: '/var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php:838',
       errorLevel: 'ERROR', count, firstSeen: '2026-10-19 01:00:00.000', lastSeen, class: classValue, lastMessage,
     });
     const groups = mergeErrorGroups([
@@ -279,7 +273,6 @@ describe('logs:errors groups', () => {
       count: 5,
       message: 'from text',
       file: '/var/www/html/app/Http/Controllers/ReportController.php:31',
-      thrownAt: '/var/www/html/vendor/laravel/framework/src/Illuminate/Database/Connection.php:838',
       lastSeen: '2026-10-19T10:00:00.000Z',
     })]);
   });
@@ -295,22 +288,17 @@ describe('logs:errors groups', () => {
 });
 
 describe('stderrLogFormatter', () => {
-  it('names the package formatter only when Composer installed it', () => {
-    const app = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-laravel-format-'));
-
-    expect(stderrLogFormatter(app)).toBe(MONOLOG_JSON_FORMATTER);
-    fs.mkdirSync(path.join(app, 'vendor/kirschbaum-development/sst-laravel/laravel/Logging'), { recursive: true });
-    fs.writeFileSync(path.join(app, 'vendor/kirschbaum-development/sst-laravel/laravel/Logging/JsonFormatter.php'), '<?php');
-    expect(stderrLogFormatter(app)).toBe(PACKAGE_JSON_FORMATTER);
-    expect(stderrLogFormatter(app, 'text')).toBeUndefined();
-    expect(() => stderrLogFormatter(app, 'yaml')).toThrow('config.logFormat must be "json" or "text"');
+  it("names Monolog's JSON formatter for json, and none for text", () => {
+    expect(stderrLogFormatter()).toBe(MONOLOG_JSON_FORMATTER);
+    expect(stderrLogFormatter('text')).toBeUndefined();
+    expect(() => stderrLogFormatter('yaml')).toThrow('config.logFormat must be "json" or "text"');
   });
 });
 
 describe('usage errors', () => {
   it('exit 2, so a caller can tell a bad invocation from a check that needs attention', () => {
     const exitCode = (args: string[]) => {
-      const program = new Command().name('sst-laravel').version('1.0.0').addCommand(queueStatusCommand);
+      const program = new Command().name('sst-laravel').version('1.0.0').addCommand(logsErrorsCommand);
       exitWithErrorOnUsage(program);
       const exit = vi.spyOn(process, 'exit').mockImplementation(((code: number) => { throw new Error(`exit ${code}`); }) as never);
       const quiet = [vi.spyOn(process.stdout, 'write').mockImplementation(() => true), vi.spyOn(process.stderr, 'write').mockImplementation(() => true)];
@@ -325,9 +313,9 @@ describe('usage errors', () => {
       }
     };
 
-    expect(exitCode(['queue:status', '--max-size'])).toBe('exit 2');
-    expect(exitCode(['queue:status', '--bogus'])).toBe('exit 2');
-    expect(exitCode(['queue:status', '--help'])).toBe('exit 0');
+    expect(exitCode(['logs:errors', '--limit'])).toBe('exit 2');
+    expect(exitCode(['logs:errors', '--bogus'])).toBe('exit 2');
+    expect(exitCode(['logs:errors', '--help'])).toBe('exit 0');
     expect(exitCode(['--version'])).toBe('exit 0');
   });
 });
