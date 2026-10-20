@@ -85,6 +85,11 @@ export interface DeploymentCheckOptions {
   healthPath: string;
   /** Keep checking while the rollout is in progress, up to this long. 0 checks once. */
   waitSeconds: number;
+  /**
+   * Fail a cluster without services (default). Off for `status --cluster`,
+   * which also checks clusters that only run one-off tasks.
+   */
+  requireServices?: boolean;
   log?: (line: string) => void;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -96,7 +101,11 @@ export interface DeploymentCheckResult {
   /** Task definition images that are not in their private ECR repository. */
   missingImages: string[];
   health: HealthResult;
+  /** Why the verdict isn't `healthy`, one sentence each. Empty when it is. */
+  attention: string[];
 }
+
+const withoutMark = (lines: string[]) => lines.map((line) => line.replace(/^\[[^\]]*\]\s*/, '').trim()).join(' ');
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -135,14 +144,18 @@ export async function verifyDeployment(options: DeploymentCheckOptions): Promise
 
     const missingImages = options.targets ? await checkTaskImages(options.ecsClient,
       [...options.targets.services.map((target) => target.taskDefinition), ...options.targets.taskDefinitions], ecrClients) : [];
-    const failed = rollouts.some((rollout) => rollout.state === 'failed') || missingImages.length > 0;
-    const live = rollouts.length > 0 && rollouts.every((rollout) => rollout.state === 'live');
-    const health: HealthResult =
-      !failed && (live || options.waitSeconds === 0)
-        ? await checkHealth(options.url, options.healthPath)
-        : { state: 'starting', lines: ['[..] health: checked once every service is live'] };
+    const noServices = rollouts.length === 0 && (options.requireServices ?? true);
+    const failed = noServices || rollouts.some((rollout) => rollout.state === 'failed') || missingImages.length > 0;
+    // A cluster that may have no services (one-off tasks) has nothing to roll out.
+    const live = rollouts.every((rollout) => rollout.state === 'live');
+    const healthChecked = !failed && (live || options.waitSeconds === 0);
+    const health: HealthResult = healthChecked
+      ? await checkHealth(options.url, options.healthPath)
+      : { state: 'starting', lines: ['[..] health: checked once every service is live'] };
 
-    const lines = rollouts.length > 0 ? rollouts.map(formatRollout) : ['[FIX] services: none found in the cluster.'];
+    const lines = rollouts.length > 0
+      ? rollouts.map(formatRollout)
+      : [noServices ? '[FIX] services: none found in the cluster.' : '[--] services: none in the cluster (a cluster for one-off tasks has none)'];
     lines.push(...missingImages.map((message) => `[FIX] ${message}`));
     const report = [...lines, ...health.lines].join('\n');
 
@@ -151,9 +164,16 @@ export async function verifyDeployment(options: DeploymentCheckOptions): Promise
       previousReport = report;
     }
 
-    const result = (verdict: DeploymentVerdict): DeploymentCheckResult => ({ verdict, rollouts, missingImages, health });
+    const attention = [
+      ...(noServices ? ['services: none found in the cluster'] : []),
+      ...rollouts.filter((rollout) => rollout.state !== 'live').map((rollout) => `${rollout.service}: ${rollout.message}`),
+      ...missingImages,
+      ...(healthChecked && (health.state === 'failed' || health.state === 'starting') ? [withoutMark(health.lines)] : []),
+    ];
+    const result = (verdict: DeploymentVerdict): DeploymentCheckResult =>
+      ({ verdict, rollouts, missingImages, health, attention: verdict === 'healthy' ? [] : attention });
 
-    if (failed || health.state === 'failed' || rollouts.length === 0) {
+    if (failed || health.state === 'failed') {
       return result('failed');
     }
 

@@ -5,6 +5,16 @@ All notable changes to this package are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1]
+
+### Fixed
+
+- `status --cluster <name>` no longer fails a cluster without services, such as an `sst.aws.Cluster` for task runners, which is how `EcsEventRecorder` says to check one. `status --stage` still fails a stage's cluster without services.
+- `status --stage <stage> --cluster <name>` failed with "No registered services match this cluster" when the cluster was given by name rather than ARN, or ran none of the stage's services, such as a cluster for task runners. It now matches names, and checks another cluster on its own, without the stage's URL.
+- The hint `status` prints when something needs attention names `--cluster` when that is what it checked, instead of `--stage <stage>`.
+- When `status` needs attention, the `attention` list always says why. A failed or unfinished rollout, a missing image, or a failing `/up` used to exit 1 with an empty list.
+- The note about a cluster without the ECS events log group names the log group and points a cluster `LaravelService` didn't create at `EcsEventRecorder`, instead of saying to deploy with `ecsEvents`.
+
 ## [0.8.0]
 
 ### Removed

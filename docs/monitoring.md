@@ -55,7 +55,7 @@ Each stack trace line of a text log arrives in CloudWatch as an event of its own
 
 ECS lists a stopped task for about an hour. To report a day of restarts and crashes, the component records the cluster's ECS events in CloudWatch Logs: tasks that stopped, deployments, and service actions. EventBridge sends them to a small Lambda function that logs them to `/sst/cluster/<cluster>/sst-laravel/ecs-events`, kept 30 days. It logs only what `status` reads (the task, its stop code and reason, and the exit code of each container), never what a task was started with: the overrides of a task runner can hold secrets. It runs once per event and costs next to nothing. Set [`ecsEvents: false`](api.md) to leave it out; `status --since` then falls back to what ECS still lists.
 
-A cluster that `LaravelService` didn't create, such as an `sst.aws.Cluster` for task runners, gets the same recorder with `EcsEventRecorder`. Check it with `status --cluster <cluster name> --since 24h`:
+A cluster that `LaravelService` didn't create, such as an `sst.aws.Cluster` for task runners, gets the same recorder with `EcsEventRecorder`. Check it with `status --cluster <cluster name> --since 24h`. A cluster without services is fine there: it needs attention only for the tasks that stopped unexpectedly and its alarms.
 
 ```ts
 import { EcsEventRecorder } from '@kirschbaum-development/sst-laravel';
@@ -63,6 +63,8 @@ import { EcsEventRecorder } from '@kirschbaum-development/sst-laravel';
 const tasks = new sst.aws.Cluster('Tasks', { vpc });
 new EcsEventRecorder('TasksEvents', { cluster: tasks });
 ```
+
+Until the recorder is deployed, `status` reads only the last hour of stopped tasks and says so in `stoppedTasks.note`.
 
 ### Process exits
 

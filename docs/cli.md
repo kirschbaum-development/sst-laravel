@@ -126,7 +126,7 @@ npx sst-laravel status --stage production --since 24h --json
 
 **Options:**
 - `-s, --stage <stage>` - SST stage name (required unless `--cluster` is given)
-- `-c, --cluster <arn>` - Restrict stage verification to this registered cluster. Without `--stage`, run cluster diagnostics based on ECS history; expected revisions and image availability are not verified. This diagnostic mode also needs `ecs:ListServices`.
+- `-c, --cluster <cluster>` - The cluster's name or ARN. With `--stage`, restrict stage verification to this cluster; a cluster that runs none of the stage's services is checked on its own. Without `--stage`, run cluster diagnostics based on ECS history; expected revisions and image availability are not verified. This diagnostic mode also needs `ecs:ListServices`, and accepts a cluster without services, such as an `sst.aws.Cluster` for task runners: add `--since 24h` to check the tasks that stopped.
 - `-r, --region <region>` - AWS region (default: the `aws` provider's `region` in `sst.config.ts`, then `AWS_REGION`, the active profile, and `us-east-1`)
 - `-u, --url <url>` - Public app URL to health-check (default: the URL the last `sst-laravel deploy` of the stage saved on this machine)
 - `-p, --path <path>` - Health path to request (default: `/up`)

@@ -92,8 +92,16 @@ export const statusCommand = new Command('status')
       const outputs = readOutputs(process.cwd());
       // outputs.json is overwritten by another stage's deploy. Saved targets
       // keep status tied to the intended revision of the requested stage.
-      const targets = options.stage ? readStageTargets(process.cwd(), outputs, options.stage) : undefined;
-      if (options.cluster && targets) targets.services = targets.services.filter((target) => target.cluster === options.cluster);
+      const stageTargets = options.stage ? readStageTargets(process.cwd(), outputs, options.stage) : undefined;
+      const clusterOption = options.cluster;
+      // --cluster takes a name or an ARN; the outputs hold ARNs.
+      if (clusterOption && stageTargets) {
+        stageTargets.services = stageTargets.services.filter((target) => clusterNameFromArn(target.cluster) === clusterNameFromArn(clusterOption));
+      }
+      // A cluster without any of the stage's services, such as one for task
+      // runners, is checked on its own.
+      const otherCluster = Boolean(clusterOption && stageTargets && stageTargets.services.length === 0);
+      const targets = otherCluster ? undefined : stageTargets;
 
       let clusterArns: string[];
       let component: string | undefined;
@@ -105,12 +113,15 @@ export const statusCommand = new Command('status')
         const cluster = await findCluster(ecsClient, options.stage ?? '', options.cluster, info);
         clusterArns = [cluster.clusterArn];
         component = cluster.component;
-        log(options.stage && !options.cluster
-          ? `No deployment outputs for ${options.stage} on this machine: checking its cluster without the expected revisions and images (deploy from here, or keep .sst/outputs.json, to verify them).`
-          : 'Cluster diagnostics only: pass --stage with deployment outputs to verify the expected revision and ECR images.');
+        log(otherCluster
+          ? `${clusterNameFromArn(clusterOption!)} runs none of the services ${options.stage} deployed: checking it on its own, without expected revisions.`
+          : options.stage
+            ? `No deployment outputs for ${options.stage} on this machine: checking ${clusterOption ? clusterNameFromArn(clusterOption) : 'its cluster'} without the expected revisions and images (deploy from here, or keep .sst/outputs.json, to verify them).`
+            : 'Cluster diagnostics only: pass --stage with deployment outputs to verify the expected revision and ECR images.');
       }
 
-      if (!options.url && options.stage) {
+      // The stage's URL is served by the stage's cluster, not another one.
+      if (!options.url && options.stage && !otherCluster) {
         options.url = readSavedAppUrl(process.cwd(), options.stage);
 
         if (options.url) {
@@ -132,6 +143,9 @@ export const statusCommand = new Command('status')
         url: options.url,
         healthPath: options.path,
         waitSeconds,
+        // A cluster named with --cluster may only run one-off tasks. The
+        // cluster of a LaravelService always has services.
+        requireServices: Boolean(targets || component),
         log,
       });
 
@@ -163,7 +177,8 @@ export const statusCommand = new Command('status')
         }
       }
 
-      const attention = reports.flatMap((report) => report.attention);
+      // Every unhealthy result says why, in the JSON as well as the text.
+      const attention = [...deployment.attention, ...reports.flatMap((report) => report.attention)];
       const healthy = deployment.verdict === 'healthy' && attention.length === 0;
 
       if (options.json) {
@@ -187,7 +202,13 @@ export const statusCommand = new Command('status')
       log('');
 
       if (healthy) {
-        log(targets ? 'Expected deployment is running and its ECR images are available.' : 'Cluster looks healthy; the expected deployment was not verified.');
+        if (targets) {
+          log('Expected deployment is running and its ECR images are available.');
+        } else if (deployment.rollouts.length === 0) {
+          log(window ? 'The cluster has no services; its tasks were checked.' : 'The cluster has no services to check. Add --since 24h to check the tasks that stopped.');
+        } else {
+          log('Cluster looks healthy; the expected deployment was not verified.');
+        }
         if (window) log('Nothing in the window needs attention.');
         return;
       }
@@ -202,7 +223,11 @@ export const statusCommand = new Command('status')
         log(`Needs attention: ${line}`);
       }
 
-      log(`Something needs attention. Errors: \`npx sst-laravel logs:errors --stage ${options.stage ?? '<stage>'} --since 24h\`. Recent logs: \`npx sst-laravel logs --stage ${options.stage ?? '<stage>'} --no-follow\`.`);
+      const target = [
+        options.stage && !otherCluster ? `--stage ${options.stage}` : `--cluster ${clusterOption}`,
+        ...(options.region ? [`--region ${options.region}`] : []),
+      ].join(' ');
+      log(`Something needs attention. Errors: \`npx sst-laravel logs:errors ${target} --since 24h\`. Recent logs: \`npx sst-laravel logs ${target} --no-follow\`.`);
       await exitAfterOutput(EXIT_ATTENTION);
     } catch (error) {
       await exitWithError(error, EXIT_ERROR);

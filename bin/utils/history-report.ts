@@ -21,7 +21,7 @@ import {
   stoppedTasksFromEvents,
   STOPS_NEEDING_ATTENTION,
 } from './ecs-history.js';
-import type { LogSource } from './log-sources.js';
+import { ecsEventsLogGroupName, LogSource } from './log-sources.js';
 import type { TimeWindow } from './time.js';
 
 export interface HistoryReport {
@@ -87,7 +87,7 @@ export async function buildHistoryReport(options: HistoryOptions): Promise<Histo
     ? { source: 'ecs-events', tasks: stoppedTasksFromEvents(recorded.events, window) }
     : {
         source: 'ecs',
-        note: 'ECS lists stopped tasks for about an hour, and this cluster has no ECS events log group. Deploy with this version (ecsEvents is on by default) to keep the whole window.',
+        note: `ECS lists stopped tasks for about an hour, and this cluster has no ECS events log group (${ecsEventsLogGroupName(options.clusterName)}). To keep the whole window, deploy a LaravelService with ecsEvents on (the default), or add an EcsEventRecorder for a cluster LaravelService didn't create, such as an sst.aws.Cluster for task runners.`,
         tasks: await listStoppedTasks(ecs, options.clusterArn, window),
       };
 

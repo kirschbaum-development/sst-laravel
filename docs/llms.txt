@@ -185,7 +185,7 @@ stack traces). `ecsEvents` (default on) records ECS
 task stops and deployments in `/sst/cluster/<cluster>/sst-laravel/ecs-events`;
 ECS itself keeps stopped tasks ~1h. For another cluster (e.g. an sst.aws.Cluster for
 task runners): `new EcsEventRecorder('TasksEvents', { cluster: tasks })`, then
-`status --cluster <name> --since 24h`. Auto-scaling-only alarms (target tracking
+`status --cluster <name> --since 24h` (no services needed). Auto-scaling-only alarms (target tracking
 AlarmLow/AlarmHigh) never need attention. Read-only IAM policy: `monitoring.md#permissions`.
 
 ## Upgrading and verification
